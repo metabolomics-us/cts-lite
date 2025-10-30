@@ -1,4 +1,4 @@
-package data 
+package data
 
 import (
 	"encoding/csv"
@@ -15,6 +15,8 @@ type Compound struct {
 	Smiles           string `json:"smiles"`
 	CompoundName     string `json:"compound_name"`
 	MolecularFormula string `json:"molecular_formula"`
+	PubMedCount      string `json:"pubmed_count"`
+	PatentCount      string `json:"patent_count"`
 }
 
 type PubChemIndex struct {
@@ -68,6 +70,8 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 			InChI:            line[8],
 			InChIKey:         line[9],
 			CompoundName:     line[12],
+			PubMedCount:      line[2],
+			PatentCount:      line[3],
 		}
 
 		index.Compounds = append(index.Compounds, c)
