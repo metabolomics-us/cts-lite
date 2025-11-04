@@ -10,7 +10,7 @@ import (
 
 func main() {
 	// Load PubChemLite into memory
-	file := "./data/PubChemLite_CCSbase_20250905.csv"
+	file := "./data/PubChemLite_CCSbase_20250905_trimmed.csv"
 	index, err := model.LoadPubChemLite(file)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
