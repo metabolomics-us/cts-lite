@@ -6,19 +6,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 )
 
 func main() {
 	// Load PubChemLite into memory
 	file := "./data/PubChemLite_CCSbase_20250905.csv"
-	startTime := time.Now()
 	index, err := model.LoadPubChemLite(file)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
 	}
-	timeToLoad := time.Since(startTime).Seconds()
-	fmt.Printf("Loaded %d compounds, took %.2f seconds\n", len(index.Compounds), timeToLoad)
 
 	// Default endpoints for health checks
 	http.HandleFunc("/", api.Status)

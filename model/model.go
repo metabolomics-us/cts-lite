@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 )
 
 type Compound struct {
@@ -28,6 +29,7 @@ type PubChemIndex struct {
 }
 
 func LoadPubChemLite(file string) (*PubChemIndex, error) {
+	startTime := time.Now()
 	// Open the file
 	f, err := os.Open(file)
 	if err != nil {
@@ -63,15 +65,16 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
 
+		// This only works on the PubChemLite dataset after running the `pubchemlite_trimmer.sh` script
 		c := &Compound{
-			FirstBlock:       line[1],
-			MolecularFormula: line[6],
-			Smiles:           line[7],
-			InChI:            line[8],
-			InChIKey:         line[9],
-			CompoundName:     line[12],
-			PubMedCount:      line[2],
-			PatentCount:      line[3],
+			FirstBlock:       line[0],
+			PubMedCount:      line[1],
+			PatentCount:      line[2],
+			MolecularFormula: line[3],
+			Smiles:           line[4],
+			InChI:            line[5],
+			InChIKey:         line[6],
+			CompoundName:     line[7],
 		}
 
 		index.Compounds = append(index.Compounds, c)
@@ -81,5 +84,7 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 		index.ByFirstBlock[c.FirstBlock] = append(index.ByFirstBlock[c.FirstBlock], c)
 	}
 
+	timeToLoad := time.Since(startTime).Seconds()
+	fmt.Printf("Loaded %d compounds, took %.2f seconds\n", len(index.Compounds), timeToLoad)
 	return index, nil
 }
