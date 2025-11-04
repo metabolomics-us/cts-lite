@@ -12,7 +12,7 @@ import (
 )
 
 func loadMockIndex(t *testing.T) *data.PubChemIndex {
-	index, err := data.LoadPubChemLite("testdata/mock_pubchemlite.csv")
+	index, err := data.LoadPubChemLite("test_data/mock_pubchemlite.csv")
 	if err != nil {
 		t.Fatalf("failed to load test CSV: %v", err)
 	}
