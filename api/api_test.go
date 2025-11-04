@@ -1,7 +1,6 @@
-package test
+package api
 
 import (
-	"ctslite/api"
 	"ctslite/data"
 	"encoding/json"
 	"io"
@@ -59,7 +58,7 @@ func TestStatusEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 
-	api.Status(w, req)
+	Status(w, req)
 
 	res := w.Result()
 
@@ -73,7 +72,7 @@ func TestSmilesMatchEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
-	api.Match(mockIndex, w, req)
+	Match(mockIndex, w, req)
 
 	res := w.Result()
 
@@ -100,7 +99,7 @@ func TestFullInChIKeyMatchEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
-	api.Match(mockIndex, w, req)
+	Match(mockIndex, w, req)
 
 	res := w.Result()
 
@@ -127,7 +126,7 @@ func TestFirstBlockMatchEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
-	api.Match(mockIndex, w, req)
+	Match(mockIndex, w, req)
 
 	res := w.Result()
 
@@ -159,7 +158,7 @@ func TestInChIMatchEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
-	api.Match(mockIndex, w, req)
+	Match(mockIndex, w, req)
 
 	res := w.Result()
 
