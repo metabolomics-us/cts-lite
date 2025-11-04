@@ -1,7 +1,7 @@
 package api
 
 import (
-	"ctslite/data"
+	"ctslite/model"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,8 +11,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func loadMockIndex(t *testing.T) *data.PubChemIndex {
-	index, err := data.LoadPubChemLite("test_data/mock_pubchemlite.csv")
+func loadMockIndex(t *testing.T) *model.PubChemIndex {
+	index, err := model.LoadPubChemLite("../data/test_data/mock_pubchemlite.csv")
 	if err != nil {
 		t.Fatalf("failed to load test CSV: %v", err)
 	}
@@ -20,8 +20,8 @@ func loadMockIndex(t *testing.T) *data.PubChemIndex {
 }
 
 // Data must match mock_pubchemlite.csv exactly
-func fakeWaterCompound() *data.Compound {
-	return &data.Compound{
+func fakeWaterCompound() *model.Compound {
+	return &model.Compound{
 		InChIKey:         "MYFAKEINCHIKEY-ISRIGHTHER-E",
 		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/H2O/h1H2",
@@ -34,8 +34,8 @@ func fakeWaterCompound() *data.Compound {
 }
 
 // Data must match mock_pubchemlite.csv exactly
-func fakeMethaneCompound() *data.Compound {
-	return &data.Compound{
+func fakeMethaneCompound() *model.Compound {
+	return &model.Compound{
 		InChIKey:         "MYFAKEINCHIKEY-ANOTHERONE-E",
 		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/CH4/h1H4",
@@ -48,7 +48,7 @@ func fakeMethaneCompound() *data.Compound {
 }
 
 // Compares compound from response with expected compound
-func assertCompound(t *testing.T, want *data.Compound, got *data.Compound) {
+func assertCompound(t *testing.T, want *model.Compound, got *model.Compound) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("compound mismatch (-want +got):\n%s", diff)
 	}
@@ -81,7 +81,7 @@ func TestSmilesMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*data.Compound
+	var compounds []*model.Compound
 	json.Unmarshal(body, &compounds)
 
 	if len(compounds) != 1 {
@@ -108,7 +108,7 @@ func TestFullInChIKeyMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*data.Compound
+	var compounds []*model.Compound
 	json.Unmarshal(body, &compounds)
 
 	if len(compounds) != 1 {
@@ -135,7 +135,7 @@ func TestFirstBlockMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*data.Compound
+	var compounds []*model.Compound
 	json.Unmarshal(body, &compounds)
 
 	// First block matching should give us both our fake water and fake methane compounds
@@ -167,7 +167,7 @@ func TestInChIMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*data.Compound
+	var compounds []*model.Compound
 	json.Unmarshal(body, &compounds)
 
 	if len(compounds) != 1 {

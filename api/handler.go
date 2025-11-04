@@ -1,12 +1,12 @@
 package api
 
 import (
+	"ctslite/model"
 	"fmt"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
-	"ctslite/data"
 )
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
@@ -29,7 +29,7 @@ func parseQueryType(q string) string {
 
 // Match is the main entry point for the API
 // It detects the type of query and delegates it to the corresponding matching function
-func Match(index *data.PubChemIndex, w http.ResponseWriter, r *http.Request) {
+func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Extract query from request
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {

@@ -2,7 +2,7 @@ package main
 
 import (
 	"ctslite/api"
-	"ctslite/data"
+	"ctslite/model"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,7 +13,7 @@ func main() {
 	// Load PubChemLite into memory
 	file := "./data/PubChemLite_CCSbase_20250905.csv"
 	startTime := time.Now()
-	index, err := data.LoadPubChemLite(file)
+	index, err := model.LoadPubChemLite(file)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
 	}

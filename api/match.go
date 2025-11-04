@@ -1,13 +1,13 @@
 package api
 
 import (
-	"ctslite/data"
+	"ctslite/model"
 	"encoding/json"
 	"fmt"
 	"net/http"
 )
 
-func matchInchi(index *data.PubChemIndex, w http.ResponseWriter, query string) {
+func matchInchi(index *model.PubChemIndex, w http.ResponseWriter, query string) {
 	compound, ok := index.ByInChI[query]
 	if !ok {
 		err := fmt.Errorf("no compound found for provided InChI: %s", query)
@@ -16,18 +16,18 @@ func matchInchi(index *data.PubChemIndex, w http.ResponseWriter, query string) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode([]*data.Compound{compound})
+	err := json.NewEncoder(w).Encode([]*model.Compound{compound})
 	if err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 
-func matchInchiKey(index *data.PubChemIndex, w http.ResponseWriter, query string) {
+func matchInchiKey(index *model.PubChemIndex, w http.ResponseWriter, query string) {
 	// Try full inchikey match first
 	compound, ok := index.ByInChIKey[query]
 	if ok {
 		w.Header().Set("Content-Type", "application/json")
-		err := json.NewEncoder(w).Encode([]*data.Compound{compound})
+		err := json.NewEncoder(w).Encode([]*model.Compound{compound})
 		if err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		}
@@ -52,7 +52,7 @@ func matchInchiKey(index *data.PubChemIndex, w http.ResponseWriter, query string
 	}
 }
 
-func matchSmiles(index *data.PubChemIndex, w http.ResponseWriter, query string) {
+func matchSmiles(index *model.PubChemIndex, w http.ResponseWriter, query string) {
 	compound, ok := index.BySmiles[query]
 	if !ok {
 		err := fmt.Errorf("no compound found for provided SMILES: %s", query)
@@ -61,7 +61,7 @@ func matchSmiles(index *data.PubChemIndex, w http.ResponseWriter, query string) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode([]*data.Compound{compound})
+	err := json.NewEncoder(w).Encode([]*model.Compound{compound})
 	if err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
