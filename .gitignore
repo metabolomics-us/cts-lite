@@ -1,2 +1,4 @@
-PubChemLite*csv
+PubChemLite*.csv
+__pycache__
+report*.html
 .idea
