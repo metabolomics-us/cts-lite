@@ -1,0 +1,89 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #f9f4e5;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  margin: 0;
+}
+
+h1 {
+  color: #1a2a4f;
+  margin-bottom: -1rem;
+}
+
+h3 {
+  color: #1a2a4f;
+  margin-bottom: 3rem;
+}
+
+form, #output-container {
+  background: #f0f0f0;
+  padding: 1.5rem;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-width: 600px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 3rem;
+}
+
+label {
+  font-weight: bold;
+  display: block;
+  margin: 1rem 0 0rem;
+}
+
+input[type="text"], textarea {
+  font-family: inherit;
+  width: 100%;
+  padding: 0.6rem;
+  border: 2px solid #acacac;
+  border-radius: 10px;
+  font-size: 1rem;
+}
+
+button {
+  background-color: #1a2a4f;
+  color: white;
+  border: none;
+  padding: 0.8rem 1.2rem;
+  margin-top: 1rem;
+  font-size: 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #283b69;
+}
+
+button:disabled {
+  background-color: gray;
+  cursor: not-allowed;
+  opacity: .7;
+}
+
+#output-label {
+  font-weight: bold;
+  margin-bottom: 0rem;
+  margin-top: 0rem;
+}
+
+#output {
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  font-family: monospace;
+  font-size: .95rem;
+  /*border: 1px solid black;*/
+  white-space: pre-wrap;
+  max-width: 615px;
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+}

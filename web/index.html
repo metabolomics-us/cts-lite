@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTS-Lite</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>CTS-Lite</h1>
+    <h3>UC Davis Fiehn Lab</h3>
+    <form id="query-form">
+        <label for="query-input">Enter an InChI, InChIKey, or SMILES</label>
+        <br>
+        <textarea id="query-input" rows="3" cols="40" placeholder="e.g. VYZAHLCBVHPDDF-UHFFFAOYSA-N"></textarea>
+        <br>
+        <button type="submit">Match</button>
+    </form>
+    <div id="output-container">
+        <label for="output" id="output-label">Matches</label>
+        <div id="output"></div>
+    </div>
+<script src="script.js"></script>
+</body>
+</html>
