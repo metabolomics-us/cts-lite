@@ -3,7 +3,7 @@ set -e
 
 # This script trims a given PubChemLite CSV file to only include the columns used by CTS-Lite
 
-if [ "$#" -ne 1 && "$#" -ne 2 ]; then
+if [ "$#" -ne 1 ] && [ "$#" -ne 2 ]; then
     echo "Usage: $0 <pubchemlite_csv> [output_csv]"
     exit 1
 fi
