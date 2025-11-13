@@ -81,14 +81,18 @@ func TestSmilesMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*model.Compound
-	json.Unmarshal(body, &compounds)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
 
-	if len(compounds) != 1 {
-		t.Fatalf("expected 1 compound, got %d", len(compounds))
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 
-	got := compounds[0]
+	if len(results[0].Matches) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+	}
+
+	got := results[0].Matches[0]
 	want := fakeWaterCompound()
 
 	assertCompound(t, want, got)
@@ -108,14 +112,18 @@ func TestFullInChIKeyMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*model.Compound
-	json.Unmarshal(body, &compounds)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
 
-	if len(compounds) != 1 {
-		t.Fatalf("Expected 1 compound, got %d", len(compounds))
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 
-	got := compounds[0]
+	if len(results[0].Matches) != 1 {
+		t.Fatalf("Expected 1 compound, got %d", len(results[0].Matches))
+	}
+
+	got := results[0].Matches[0]
 	want := fakeMethaneCompound()
 
 	assertCompound(t, want, got)
@@ -135,16 +143,20 @@ func TestFirstBlockMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*model.Compound
-	json.Unmarshal(body, &compounds)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
 
-	// First block matching should give us both our fake water and fake methane compounds
-	if len(compounds) != 2 {
-		t.Fatalf("Expected 2 compounds, got %d", len(compounds))
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 
-	gotWater := compounds[0]
-	gotMethane := compounds[1]
+	// First block matching should give us both our fake water and fake methane compounds
+	if len(results[0].Matches) != 2 {
+		t.Fatalf("Expected 2 compounds, got %d", len(results[0].Matches))
+	}
+
+	gotWater := results[0].Matches[0]
+	gotMethane := results[0].Matches[1]
 
 	wantWater := fakeWaterCompound()
 	wantMethane := fakeMethaneCompound()
@@ -167,15 +179,61 @@ func TestInChIMatchEndpoint(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(res.Body)
-	var compounds []*model.Compound
-	json.Unmarshal(body, &compounds)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
 
-	if len(compounds) != 1 {
-		t.Fatalf("expected 1 compound, got %d", len(compounds))
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 
-	got := compounds[0]
+	if len(results[0].Matches) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+	}
+
+	got := results[0].Matches[0]
 	want := fakeWaterCompound()
 
 	assertCompound(t, want, got)
+}
+
+func TestMultiQuery(t *testing.T) {
+	// 4 queries: smiles O, smiles C, bad smiles, fake inchikey
+	req := httptest.NewRequest(http.MethodGet, "/match?q=O%20C%20BADSMILES%20MYFAKEINCHIKEY-ISRIGHTHER-E", nil)
+	w := httptest.NewRecorder()
+
+	mockIndex := loadMockIndex(t)
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 but got %d", res.StatusCode)
+	}
+
+	body, _ := io.ReadAll(res.Body)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
+
+	if len(results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(results))
+	}
+
+	// Just confirm that the first two did in fact get the right matches
+	if len(results[0].Matches) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+	}
+
+	if len(results[1].Matches) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(results[1].Matches))
+	}
+
+	gotWater := results[0].Matches[0]
+	wantWater := fakeWaterCompound()
+
+	assertCompound(t, wantWater, gotWater)
+
+	gotMethane := results[1].Matches[0]
+	wantMethane := fakeMethaneCompound()
+
+	assertCompound(t, wantMethane, gotMethane)
 }
