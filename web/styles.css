@@ -5,10 +5,11 @@
 header {
   text-align: center;
   margin-bottom: 7rem;
-  background-color: #1a2a4f;
+  background-color: #1a3e68;
   color: #f0f0f0;
-  width: 150%;
+  width: 250%;
   padding: 10px;
+  box-shadow: 0 0 5px black;
 }
 
 h1, h3 {
@@ -18,20 +19,28 @@ h1, h3 {
 body {
   background-color: #f9f4e5;
   font-family: Arial, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+}
+
+.banner-container {
+  background-color: rgb(250, 250, 250);
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 0;
+  box-shadow: 0 0 20px rgba(0,0,0,0.1);
 }
 
 form, #output-container {
-  background: #f0f0f0;
+  background: #eaeef3;
   padding: 1.5rem;
   border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  max-width: 600px;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
+  width: 600px;
   min-height: 120px;
-  width: 100%;
   box-sizing: border-box;
   margin-bottom: 3rem;
   overflow-wrap: break-word;
@@ -44,10 +53,11 @@ input[type="text"], textarea {
   border: 2px solid #acacac;
   border-radius: 10px;
   font-size: 1rem;
+  min-height: 100px;
 }
 
 button {
-  background-color: #1a2a4f;
+  background-color: #1a3e68;
   color: #f0f0f0;
   border: none;
   padding: 0.8rem 1.2rem;
@@ -59,7 +69,7 @@ button {
 }
 
 button:hover {
-  background-color: #283b69;
+  background-color: #235288;
 }
 
 button:disabled {
@@ -83,4 +93,34 @@ button:disabled {
 #output-text {
   font-family: monospace;
   font-size: .95rem;
+}
+
+/* Responsive design for mobile devices */
+@media (max-width: 768px) {
+  .banner-container {
+    padding: 0 10px;
+  }
+  
+  form, #output-container {
+    width: calc(100vw - 40px);
+    max-width: 600px;
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .banner-container {
+    padding: 0 5px;
+  }
+  
+  form, #output-container {
+    width: calc(100vw - 30px);
+    padding: 1rem;
+  }
+  
+  header {
+    width: 100%;
+    padding: 8px;
+  }
 }

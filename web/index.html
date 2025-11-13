@@ -7,21 +7,25 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <header>
-        <h1>CTS-Lite</h1>
-        <h3>UC Davis Fiehn Lab</h3>
-    </header>
-    <form id="query-form">
-        <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, and SMILES</label>
-        <p></p>
-        <textarea id="query-input" rows="4" cols="40" placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C "></textarea>
-        <br>
-        <button type="submit">Match</button>
-    </form>
-    <div id="output-container">
-        <label for="output-text" id="output-label">Results</label>
-        <hr>
-        <div id="output-text"></div>
+    <div class="banner-container">
+        <header>
+            <h1>CTS-Lite</h1>
+            <h3>UC Davis Fiehn Lab</h3>
+        </header>
+        <div>
+            <form id="query-form">
+                <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, and SMILES</label>
+                <p></p>
+                <textarea id="query-input" rows="4" cols="40" placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C "></textarea>
+                <br>
+                <button type="submit">Match</button>
+            </form>
+            <div id="output-container">
+                <label for="output-text" id="output-label">Results</label>
+                <hr>
+                <div id="output-text"></div>
+            </div>
+        </div>
     </div>
 <script src="script.js"></script>
 </body>
