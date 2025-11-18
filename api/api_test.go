@@ -197,8 +197,8 @@ func TestInChIMatchEndpoint(t *testing.T) {
 }
 
 func TestMultiQuery(t *testing.T) {
-	// 4 queries: smiles O, smiles C, bad smiles, fake inchikey
-	req := httptest.NewRequest(http.MethodGet, "/match?q=O%20C%20BADSMILES%20MYFAKEINCHIKEY-ISRIGHTHER-E", nil)
+	// 5 queries: smiles O, smiles C, bad smiles, fake inchikey, bad InChI // space separated (%20)
+	req := httptest.NewRequest(http.MethodGet, "/match?q=O%20C%20BADSMILES%20MYFAKEINCHIKEY-ISRIGHTHER-E%20InChI=BADINCHI", nil)
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
@@ -214,8 +214,8 @@ func TestMultiQuery(t *testing.T) {
 	var results []*model.SingleResult
 	json.Unmarshal(body, &results)
 
-	if len(results) != 4 {
-		t.Fatalf("expected 4 results, got %d", len(results))
+	if len(results) != 5 {
+		t.Fatalf("expected 5 results, got %d", len(results))
 	}
 
 	// Just confirm that the first two did in fact get the right matches
