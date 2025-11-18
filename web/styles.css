@@ -46,6 +46,16 @@ form, #output-container {
   overflow-wrap: break-word;
 }
 
+/* Initially hide the output container */
+#output-container {
+  display: none;
+}
+
+/* Show the output container when it has the 'visible' class */
+#output-container.visible {
+  display: block;
+}
+
 input[type="text"], textarea {
   font-family: inherit;
   width: 100%;
@@ -95,6 +105,186 @@ button:disabled {
   font-size: .95rem;
 }
 
+/* Structured results styling */
+.result-item {
+  margin-bottom: 1.5rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 1rem;
+  background-color: #fff;
+}
+
+.query-section h3 {
+  margin: 0 0 0.5rem 0;
+  color: #1a3e68;
+  font-size: 1.1rem;
+}
+
+.query-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.query-type {
+  background-color: #e6f3ff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 15px;
+  border: 1px solid #b3d9ff;
+}
+
+.match-status {
+  padding: 0.3rem 0.6rem;
+  border-radius: 15px;
+}
+
+.match-status.no-match {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.match-status.exact-match {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.match-status.first-block-match {
+  background-color: #fff3cd;
+  color: #745903;
+  border: 1px solid #ffeaa7;
+}
+
+.match-level.exact {
+  background-color: #d4edda;
+  padding: 0.3rem 0.6rem;
+  border-radius: 15px;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.match-level.first-block {
+  background-color: #fff3cd;
+  padding: 0.3rem 0.6rem;
+  border-radius: 15px;
+  border: 1px solid #ffeaa7;
+  color: #745903;
+}
+
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 0.5rem;
+  border-radius: 5px;
+  margin-top: 0.5rem;
+  border: 1px solid #f5c6cb;
+}
+
+.matches-section h4 {
+  margin: 1rem 0 0.5rem 0;
+  color: #1a3e68;
+}
+
+.match-item {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.match-header {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: #495057;
+}
+
+.match-details {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+
+.match-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.match-field label {
+  font-weight: bold;
+  color: #6c757d;
+  min-width: 120px;
+  font-size: 0.85rem;
+}
+
+.match-field span {
+  flex: 1;
+  word-break: break-all;
+}
+
+.monospace {
+  font-family: 'Courier New', monospace;
+  background-color: #ebedf0;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.small-text {
+  font-size: 0.75rem;
+}
+
+.result-separator {
+  border: none;
+  height: 2px;
+  background-color: #dee2e6;
+  margin: 1.5rem 0;
+}
+
+/* JSON Toggle Styling */
+.json-toggle-container {
+  margin-top: 1.5rem;
+  border-top: 2px solid #dee2e6;
+  padding-top: 1rem;
+}
+
+.json-toggle-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.json-toggle-btn:hover {
+  background-color: #5a6268;
+}
+
+.raw-json {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 5px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.hidden {
+  display: none;
+}
+
 /* Responsive design for mobile devices */
 @media (max-width: 768px) {
   .banner-container {
@@ -106,6 +296,21 @@ button:disabled {
     max-width: 600px;
     margin-left: 10px;
     margin-right: 10px;
+  }
+  
+  .query-details {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .match-field {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  
+  .match-field label {
+    min-width: auto;
+    font-size: 0.8rem;
   }
 }
 
@@ -122,5 +327,18 @@ button:disabled {
   header {
     width: 100%;
     padding: 8px;
+  }
+  
+  .result-item {
+    padding: 0.75rem;
+  }
+  
+  .match-item {
+    padding: 0.5rem;
+  }
+  
+  .monospace {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.3rem;
   }
 }
