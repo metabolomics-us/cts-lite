@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("query-form");
   const input = document.getElementById("query-input");
-  const output = document.getElementById("output");
+  const output = document.getElementById("output-text");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault(); 
