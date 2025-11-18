@@ -2,6 +2,7 @@ package api
 
 import (
 	"ctslite/model"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -236,4 +237,49 @@ func TestMultiQuery(t *testing.T) {
 	wantMethane := fakeMethaneCompound()
 
 	assertCompound(t, wantMethane, gotMethane)
+}
+
+func TestCSVFormatResponse(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/match?q=O", nil)
+	req.Header.Set("Accept", "text/csv")
+	w := httptest.NewRecorder()
+
+	mockIndex := loadMockIndex(t)
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 but got %d", res.StatusCode)
+	}
+
+	csvReader := csv.NewReader(res.Body)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read CSV response: %v", err)
+	}
+
+	// Expecting header + 1 data row
+	if len(records) != 2 {
+		t.Fatalf("expected 2 CSV rows, got %d", len(records))
+	}
+
+	// Check header
+	expectedHeader := []string{
+		"query", "query_type", "found_match", "match_level", "error_message",
+		"inchikey", "first_block", "inchi", "smiles", "compound_name",
+		"molecular_formula", "pubmed_count", "patent_count",
+	}
+	if diff := cmp.Diff(expectedHeader, records[0]); diff != "" {
+		t.Errorf("CSV header mismatch (-want +got):\n%s", diff)
+	}
+
+	// Check data row
+	expectedData := []string{
+		"O", "smiles", "true", "Exact SMILES", "",
+		"MYFAKEINCHIKEY-ISRIGHTHER-E", "MYFAKEINCHIKEY", "InChI=1S/H2O/h1H2", "O", "Water", "H2O", "10", "2",
+	}
+	if diff := cmp.Diff(expectedData, records[1]); diff != "" {
+		t.Errorf("CSV data row mismatch (-want +got):\n%s", diff)
+	}
 }
