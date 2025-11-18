@@ -29,6 +29,64 @@ func parseQueryType(q string) string {
 	}
 }
 
+// writeResultsAsCSV converts the results to CSV format and writes to the response writer
+func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) error {
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	// Write CSV header
+	header := []string{
+		"query", "query_type", "found_match", "match_level", "error_message",
+		"inchikey", "first_block", "inchi", "smiles", "compound_name",
+		"molecular_formula", "pubmed_count", "patent_count",
+	}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	// Write data rows
+	for _, result := range results {
+		if !result.MatchFound {
+			// Write a single row for failed matches
+			row := []string{
+				result.Query,
+				result.QueryType,
+				fmt.Sprintf("%t", result.MatchFound),
+				result.MatchLevel,
+				result.ErrMsg,
+				"", "", "", "", "", "", "", "", // Empty compound fields
+			}
+			if err := writer.Write(row); err != nil {
+				return fmt.Errorf("failed to write CSV row: %w", err)
+			}
+		} else {
+			// Write one row per match
+			for _, match := range result.Matches {
+				row := []string{
+					result.Query,
+					result.QueryType,
+					fmt.Sprintf("%t", result.MatchFound),
+					result.MatchLevel,
+					result.ErrMsg,
+					match.InChIKey,
+					match.FirstBlock,
+					match.InChI,
+					match.Smiles,
+					match.CompoundName,
+					match.MolecularFormula,
+					match.PubMedCount,
+					match.PatentCount,
+				}
+				if err := writer.Write(row); err != nil {
+					return fmt.Errorf("failed to write CSV row: %w", err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // Match is the main entry point for the API
 // Detects the type of query and delegates it to the corresponding matching function
 func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
@@ -97,62 +155,4 @@ func Status(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		log.Printf("Failed to write response: %v", err)
 	}
-}
-
-// writeResultsAsCSV converts the results to CSV format and writes to the response writer
-func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) error {
-	writer := csv.NewWriter(w)
-	defer writer.Flush()
-
-	// Write CSV header
-	header := []string{
-		"query", "query_type", "found_match", "match_level", "error_message",
-		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "pubmed_count", "patent_count",
-	}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header: %w", err)
-	}
-
-	// Write data rows
-	for _, result := range results {
-		if !result.MatchFound {
-			// Write a single row for failed matches
-			row := []string{
-				result.Query,
-				result.QueryType,
-				fmt.Sprintf("%t", result.MatchFound),
-				result.MatchLevel,
-				result.ErrMsg,
-				"", "", "", "", "", "", "", "", // Empty compound fields
-			}
-			if err := writer.Write(row); err != nil {
-				return fmt.Errorf("failed to write CSV row: %w", err)
-			}
-		} else {
-			// Write one row per match
-			for _, match := range result.Matches {
-				row := []string{
-					result.Query,
-					result.QueryType,
-					fmt.Sprintf("%t", result.MatchFound),
-					result.MatchLevel,
-					result.ErrMsg,
-					match.InChIKey,
-					match.FirstBlock,
-					match.InChI,
-					match.Smiles,
-					match.CompoundName,
-					match.MolecularFormula,
-					match.PubMedCount,
-					match.PatentCount,
-				}
-				if err := writer.Write(row); err != nil {
-					return fmt.Errorf("failed to write CSV row: %w", err)
-				}
-			}
-		}
-	}
-
-	return nil
 }
