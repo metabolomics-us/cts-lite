@@ -153,6 +153,8 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 func Status(w http.ResponseWriter, _ *http.Request) {
 	_, err := fmt.Fprintln(w, "The CTSLite server is up and running!")
 	if err != nil {
-		log.Printf("Failed to write response: %v", err)
+		log.Printf("Status check failed to write response: %v", err)
+		return
 	}
+	log.Println("Status check successful")
 }
