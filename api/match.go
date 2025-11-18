@@ -36,7 +36,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 			return
 		}
 		result.MatchFound = true
-		result.MatchLevel = "First Block of InChIKey"
+		result.MatchLevel = "First Block"
 		result.Matches = compounds
 	}
 }
