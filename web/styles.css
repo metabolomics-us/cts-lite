@@ -2,23 +2,44 @@
   box-sizing: border-box;
 }
 
-header {
+.navbar {
+  position: fixed;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   text-align: center;
   background-color: #1a3e68;
-  color: #f0f0f0;
-  padding: 8px 10px;
   box-shadow: 0 0 5px black;
-  position: fixed;
   top: 0;
-  left: 0;
-  right: 0;
+  margin-bottom: 0;
   width: 100%;
   z-index: 1000;
-  margin-bottom: 0;
+}
+
+.navbar-item {
+  color: #f0f0f0;
+  text-decoration: none;
+  padding: 8px 14px 10px;
+  margin: 0 5rem 0 5rem;
+  font-weight: bold;
+}
+
+.navbar-item:hover {
+  color: #f3e3b1;
+}
+
+.navbar-item:focus {
+  outline: none; 
 }
 
 h1, h3 {
   margin: 0.25rem 0;
+}
+
+header {
+  text-align: center;
+  color: #f0f0f0;
+  font-size: 0.8rem;
 }
 
 body {
@@ -37,7 +58,7 @@ body {
   flex-direction: column;
   align-items: center;
   box-shadow: 0 0 20px rgba(0,0,0,0.1);
-  padding-top: 150px; /* Increased space between fixed header and content */
+  padding-top: 175px; 
 }
 
 form, #output-container {
@@ -291,10 +312,19 @@ button:disabled {
   display: none;
 }
 
+*:focus {
+  outline: 2px solid #36679e;
+  outline-offset: -1px;
+}
+
 /* Responsive design for mobile devices */
 @media (max-width: 768px) {
+  header {
+    font-size: 0.65rem;
+  }
+
   .banner-container {
-    padding: 110px 10px 0 10px; /* Good spacing for tablet */
+    padding: 80px 10px 0 10px; /* Reduced spacing for thinner navbar */
   }
   
   form, #output-container {
@@ -302,6 +332,17 @@ button:disabled {
     max-width: 600px;
     margin-left: 10px;
     margin-right: 10px;
+  }
+  
+  .navbar {
+    padding: 6px 8px;
+    /* Keep flex-direction: row (default) for horizontal layout */
+  }
+  
+  .navbar-item {
+    margin: 0 0.8rem;
+    padding: 6px 10px;
+    font-size: 0.85rem;
   }
   
   .query-details {
@@ -321,8 +362,12 @@ button:disabled {
 }
 
 @media (max-width: 480px) {
+  header {
+    font-size: 0.65rem;
+  }
+
   .banner-container {
-    padding: 100px 5px 0 5px; /* Adequate spacing for mobile */
+    padding: 70px 5px 0 5px; /* Further reduced for mobile */
   }
   
   form, #output-container {
@@ -330,8 +375,15 @@ button:disabled {
     padding: 1rem;
   }
   
-  header {
-    padding: 6px 8px; /* Smaller padding for mobile */
+  .navbar {
+    padding: 4px 6px;
+    /* Keep horizontal layout */
+  }
+  
+  .navbar-item {
+    margin: 0 0.4rem;
+    padding: 4px 8px;
+    font-size: 0.75rem;
   }
   
   .result-item {
