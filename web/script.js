@@ -238,6 +238,12 @@ function formatQueryType(queryType) {
       return 'SMILES';
     case 'inchi':
       return 'InChI';
+    case 'bad_inchi':
+      return 'Malformed InChI';
+    case 'bad_inchikey':
+      return 'Malformed InChIKey';
+    case 'unidentified':
+      return 'Unidentified';
     default:
       return queryType;
   }

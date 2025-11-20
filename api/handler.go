@@ -12,20 +12,35 @@ import (
 )
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
+var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
+var smilesPattern = regexp.MustCompile(`^[CB[OFNSPI]$`) // The only first characters of SMILES in all of PubChemLite
 
 func parseQueryType(q string) string {
 	switch {
-	case strings.HasPrefix(q, "InChI="):
-		log.Println("Query identified as InChI")
-		return "inchi"
-
 	case inchikeyPattern.MatchString(q):
 		log.Println("Query identified as InChIKey")
 		return "inchikey"
 
-	default:
+	case badInchikeyPattern.MatchString(q):
+		log.Println("Query identified as malformed InChIKey")
+		return "bad_inchikey"
+
+	case strings.HasPrefix(q, "InChI="):
+		log.Println("Query identified as InChI")
+		return "inchi"
+
+	case strings.HasPrefix(strings.ToLower(q), "inchi="):
+		log.Println("Query identified as malformed InChI")
+		return "bad_inchi"
+
+	// See if first char matches any first char of SMILES in the db
+	case smilesPattern.MatchString(q[0:1]):
 		log.Println("Query identified as SMILES")
 		return "smiles"
+
+	default:
+		log.Println("Query type could not be identified")
+		return "unidentified"
 	}
 }
 
@@ -109,6 +124,10 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") {
+			q = q[1 : len(q)-1]
+		}
+
 		result := &model.SingleResult{
 			Query:     q,
 			QueryType: parseQueryType(q),
@@ -123,6 +142,18 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 		case "smiles":
 			matchSmiles(index, q, result)
+
+		case "bad_inchi":
+			result.MatchFound = false
+			result.ErrMsg = "Malformed InChI, see documentation"
+
+		case "bad_inchikey":
+			result.MatchFound = false
+			result.ErrMsg = "Malformed InChIKey, see documentation"
+
+		case "unidentified":
+			result.MatchFound = false
+			result.ErrMsg = "Invalid query type, could not identify"
 
 		default:
 			http.Error(w, "An unexpected error occurred when parsing the request", http.StatusInternalServerError)
