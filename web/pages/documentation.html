@@ -22,7 +22,38 @@
             <a class="navbar-item" href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank">Issue Tracker</a>
         </div>
         <div>
-            Hello! Here is the documentation.
+            <h2>Documentation</h2>
+
+            <p>
+                CTS-Lite is a lightweight `Chemical Translation Service`. It allows users to match InChIs, InChIKeys, and SMILES against the PubChemLite database effortlessly.
+            </p>
+
+            <p>
+                To use CTS-Lite, simply enter multiple InChIs, InChIKeys, or SMILES into the input box on the main page. You can separate entries using spaces, tabs, or newlines. After submitting your query, the results will be displayed in the output section.
+            </p>
+
+            <p>
+                To use the REST API, use the following format: `curl localhost:8080/match?q="your_query" TODO: update final URL 
+
+                You can add "--header "Accept: text/csv"" to the end of your curl request to get results in CSV format."
+            </p>
+
+            <p>
+                Query types are parsed with the following criteria:
+                InChIKeys must be of the exact format: 14-10-1, all capital letters
+                InChIs must start with "InChI=" (case-sensitive)
+                SMILES must start with one of the following characters: C, B, [, O, F, N, S, P, I (case-sensitive)
+
+                Malformed queries are identified as follows:
+                InChIKeys that match the following regex pattern: `^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`
+                InChIs that start with "InChI=" but with improper capitalization
+                Anything that doesn't match any of the query types remains `Unidentified`
+            </p>
+
+            <p>
+                InChIKey queries can match on a first-block basis, giving the `first-block` match_level value. SMILES and InChI queries can only be exact matches.
+            </p>
+
         </div>
     </div>
 </body>
