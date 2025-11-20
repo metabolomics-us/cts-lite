@@ -32,7 +32,8 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Create structured display of the results
       displayResults(data, output);
-      outputLabel.textContent = `Results (${countNumMatches(data)} / ${data.length} matches)`;
+      let numMatches = countNumMatches(data);
+      outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${data.length} ${numMatches === 1 ? 'match' : 'matches'}`;
 
     } catch (err) {
       output.textContent = `Error: ${err.message}`;
