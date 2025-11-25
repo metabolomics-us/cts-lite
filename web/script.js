@@ -10,6 +10,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const query = input.value.trim();
     outputContainer.classList.add("visible");
+
+    // Create download buttons
+    const buttonContainer = document.getElementById('download-buttons');
+    buttonContainer.innerHTML = ''; // Clear any existing buttons
+
     if (!query) {
       outputLabel.textContent = "Error";
       output.textContent = "Please enter a query";
@@ -29,11 +34,64 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear previous content (gets rid of "Matching..." text)
       output.textContent = '';
-      
-      // Create structured display of the results
+
+      const downloadCSV = document.createElement('button');
+      downloadCSV.className = 'download-btn';
+      downloadCSV.textContent = 'Download CSV';
+      downloadCSV.addEventListener('click', () => {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "query,query_type,found_match,match_level,error_message,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,pubmed_count,patent_count\n";
+    
+        data.forEach(result => {
+          if (result.matches && result.matches.length > 0) {
+            result.matches.forEach(match => {
+              const row = [
+                result.query,
+                result.query_type,
+                result.found_match,
+                (result.match_level || '').replace(/"/g, '""'),
+                `"${(result.error_message || '').replace(/"/g, '""')}"`,
+                (match.inchikey || '').replace(/"/g, '""'),
+                (match.first_block || '').replace(/"/g, '""'),
+                `"${match.inchi.replace(/"/g, '""')}"`,
+                match.smiles.replace(/"/g, '""'),
+                `"${(match.compound_name || '').replace(/"/g, '""')}"`,
+                (match.molecular_formula || '').replace(/"/g, '""'),
+                match.pubmed_count,
+                match.patent_count
+              ];
+              csvContent += row.join(",") + "\n";
+            });
+          }
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", encodedUri);
+        downloadAnchorNode.setAttribute("download", `ctsl_${new Date().toISOString().slice(0, 19)}.csv`);
+        document.body.appendChild(downloadAnchorNode); // required for firefox
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+      });
+      buttonContainer.appendChild(downloadCSV);
+
+      const downloadJSON = document.createElement('button');
+      downloadJSON.className = 'download-btn';
+      downloadJSON.textContent = 'Download JSON';
+      downloadJSON.addEventListener('click', () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `ctsl_${new Date().toISOString().slice(0, 19)}.json`);
+        document.body.appendChild(downloadAnchorNode); // required for firefox
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+      });
+      buttonContainer.appendChild(downloadJSON);
+
       displayResults(data, output);
       let numMatches = countNumMatches(data);
-      outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${data.length} ${numMatches === 1 ? 'match' : 'matches'}`;
+      outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${data.length} ${data.length === 1 ? 'match' : 'matches'}`;
 
     } catch (err) {
       output.textContent = `Error: ${err.message}`;
@@ -135,41 +193,6 @@ function displayResults(data, outputElement) {
       outputElement.appendChild(separator);
     }
   });
-  
-  // Add toggle for raw JSON view
-  const toggleDiv = document.createElement('div');
-  toggleDiv.className = 'json-toggle-container';
-  toggleDiv.innerHTML = `
-    <button id="json-toggle" class="json-toggle-btn">Show Raw JSON</button>
-    <pre id="raw-json" class="raw-json hidden">${JSON.stringify(data, null, 2)}</pre>
-  `;
-  outputElement.appendChild(toggleDiv);
-  
-  // Add event listener for JSON toggle
-  document.getElementById('json-toggle').addEventListener('click', () => {
-    const rawJson = document.getElementById('raw-json');
-    const toggleBtn = document.getElementById('json-toggle');
-    
-    if (rawJson.classList.contains('hidden')) {
-      rawJson.classList.remove('hidden');
-      toggleBtn.textContent = 'Hide Raw JSON';
-    } else {
-      rawJson.classList.add('hidden');
-      toggleBtn.textContent = 'Show Raw JSON';
-    }
-  });
-
-  // TODO: Only show copy button when json raw is toggled, and keep it at the top above the raw JSON
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'json-toggle-btn';
-  copyBtn.textContent = 'Copy JSON';
-  copyBtn.addEventListener('click', () => {
-    const rawJson = document.getElementById('raw-json');
-    navigator.clipboard.writeText(rawJson.textContent).then(() => {
-      alert('JSON copied to clipboard');
-    });
-  });
-  toggleDiv.appendChild(copyBtn);
 
 }
 
