@@ -21,7 +21,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // Reset output texts
     output.textContent = "Matching...";
+    outputLabel.textContent = "Results";
 
     try {
       const response = await fetch(`http://localhost:8080/match?q=${encodeURIComponent(query)}`);
