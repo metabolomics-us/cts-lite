@@ -23,11 +23,11 @@
         </div>
         <div>
             <form id="query-form">
-                <label for="query-input" id="input-label">Accepts Multiple InChIs, InChIKeys, and SMILES</label>
-                <p style="font-size: 11pt;">Space, Tab, or Newline separated entries (case-sensitive)</p>
+                <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, and SMILES</label>
+                <p style="font-size: 11pt; margin-top: 0.1rem;">Space, Tab, or Newline separated entries</p>
                 <textarea id="query-input" rows="4" cols="40" placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C "></textarea>
                 <br>
-                <button type="submit">Match</button>
+                <button type="submit" style="box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
             </form>
             <div id="output-container">
                 <label for="output-text" id="output-label">Results</label>
