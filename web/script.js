@@ -37,6 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const downloadCSV = document.createElement('button');
       downloadCSV.className = 'download-btn';
+      downloadCSV.type = 'button'; 
       downloadCSV.textContent = 'Download CSV';
       downloadCSV.addEventListener('click', () => {
         let csvContent = "data:text/csv;charset=utf-8,";
@@ -44,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
         data.forEach(result => {
           if (result.matches && result.matches.length > 0) {
+            // Has matches - include each match
             result.matches.forEach(match => {
               const row = [
                 result.query,
@@ -62,6 +64,24 @@ document.addEventListener("DOMContentLoaded", () => {
               ];
               csvContent += row.join(",") + "\n";
             });
+          } else {
+            // No matches - include row with query info and empty match fields
+            const row = [
+              result.query,
+              result.query_type,
+              result.found_match,
+              '', // match level
+              `"${(result.error_message || '').replace(/"/g, '""')}"`,
+              '', // inchikey
+              '', // first_block
+              '', // inchi
+              '', // smiles
+              '', // compound_name
+              '', // molecular_formula
+              '', // pubmed_count
+              ''  // patent_count
+            ];
+            csvContent += row.join(",") + "\n";
           }
         });
 
@@ -77,6 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const downloadJSON = document.createElement('button');
       downloadJSON.className = 'download-btn';
+      downloadJSON.type = 'button'; 
       downloadJSON.textContent = 'Download JSON';
       downloadJSON.addEventListener('click', () => {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
