@@ -1,4 +1,5 @@
 PubChemLite*.csv
 __pycache__
 report*.html
+maxurl.csv
 .idea
