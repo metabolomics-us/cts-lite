@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CTS-Lite</title>
+    <title>Documentation - CTS-Lite</title>
     <link rel="stylesheet" href="../styles.css">
+    <link rel="stylesheet" href="documentation.css">
     <link rel="icon" type="image/jpg" href="../assets/cts-lite.jpg"/>
 </head>
 <body>
@@ -21,45 +22,125 @@
 
             <a class="navbar-item" href="https://github.com/metabolomics-us/cts-lite/issues" title="Report issues or request features" target="_blank">Feedback</a>
         </div>
-        <div>
-            <h2 style="text-align: center; margin-top: -2rem">Documentation</h2>
+        
+        <div class="documentation-container">
+            <h2 class="doc-title">Documentation</h2>
 
-            <p>
-                CTS-Lite is a lightweight chemical translation service based off of the Fiehn Lab's original [CTS](https://cts.fiehnlab.ucdavis.edu/). It allows users to match InChIs, InChIKeys, and SMILES against the PubChemLite database.
-            </p>
+            <section class="doc-section">
+                <p class="doc-intro">
+                    CTS-Lite is a lightweight chemical translation service based on the Fiehn Lab's original 
+                    <a href="https://cts.fiehnlab.ucdavis.edu/" target="_blank" class="doc-link">CTS</a>. 
+                    It allows users to match InChIs, InChIKeys, and SMILES against the PubChemLite database.
+                </p>
+            </section>
 
-            <p>
-                <h3>Using CTS-Lite</h3>
-                To use CTS-Lite, simply enter InChIs, InChIKeys, and SMILES into the input box on the main page. You can separate entries using spaces, tabs, or newlines. When you click 'Match', the results will be displayed in the output section. Results can be downloaded in JSON and CSV formats using the buttons provided.
-            </p>
+            <section class="doc-section">
+                <h3 class="doc-heading">Using CTS-Lite</h3>
+                <p>
+                    To use CTS-Lite, simply enter InChIs, InChIKeys, and SMILES into the input box on the main page. 
+                    You can separate entries using spaces, tabs, or newlines. When you click <code class="inline-code">Match</code>, the results will 
+                    be displayed in the results section. Results can be downloaded in JSON and CSV formats using the 
+                    buttons provided.
+                </p>
+            </section>
 
-            <p>
-                <!-- TODO: Change URL to final DNS -->
-                <h3>REST API</h3>
-                To use the REST API, use the following format: `curl localhost:8080/match?q="your_query"`
-                <br>
-                You can add `--header "Accept: text/csv"` to the end of your curl request to get results in CSV format.
-                <br>
-                Please note that query lengths may be limited by your browser, meaning <i>very</i> large queries may throw an error. It is obvious when you see it, the result box will print something like `Error: Window.fetch: ...`. For perspective, I was able to successfully run queries with 500,000+ characters in Firefox.
-            </p>
+            <section class="doc-section">
+                <h3 class="doc-heading">REST API</h3>
+                <p>
+                    To use the REST API, use the following format:
+                </p>
+                <div class="code-block">
+                    <code>curl localhost:8080/match?q="your_query"</code>
+                </div>
+                <p>
+                    You can add the following header to get results in CSV format:
+                </p>
+                <div class="code-block">
+                    <code>curl localhost:8080/match?q="your_query" --header "Accept: text/csv"</code>
+                </div>
+                <div class="doc-note">
+                    <strong>Note:</strong> Query lengths may be limited by your browser, meaning <em>very</em> large queries may throw an error. If this occurs, you'll see something like <code class="inline-code">Error: Window.fetch: ...</code> in the result box. 
+                    <br><br>Brief testing showed the cutoff for Firefox to be around 700,000 characters (~22,000 SMILES queries). 
+                </div>
 
-            <p>
-                <h3>Query Types</h3>
-                Query types are parsed using the following logic:
-                InChIKeys must be of the exact format: 14-10-1, all capital letters
-                InChIs must start with "InChI=" (case-sensitive)
-                SMILES must start with one of the following characters: C, B, [, O, F, N, S, P, I (case-sensitive)
+                <h4 class="doc-subheading">JSON Example Response</h4>
+                <p>Example query <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   bad_query</code></p>
+                <div class="code-block">
+                    <pre><code>[
+  {
+    "query": "XMBWDFGMSWQBCA-UHDFADDYSA-N",
+    "query_type": "inchikey",
+    "found_match": true,
+    "match_level": "First Block",
+    "matches": [
+      {
+        "inchikey": "XMBWDFGMSWQBCA-UHFFFAOYSA-N",
+        "first_block": "XMBWDFGMSWQBCA",
+        "inchi": "InChI=1S/HI/h1H",
+        "smiles": "I",
+        "compound_name": "iodane",
+        "molecular_formula": "HI",
+        "pubmed_count": "10707",
+        "patent_count": "363920"
+      }
+    ],
+    "error_message": ""
+  },
+  {
+    "query": "bad_query",
+    "query_type": "unidentified",
+    "found_match": false,
+    "match_level": "",
+    "matches": null,
+    "error_message": "Invalid query type, could not identify"
+  }
+]</code></pre>
+                </div>
+            </section>
 
-                Malformed queries are identified as follows:
-                InChIKeys that match the following regex pattern: `^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`
-                InChIs that start with "InChI=" but with improper capitalization
-                Anything else is labeled as `Unidentified`
-            </p>
+            <section class="doc-section">
+                <h3 class="doc-heading">Query Types</h3>
+                <p>
+                    Query types are parsed using the following logic:
+                </p>
+                <ul class="doc-list">
+                    <li>
+                        <strong>InChIKeys</strong> must be of the exact format: 14-10-1, all capital letters
+                    </li>
+                    <li>
+                        <strong>InChIs</strong> must start with <code class="inline-code">InChI=</code> (case-sensitive)
+                    </li>
+                    <li>
+                        <strong>SMILES</strong> must start with one of the following characters: 
+                        <code class="inline-code">C, B, [, O, F, N, S, P, I</code> (case-sensitive)
+                    </li>
+                </ul>
 
-            <p>
-                <h3>Match Levels</h3>
-                InChIKey queries can match on a first-block basis, giving the `first-block` match_level value. SMILES and InChI queries can only be exact matches.
-            </p>
+                <h4 class="doc-subheading">Malformed Queries</h4>
+                <p>
+                    Malformed queries are identified as follows:
+                </p>
+                <ul class="doc-list">
+                    <li>
+                        <strong>InChIKeys</strong> that match the regex pattern: 
+                        <code class="inline-code">^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$</code>
+                    </li>
+                    <li>
+                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code> but with improper capitalization
+                    </li>
+                    <li>
+                        Anything else is labeled as <code class="inline-code">Unidentified</code>
+                    </li>
+                </ul>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading">Match Levels</h3>
+                <p>
+                    InChIKey queries can match by first-block if they don't find an exact match. This gives the <code class="inline-code">first-block</code> 
+                    match level value. SMILES and InChI queries can only be exact matches.
+                </p>
+            </section>
 
         </div>
     </div>

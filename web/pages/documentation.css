@@ -1,0 +1,200 @@
+/* Documentation Page Specific Styles */
+
+.documentation-container {
+  max-width: 900px;
+  width: 100%;
+  padding: 2rem;
+  margin: 0 auto;
+}
+
+.doc-title {
+  text-align: center;
+  color: #1a3e68;
+  font-size: 2.5rem;
+  margin-bottom: 2rem;
+  margin-top: -3.5rem;
+  font-weight: 600;
+}
+
+.doc-section {
+  margin-bottom: 3rem;
+  padding: 1.5rem;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.doc-intro {
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: #333;
+  margin: 0;
+}
+
+.doc-heading {
+  color: #1a3e68;
+  font-size: 1.8rem;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 3px solid #1a3e68;
+}
+
+.doc-subheading {
+  color: #1a3e68;
+  font-size: 1.3rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.doc-section p {
+  line-height: 1.7;
+  color: #444;
+  margin-bottom: 0rem;
+}
+
+.doc-list {
+  line-height: 1.8;
+  color: #444;
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.doc-list li {
+  margin-bottom: 0.75rem;
+}
+
+.doc-list li strong {
+  color: #235288;
+}
+
+.code-block {
+  background-color: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #1a3e68;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: 'Courier New', Consolas, Monaco, monospace;
+  font-size: 0.95rem;
+  color: #2d3436;
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.inline-code {
+  background-color: #ebebeb;
+  border: 1px solid #dbdbdb;
+  border-radius: 3px;
+  padding: 0.2rem 0.2rem;
+  padding-bottom: 0;
+  font-family: 'Courier New', Consolas, Monaco, monospace;
+  font-size: 0.9em;
+  color: #2c3f36;
+}
+
+.doc-note {
+  background-color: #fff9e6;
+  border-left: 4px solid #ffc107;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  border-radius: 4px;
+  color: #856404;
+}
+
+.doc-note strong {
+  color: #664d03;
+}
+
+.doc-link {
+  color: #1a3e68;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.3s ease;
+}
+
+.doc-link:hover {
+  border-bottom-color: #1a3e68;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .documentation-container {
+    padding: 1.5rem;
+  }
+
+  .doc-title {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  .doc-section {
+    padding: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .doc-heading {
+    font-size: 1.5rem;
+  }
+
+  .doc-subheading {
+    font-size: 1.2rem;
+  }
+
+  .code-block {
+    padding: 0.75rem 1rem;
+  }
+
+  .code-block code {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .documentation-container {
+    padding: 1rem;
+  }
+
+  .doc-title {
+    font-size: 1.75rem;
+    margin-bottom: 1rem;
+    margin-top: 2rem;
+  }
+
+  .doc-section {
+    padding: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .doc-heading {
+    font-size: 1.3rem;
+  }
+
+  .doc-subheading {
+    font-size: 1.1rem;
+  }
+
+  .doc-intro {
+    font-size: 1rem;
+  }
+
+  .doc-list {
+    margin-left: 1rem;
+  }
+
+  .code-block code {
+    font-size: 0.8rem;
+  }
+}
