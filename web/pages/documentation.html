@@ -19,27 +19,33 @@
             </header>
             </a>
 
-            <a class="navbar-item" href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank">Issue Tracker</a>
+            <a class="navbar-item" href="https://github.com/metabolomics-us/cts-lite/issues" title="Report issues or request features" target="_blank">Feedback</a>
         </div>
         <div>
-            <h2>Documentation</h2>
+            <h2 style="text-align: center; margin-top: -2rem">Documentation</h2>
 
             <p>
-                CTS-Lite is a lightweight `Chemical Translation Service`. It allows users to match InChIs, InChIKeys, and SMILES against the PubChemLite database effortlessly.
+                CTS-Lite is a lightweight chemical translation service based off of the Fiehn Lab's original [CTS](https://cts.fiehnlab.ucdavis.edu/). It allows users to match InChIs, InChIKeys, and SMILES against the PubChemLite database.
             </p>
 
             <p>
-                To use CTS-Lite, simply enter multiple InChIs, InChIKeys, or SMILES into the input box on the main page. You can separate entries using spaces, tabs, or newlines. After submitting your query, the results will be displayed in the output section.
+                <h3>Using CTS-Lite</h3>
+                To use CTS-Lite, simply enter InChIs, InChIKeys, and SMILES into the input box on the main page. You can separate entries using spaces, tabs, or newlines. When you click 'Match', the results will be displayed in the output section. Results can be downloaded in JSON and CSV formats using the buttons provided.
             </p>
 
             <p>
-                To use the REST API, use the following format: `curl localhost:8080/match?q="your_query" TODO: update final URL 
-
-                You can add "--header "Accept: text/csv"" to the end of your curl request to get results in CSV format."
+                <!-- TODO: Change URL to final DNS -->
+                <h3>REST API</h3>
+                To use the REST API, use the following format: `curl localhost:8080/match?q="your_query"`
+                <br>
+                You can add `--header "Accept: text/csv"` to the end of your curl request to get results in CSV format.
+                <br>
+                Please note that query lengths may be limited by your browser, meaning <i>very</i> large queries may throw an error. It is obvious when you see it, the result box will print something like `Error: Window.fetch: ...`. For perspective, I was able to successfully run queries with 500,000+ characters in Firefox.
             </p>
 
             <p>
-                Query types are parsed with the following criteria:
+                <h3>Query Types</h3>
+                Query types are parsed using the following logic:
                 InChIKeys must be of the exact format: 14-10-1, all capital letters
                 InChIs must start with "InChI=" (case-sensitive)
                 SMILES must start with one of the following characters: C, B, [, O, F, N, S, P, I (case-sensitive)
@@ -47,10 +53,11 @@
                 Malformed queries are identified as follows:
                 InChIKeys that match the following regex pattern: `^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`
                 InChIs that start with "InChI=" but with improper capitalization
-                Anything that doesn't match any of the query types remains `Unidentified`
+                Anything else is labeled as `Unidentified`
             </p>
 
             <p>
+                <h3>Match Levels</h3>
                 InChIKey queries can match on a first-block basis, giving the `first-block` match_level value. SMILES and InChI queries can only be exact matches.
             </p>
 
