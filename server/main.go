@@ -28,6 +28,10 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
+	// Serve the frontend
+	fs := http.FileServer(http.Dir("./web"))
+	http.Handle("/", fs)
+
 	// Load PubChemLite into memory
 	dataset := "./data/PubChemLite_CCSbase_20250905_trimmed.csv"
 	index, err := model.LoadPubChemLite(dataset)
@@ -36,7 +40,6 @@ func main() {
 	}
 
 	// Default endpoints for health checks
-	http.HandleFunc("/", corsMiddleware(api.Status))
 	http.HandleFunc("/health", corsMiddleware(api.Status))
 	http.HandleFunc("/status", corsMiddleware(api.Status))
 
