@@ -1,3 +1,4 @@
 - Fix csv download button, only saved 39 lines
 - Fix formatting next to results count and buttons when number is large
 - Deploy on AWS
+- Adjust links in documentation (change from localhost)
