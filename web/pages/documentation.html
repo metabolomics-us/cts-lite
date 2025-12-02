@@ -52,16 +52,22 @@
             <section class="doc-section">
                 <h3 class="doc-heading">REST API</h3>
                 <p>
-                    To use the REST API, use the following format:
+                    To make a single query using the REST API, use the following format:
                 </p>
                 <div class="code-block">
                     <code>curl localhost:8080/match?q="your_query"</code>
                 </div>
                 <p>
-                    You can add the following header to get results in CSV format:
+                    To make multiple queries at once, use the following format:
                 </p>
                 <div class="code-block">
-                    <code>curl localhost:8080/match?q="your_query" --header "Accept: text/csv"</code>
+                    <code>curl -G --data-urlencode "q=query1 query2 ..." "http://localhost:8080/match"</code>
+                </div>
+                <p>
+                    You can append the following header to your command to get results in CSV format:
+                </p>
+                <div class="code-block">
+                    <code> --header "Accept: text/csv"</code>
                 </div>
 
                 <h4 class="doc-subheading">JSON Example Response</h4>
