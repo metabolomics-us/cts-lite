@@ -42,8 +42,8 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadCSV.type = 'button'; 
       downloadCSV.textContent = 'Download CSV';
       downloadCSV.addEventListener('click', () => {
-        let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "query,query_type,found_match,match_level,error_message,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,pubmed_count,patent_count\n";
+        let csv = "";
+        csv += "query,query_type,found_match,match_level,error_message,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,pubmed_count,patent_count\n";
     
         data.forEach(result => {
           if (result.matches && result.matches.length > 0) {
@@ -64,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 match.pubmed_count,
                 match.patent_count
               ];
-              csvContent += row.join(",") + "\n";
+              csv += row.join(",") + "\n";
             });
           } else {
             // No matches - include row with query info and empty match fields
@@ -83,11 +83,11 @@ document.addEventListener("DOMContentLoaded", () => {
               '', // pubmed_count
               ''  // patent_count
             ];
-            csvContent += row.join(",") + "\n";
+            csv += row.join(",") + "\n";
           }
         });
 
-        const encodedUri = encodeURI(csvContent);
+        const encodedUri = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", encodedUri);
         downloadAnchorNode.setAttribute("download", `ctsl_${new Date().toISOString().slice(0, 19)}.csv`);
