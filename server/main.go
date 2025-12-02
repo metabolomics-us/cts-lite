@@ -29,8 +29,8 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func main() {
 	// Load PubChemLite into memory
-	file := "./data/PubChemLite_CCSbase_20250905_trimmed.csv"
-	index, err := model.LoadPubChemLite(file)
+	dataset := "./data/PubChemLite_CCSbase_20250905_trimmed.csv"
+	index, err := model.LoadPubChemLite(dataset)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
 	}
