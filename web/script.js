@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
     outputLabel.textContent = "Results";
 
     try {
-      const response = await fetch(`http://localhost:8080/match?q=${encodeURIComponent(query)}`);
+      const response = await fetch(`/match?q=${encodeURIComponent(query)}`);
 
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
