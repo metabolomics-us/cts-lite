@@ -129,14 +129,14 @@
                 </p>
                 <ul class="doc-list">
                     <li>
-                        <strong>InChIKeys</strong> that match the regex pattern: 
+                        <strong>InChIKeys</strong> that match the <a href="https://regexper.com/#%5E%5Ba-zA-Z%5D%7B13%2C17%7D-%5Ba-zA-Z%5D%7B10%2C12%7D-%5Ba-zA-Z%5D%7B1%2C3%7D%24" target="_blank">regex</a> pattern: 
                         <code class="inline-code">^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$</code>
                     </li>
                     <li>
-                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code> but with improper capitalization
+                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code>, but with improper capitalization
                     </li>
                     <li>
-                        Anything else is labeled as <code class="inline-code">Unidentified</code>
+                        <strong>Unidentified</strong> are queries that didn't fit any of the above criteria
                     </li>
                 </ul>
             </section>
