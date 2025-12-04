@@ -33,7 +33,7 @@ func main() {
 	http.Handle("/", fs)
 
 	// Load PubChemLite into memory
-	dataset := "./data/PubChemLite_CCSbase_20250905_trimmed.csv"
+	dataset := "./data/PubChemLite_CCSbase_20251128_trimmed.csv"
 	index, err := model.LoadPubChemLite(dataset)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
