@@ -26,7 +26,7 @@ type PubChemIndex struct {
 	Compounds    []*Compound
 	ByInChIKey   map[string]*Compound
 	ByInChI      map[string]*Compound
-	BySmiles     map[string]*Compound
+	BySmiles     map[string][]*Compound
 	ByFirstBlock map[string][]*Compound
 }
 
@@ -52,7 +52,7 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 	index := &PubChemIndex{
 		ByInChIKey:   make(map[string]*Compound),
 		ByInChI:      make(map[string]*Compound),
-		BySmiles:     make(map[string]*Compound),
+		BySmiles:     make(map[string][]*Compound),
 		ByFirstBlock: make(map[string][]*Compound),
 	}
 
@@ -84,7 +84,7 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 		index.Compounds = append(index.Compounds, c)
 		index.ByInChIKey[c.InChIKey] = c
 		index.ByInChI[c.InChI] = c
-		index.BySmiles[c.Smiles] = c
+		index.BySmiles[c.Smiles] = append(index.BySmiles[c.Smiles], c)
 		index.ByFirstBlock[c.FirstBlock] = append(index.ByFirstBlock[c.FirstBlock], c)
 	}
 
