@@ -10,12 +10,14 @@ import (
 )
 
 type Compound struct {
+	Identifier       string `json:"identifier"`
 	InChIKey         string `json:"inchikey"`
 	FirstBlock       string `json:"first_block"`
 	InChI            string `json:"inchi"`
 	Smiles           string `json:"smiles"`
 	CompoundName     string `json:"compound_name"`
 	MolecularFormula string `json:"molecular_formula"`
+	MonoisotopicMass string `json:"monoisotopic_mass"`
 	PubMedCount      string `json:"pubmed_count"`
 	PatentCount      string `json:"patent_count"`
 }
@@ -67,14 +69,16 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 
 		// This only works on the PubChemLite dataset after running the `pubchemlite_trimmer.sh` script
 		c := &Compound{
-			FirstBlock:       line[0],
-			PubMedCount:      line[1],
-			PatentCount:      line[2],
-			MolecularFormula: line[3],
-			Smiles:           line[4],
-			InChI:            line[5],
-			InChIKey:         line[6],
-			CompoundName:     line[7],
+			Identifier:       line[0],
+			FirstBlock:       line[1],
+			PubMedCount:      line[2],
+			PatentCount:      line[3],
+			MolecularFormula: line[4],
+			Smiles:           line[5],
+			InChI:            line[6],
+			InChIKey:         line[7],
+			MonoisotopicMass: line[8],
+			CompoundName:     line[9],
 		}
 
 		index.Compounds = append(index.Compounds, c)
