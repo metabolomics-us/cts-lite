@@ -1,2 +1,0 @@
-Make my own CTS-Lite? Needs to be larger
-Switch to JSON POST requests
