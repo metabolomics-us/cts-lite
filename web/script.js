@@ -163,12 +163,16 @@ function displayResults(data, outputElement) {
       const matchesSection = document.createElement('div');
       matchesSection.className = 'matches-section';
       
+      let i = 1; // just an index for visual
       result.matches.forEach((match) => {
+        // Breakline for spacing between matches
+        const breakLine = document.createElement('br');
         const matchDiv = document.createElement('div');
+
         matchDiv.className = 'match-item';
         matchDiv.innerHTML = `
           <div class="match-header">
-            MATCH &mdash; <strong>${escapeHtml(match.compound_name || 'Unnamed Compound').toUpperCase()}</strong>
+            MATCH ${result.matches.length > 1 ? i : ""} &mdash; <strong>${escapeHtml(match.compound_name || 'Unnamed Compound').toUpperCase()}</strong>
           </div>
           <hr>
           <div class="match-details">
@@ -215,6 +219,11 @@ function displayResults(data, outputElement) {
           </div>
         `;
         matchesSection.appendChild(matchDiv);
+        if (i < result.matches.length) {
+          matchesSection.appendChild(breakLine);
+        }
+
+        i++;
       });
       
       querySection.appendChild(matchesSection);
