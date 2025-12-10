@@ -6,6 +6,7 @@ on:
 
 jobs:
   build_and_push:
+    if: "! contains(github.event.head_commit.message, 'nodeploy')"
     runs-on: ubuntu-latest
 
     steps:
@@ -31,5 +32,13 @@ jobs:
       run: |
         docker tag cts-lite:latest $ECR_REGISTRY/cts-lite:latest
         docker push $ECR_REGISTRY/cts-lite:latest
-      
 
+    - name: Force New ECS Deployment
+      env:
+        CLUSTER: ${{ secrets.AWS_CLUSTER_NAME }}
+        SERVICE: ${{ secrets.AWS_SERVICE_NAME }}
+      run: |
+        aws ecs update-service \
+        --cluster $CLUSTER \
+        --service $SERVICE \
+        --force-new-deployment
