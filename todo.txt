@@ -1,5 +1,2 @@
-Add database identifier to results
-Duplicate smiles, C for Methane and Carbon
-Carbon name is incorrectly labeled as Methane in PubChemLite file
-Check SMILES column for how many duplicates
-Correctly handle multiple matches on frontend and backend
+Make my own CTS-Lite? Needs to be larger
+Switch to JSON POST requests
