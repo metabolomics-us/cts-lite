@@ -172,7 +172,7 @@ function displayResults(data, outputElement) {
         matchDiv.className = 'match-item';
         matchDiv.innerHTML = `
           <div class="match-header">
-            MATCH ${result.matches.length > 1 ? i : ""} &mdash; <strong>${escapeHtml(match.compound_name || 'Unnamed Compound').toUpperCase()}</strong>
+            MATCH ${result.matches.length > 1 ? i : ""} &mdash; <strong><a href=https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}#Known+Use+Information= target=_blank style="text-decoration: underline; color: #1a3e68">${escapeHtml(match.compound_name || 'Unnamed Compound').toUpperCase()}</a></strong>
           </div>
           <hr>
           <div class="match-details">
