@@ -205,7 +205,7 @@ function displayResults(data, outputElement) {
               <span class="monospace">${escapeHtml(match.molecular_formula)}</span>
             </div>
             <div class="match-field">
-              <label>Monoisotopic Mass:</label>
+              <label>Exact Mass:</label>
               <span class="monospace">${escapeHtml(match.monoisotopic_mass)}</span>
             </div>
             <div class="match-field">
