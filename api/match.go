@@ -42,13 +42,16 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 }
 
 func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compound, ok := index.BySmiles[query]
+	compounds, ok := index.BySmiles[query]
 	if !ok {
 		result.MatchFound = false
 		result.ErrMsg = "No compound found"
 		return
 	}
-	result.MatchFound = true
-	result.MatchLevel = "Exact SMILES"
-	result.Matches = []*model.Compound{compound}
+
+	for _, compound := range compounds {
+		result.Matches = append(result.Matches, compound)
+		result.MatchFound = true
+		result.MatchLevel = "Exact SMILES"
+	}
 }

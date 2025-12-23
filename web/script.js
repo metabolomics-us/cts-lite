@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadCSV.textContent = 'Download CSV';
       downloadCSV.addEventListener('click', () => {
         let csv = "";
-        csv += "query,query_type,found_match,match_level,error_message,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,pubmed_count,patent_count\n";
+        csv += "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,pubmed_count,patent_count\n";
     
         data.forEach(result => {
           if (result.matches && result.matches.length > 0) {
@@ -55,12 +55,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 result.found_match,
                 (result.match_level || '').replace(/"/g, '""'),
                 `"${(result.error_message || '').replace(/"/g, '""')}"`,
+                (match.identifier || '').replace(/"/g, '""'),
                 (match.inchikey || '').replace(/"/g, '""'),
                 (match.first_block || '').replace(/"/g, '""'),
                 `"${match.inchi.replace(/"/g, '""')}"`,
                 match.smiles.replace(/"/g, '""'),
                 `"${(match.compound_name || '').replace(/"/g, '""')}"`,
                 (match.molecular_formula || '').replace(/"/g, '""'),
+                match.monoisotopic_mass,
                 match.pubmed_count,
                 match.patent_count
               ];
@@ -74,12 +76,14 @@ document.addEventListener("DOMContentLoaded", () => {
               result.found_match,
               '', // match level
               `"${(result.error_message || '').replace(/"/g, '""')}"`,
+              '', // pubchem_cid
               '', // inchikey
               '', // first_block
               '', // inchi
               '', // smiles
               '', // compound_name
               '', // molecular_formula
+              '', // monoisotopic_mass
               '', // pubmed_count
               ''  // patent_count
             ];
@@ -157,15 +161,23 @@ function displayResults(data, outputElement) {
       const matchesSection = document.createElement('div');
       matchesSection.className = 'matches-section';
       
+      let i = 1; // just an index for visual
       result.matches.forEach((match) => {
+        // Breakline for spacing between matches
+        const breakLine = document.createElement('br');
         const matchDiv = document.createElement('div');
+
         matchDiv.className = 'match-item';
         matchDiv.innerHTML = `
           <div class="match-header">
-            MATCH &mdash; <strong>${escapeHtml(match.compound_name || 'Unnamed Compound').toUpperCase()}</strong>
+            MATCH ${result.matches.length > 1 ? i : ""} &mdash; <strong><a href=https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}#Known+Use+Information= target=_blank style="text-decoration: underline; color: #1a3e68">${escapeHtml(match.compound_name || 'Unnamed Compound').toUpperCase()}</a></strong>
           </div>
           <hr>
           <div class="match-details">
+            <div class="match-field">
+              <label>PubChem CID:</label>
+              <span class="monospace">${escapeHtml(match.identifier)}</span>
+            </div>
             <div class="match-field">
               <label>InChIKey:</label>
               <span class="monospace">${escapeHtml(match.inchikey)}</span>
@@ -180,7 +192,7 @@ function displayResults(data, outputElement) {
             </div>
             <div class="match-field">
               <label>SMILES:</label>
-              <span class="monospace">${escapeHtml(match.smiles)}</span>
+              <span class="monospace small-text">${escapeHtml(match.smiles)}</span>
             </div>
             <div class="match-field">
               <label>Compound Name:</label>
@@ -188,19 +200,28 @@ function displayResults(data, outputElement) {
             </div>
             <div class="match-field">
               <label>Mol. Formula:</label>
-              <span class="monospace small-text">${escapeHtml(match.molecular_formula)}</span>
+              <span class="monospace">${escapeHtml(match.molecular_formula)}</span>
+            </div>
+            <div class="match-field">
+              <label>Exact Mass:</label>
+              <span class="monospace">${escapeHtml(match.monoisotopic_mass)}</span>
             </div>
             <div class="match-field">
               <label>PubMed Count:</label>
-              <span class="monospace small-text">${escapeHtml(match.pubmed_count)}</span>
+              <span class="monospace">${escapeHtml(match.pubmed_count)}</span>
             </div>
             <div class="match-field">
               <label>Patent Count:</label>
-              <span class="monospace small-text">${escapeHtml(match.patent_count)}</span>
+              <span class="monospace">${escapeHtml(match.patent_count)}</span>
             </div>
           </div>
         `;
         matchesSection.appendChild(matchDiv);
+        if (i < result.matches.length) {
+          matchesSection.appendChild(breakLine);
+        }
+
+        i++;
       });
       
       querySection.appendChild(matchesSection);

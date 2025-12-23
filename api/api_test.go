@@ -23,12 +23,14 @@ func loadMockIndex(t *testing.T) *model.PubChemIndex {
 // Data must match mock_pubchemlite.csv exactly
 func fakeWaterCompound() *model.Compound {
 	return &model.Compound{
+		Identifier:       "1",
 		InChIKey:         "MYFAKEINCHIKEY-ISRIGHTHER-E",
 		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/H2O/h1H2",
 		Smiles:           "O",
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
+		MonoisotopicMass: "100",
 		PubMedCount:      "10",
 		PatentCount:      "2",
 	}
@@ -37,12 +39,14 @@ func fakeWaterCompound() *model.Compound {
 // Data must match mock_pubchemlite.csv exactly
 func fakeMethaneCompound() *model.Compound {
 	return &model.Compound{
+		Identifier:       "2",
 		InChIKey:         "MYFAKEINCHIKEY-ANOTHERONE-E",
 		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/CH4/h1H4",
 		Smiles:           "C",
 		CompoundName:     "Methane",
 		MolecularFormula: "CH4",
+		MonoisotopicMass: "99",
 		PubMedCount:      "18",
 		PatentCount:      "7",
 	}
