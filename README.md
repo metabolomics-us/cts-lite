@@ -2,6 +2,9 @@
 
 A lightweight Chemical Translation Service using the PubChemLite dataset, written in Go
 
+### Website
+- https://cts-lite.metabolomics.us/
+
 ### Documentation
 - Please refer to the [documentation page](web/pages/documentation.html) for questions regarding use of the API
 
