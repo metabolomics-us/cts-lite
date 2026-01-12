@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path"
 )
 
 // corsMiddleware adds CORS headers to HTTP responses
@@ -33,7 +35,12 @@ func main() {
 	http.Handle("/", fs)
 
 	// Load PubChemLite into memory
-	dataset := "./data/PubChemLite_CCSbase_20250905_trimmed.csv"
+	datadir := os.Getenv("CTS_DATA_DIR")
+	if datadir == "" {
+		// For local development when not using the Docker image
+		datadir = "./data"
+	}
+	dataset := path.Join(datadir, "PubChemLite_CCSbase_20250905_trimmed.csv")
 	index, err := model.LoadPubChemLite(dataset)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
