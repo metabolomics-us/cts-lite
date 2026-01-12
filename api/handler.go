@@ -187,5 +187,5 @@ func Status(w http.ResponseWriter, _ *http.Request) {
 		log.Printf("Status check failed to write response: %v", err)
 		return
 	}
-	log.Println("Status check successful")
+	// log.Println("Status check successful") // Was inflating the logs unnecessarily
 }
