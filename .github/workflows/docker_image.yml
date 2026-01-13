@@ -20,9 +20,6 @@ jobs:
     - name: Run Go Tests
       run: go test ./... -v
 
-    - name: Build the Docker image
-      run: docker build . -t cts-lite:latest
-
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -33,6 +30,9 @@ jobs:
     - name: AWS Login
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build the Docker image
+      run: docker build . -t cts-lite:latest
 
     - name: Push to ECR
       env:
