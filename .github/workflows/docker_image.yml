@@ -1,0 +1,52 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build_and_push:
+    if: "! contains(github.event.head_commit.message, 'nodeploy')"
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.23"
+
+    - name: Run Go Tests
+      run: go test ./... -v
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: AWS Login
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build the Docker image
+      run: docker build . -t cts-lite:latest
+
+    - name: Push to ECR
+      env:
+        ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
+      run: |
+        docker tag cts-lite:latest $ECR_REGISTRY/cts-lite:latest
+        docker push $ECR_REGISTRY/cts-lite:latest
+
+    - name: Force New ECS Deployment
+      env:
+        CLUSTER: ${{ secrets.AWS_CLUSTER_NAME }}
+        SERVICE: ${{ secrets.AWS_SERVICE_NAME }}
+      run: |
+        aws ecs update-service \
+        --cluster $CLUSTER \
+        --service $SERVICE \
+        --force-new-deployment
