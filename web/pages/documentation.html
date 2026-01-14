@@ -44,29 +44,30 @@
                 </p>
 
                 <div class="doc-note">
-                    <strong>Note:</strong> Query lengths may be limited by your browser, meaning large queries may throw an error. If this occurs, you'll see something like <code class="inline-code">Error: Server returned 414</code> in the result box.
+                    <strong>Note:</strong> Very large queries may take some time to process. Please be patient while the server handles your request.
                 </div>
             </section>
 
             <section class="doc-section">
                 <h3 class="doc-heading">REST API</h3>
                 <p>
-                    To make a single query using the REST API, use the following format:
+                    To make queries using the REST API, use the following format:
                 </p>
                 <div class="code-block">
-                    <code>curl cts-lite.metabolomics.us/match?q="your_query"</code>
+                    <code>curl -X POST \
+ -H "Content-Type: application/json" \
+ -d '{"queries":"query1 query2 ..."}' \
+ "cts-lite.metabolomics.us/match"</code>
                 </div>
                 <p>
-                    To make multiple queries at once, use the following format:
+                    You can add the text/csv header to your command to get results in <strong>CSV format</strong>:
                 </p>
                 <div class="code-block">
-                    <code>curl -G --data-urlencode "q=query1 query2 ..." "cts-lite.metabolomics.us/match"</code>
-                </div>
-                <p>
-                    You can append the following header to your command to get results in CSV format:
-                </p>
-                <div class="code-block">
-                    <code> --header "Accept: text/csv"</code>
+                <code>curl -X POST \
+ -H "Content-Type: application/json" \
+ -H "Accept: text/csv" \
+ -d '{"queries":"query1 query2 ..."}' \
+ "cts-lite.metabolomics.us/match"</code>
                 </div>
 
                 <h4 class="doc-subheading">JSON Example Response</h4>
