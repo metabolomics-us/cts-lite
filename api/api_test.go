@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -72,8 +73,43 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 }
 
-func TestSmilesMatchEndpoint(t *testing.T) {
+func TestDeprecatedGetRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/match?q=O", nil)
+
+	w := httptest.NewRecorder()
+
+	mockIndex := loadMockIndex(t)
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 but got %d", res.StatusCode)
+	}
+
+	body, _ := io.ReadAll(res.Body)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	if len(results[0].Matches) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+	}
+
+	got := results[0].Matches[0]
+	want := fakeWaterCompound()
+
+	assertCompound(t, want, got)
+}
+
+func TestSmilesMatchEndpoint(t *testing.T) {
+	payload := `{"queries":"O"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
@@ -104,7 +140,10 @@ func TestSmilesMatchEndpoint(t *testing.T) {
 }
 
 func TestFullInChIKeyMatchEndpoint(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/match?q=MYFAKEINCHIKEY-ANOTHERONE-E", nil)
+	payload := `{"queries":"MYFAKEINCHIKEY-ANOTHERONE-E"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
@@ -135,7 +174,10 @@ func TestFullInChIKeyMatchEndpoint(t *testing.T) {
 }
 
 func TestFirstBlockMatchEndpoint(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/match?q=MYFAKEINCHIKEY-NOTNOTNOTN-O", nil)
+	payload := `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
@@ -171,7 +213,10 @@ func TestFirstBlockMatchEndpoint(t *testing.T) {
 }
 
 func TestInChIMatchEndpoint(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/match?q=InChI=1S/H2O/h1H2", nil)
+	payload := `{"queries":"InChI=1S/H2O/h1H2"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
@@ -203,7 +248,10 @@ func TestInChIMatchEndpoint(t *testing.T) {
 
 func TestMultiQuery(t *testing.T) {
 	// 5 queries: smiles O, smiles C, bad smiles, fake inchikey, bad InChI // space separated (%20)
-	req := httptest.NewRequest(http.MethodGet, "/match?q=O%20C%20BADSMILES%20MYFAKEINCHIKEY-ISRIGHTHER-E%20InChI=BADINCHI", nil)
+	payload := `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)
@@ -244,8 +292,11 @@ func TestMultiQuery(t *testing.T) {
 }
 
 func TestCSVFormatResponse(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/match?q=O", nil)
+	payload := `{"queries":"O"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
 	req.Header.Set("Accept", "text/csv")
+	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	mockIndex := loadMockIndex(t)

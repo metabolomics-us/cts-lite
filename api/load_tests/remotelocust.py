@@ -38,9 +38,14 @@ class CTSLiteUser(HttpUser):
             queries.append(row[query_type])
 
         logging.debug(f"Performing query with: {queries}")
-        url = f"/match?q={' '.join(queries)}"
 
-        with self.client.get(url, catch_response=True) as response:
+        payload = {"queries": ' '.join(queries)}
+
+        with self.client.post(
+            "/match", 
+            json=payload,
+            catch_response=True
+        ) as response:
             if response.status_code != 200:
                 response.failure(f"Failed with status {response.status_code}: {response.text}")
             else:

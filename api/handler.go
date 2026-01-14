@@ -105,15 +105,39 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 // Match is the main entry point for the API
 // Detects the type of query and delegates it to the corresponding matching function
 func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
-	raw := strings.TrimSpace(r.URL.Query().Get("q"))
-	if raw == "" {
-		http.Error(w, "Query was empty. Expecting '/match?q=<query(s)>'", http.StatusBadRequest)
+	var rawQuery string
+
+	// Parse query according to GET or POST request (GET was the old method before moving to POST)
+	switch r.Method {
+
+	case http.MethodGet:
+		rawQuery = r.URL.Query().Get("q")
+
+	case http.MethodPost:
+		var request struct {
+			Queries string `json:"queries"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		rawQuery = strings.TrimSpace(request.Queries)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if rawQuery == "" {
+		http.Error(w, "Query was empty", http.StatusBadRequest)
 		return
 	}
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
-	queries := splitter.Split(raw, -1)
+	queries := splitter.Split(rawQuery, -1)
 
 	results := make([]*model.SingleResult, 0, len(queries))
 
