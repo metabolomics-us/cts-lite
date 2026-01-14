@@ -26,7 +26,13 @@ document.addEventListener("DOMContentLoaded", () => {
     outputLabel.textContent = "Results";
 
     try {
-      const response = await fetch(`/match?q=${encodeURIComponent(query)}`);
+      const response = await fetch("/match", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ queries: query })
+      });
 
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
