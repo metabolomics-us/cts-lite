@@ -1,1 +1,6 @@
+# Ignore directories that are unnecessary to the actual the service
 base_image/
+csv_magic/
+data/
+pubchem_fetcher/
+
