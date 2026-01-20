@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
@@ -18,28 +19,28 @@ var smilesPattern = regexp.MustCompile(`^[CB[OFNSPI]$`) // The only first charac
 func parseQueryType(q string) string {
 	switch {
 	case inchikeyPattern.MatchString(q):
-		log.Println("Query identified as InChIKey")
+		// log.Println("Query identified as InChIKey")
 		return "inchikey"
 
 	case badInchikeyPattern.MatchString(q):
-		log.Println("Query identified as malformed InChIKey")
+		// log.Println("Query identified as malformed InChIKey")
 		return "bad_inchikey"
 
 	case strings.HasPrefix(q, "InChI="):
-		log.Println("Query identified as InChI")
+		// log.Println("Query identified as InChI")
 		return "inchi"
 
 	case strings.HasPrefix(strings.ToLower(q), "inchi="):
-		log.Println("Query identified as malformed InChI")
+		// log.Println("Query identified as malformed InChI")
 		return "bad_inchi"
 
 	// See if first char matches any first char of SMILES in the db
 	case smilesPattern.MatchString(q[0:1]):
-		log.Println("Query identified as SMILES")
+		// log.Println("Query identified as SMILES")
 		return "smiles"
 
 	default:
-		log.Println("Query type could not be identified")
+		// log.Println("Query type could not be identified")
 		return "unidentified"
 	}
 }
@@ -138,8 +139,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
 	queries := splitter.Split(rawQuery, -1)
+	log.Println("Received", len(queries), "queries")
 
 	results := make([]*model.SingleResult, 0, len(queries))
+	var matchCount int = 0
+	timeStart := time.Now()
 
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
@@ -184,8 +188,14 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if result.MatchFound {
+			matchCount++
+		}
+
 		results = append(results, result)
 	}
+
+	log.Printf("%d matches found from %d queries in %f seconds\n", matchCount, len(queries), time.Since(timeStart).Seconds())
 
 	// Check for header text/csv and respond accordingly
 	if (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv") {
