@@ -1,6 +1,4 @@
-PubChemLite*.csv
-todo.txt
+# Ignore all csvs
+*.csv
+
 __pycache__
-report*.html
-maxurl.csv
-.idea
