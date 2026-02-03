@@ -14,9 +14,12 @@ import (
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
 var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
-var smilesPattern = regexp.MustCompile(`^[CB[OFNSPI]$`) // The only first characters of SMILES in all of PubChemLite
+var smilesGuaranteePattern = regexp.MustCompile(`[=#\/\\:\.@+\-\[\]\(\)]`)
+var formulaGuaranteePattern = regexp.MustCompile(`^[ADEGHKLMRTUVWXYZ]$`) // Characters that cannot be found at the start of smiles
+var smilesOrFormulaPattern = regexp.MustCompile(`^[ABCDEFGHIKLMNOPRSTUVWXYZ]$`) // Characters that can start both smiles and formulas
 
 func parseQueryType(q string) string {
+	// Order of cases matters here
 	switch {
 	case inchikeyPattern.MatchString(q):
 		// log.Println("Query identified as InChIKey")
@@ -35,9 +38,17 @@ func parseQueryType(q string) string {
 		return "bad_inchi"
 
 	// See if first char matches any first char of SMILES in the db
-	case smilesPattern.MatchString(q[0:1]):
+	case smilesGuaranteePattern.MatchString(q):
 		// log.Println("Query identified as SMILES")
 		return "smiles"
+
+	case formulaGuaranteePattern.MatchString(q[0:1]):
+		// log.Println("Query identified as Molecular Formula")
+		return "formula"
+
+	case smilesOrFormulaPattern.MatchString(q[0:1]):
+		// log.Println("Query identified as SMILES or Molecular Formula")
+		return "smiles_or_formula"
 
 	default:
 		// log.Println("Query type could not be identified")
@@ -171,6 +182,12 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		case "smiles":
 			matchSmiles(index, q, result)
 
+		case "formula":
+			matchFormula(index, q, result)
+
+		case "smiles_or_formula":
+			matchSmilesOrFormula(index, q, result)
+
 		case "bad_inchi":
 			result.MatchFound = false
 			result.ErrMsg = "Malformed InChI, see documentation"
@@ -223,3 +240,4 @@ func Status(w http.ResponseWriter, _ *http.Request) {
 	}
 	// log.Println("Status check successful") // Was inflating the logs unnecessarily
 }
+

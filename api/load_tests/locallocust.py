@@ -29,7 +29,7 @@ class CTSLiteUser(HttpUser):
     @task
     def match_queries(self):
         line = random.choice(self.lines)
-        query_type = random.choice(["InChIKey", "InChI", "SMILES"])
+        query_type = random.choice(["InChIKey", "InChI", "SMILES", "MolecularFormula"])
         query = line[query_type]
 
         logging.debug(f"Performing query with: {query}")

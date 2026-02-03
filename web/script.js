@@ -312,6 +312,10 @@ function formatQueryType(queryType) {
       return 'SMILES';
     case 'inchi':
       return 'InChI';
+    case 'formula':
+      return 'Molecular Formula';
+    case 'smiles_or_formula':
+      return 'SMILES/Mol. Formula';
     case 'bad_inchi':
       return 'Malformed InChI';
     case 'bad_inchikey':

@@ -28,6 +28,7 @@ type PubChemIndex struct {
 	ByInChI      map[string]*Compound
 	BySmiles     map[string][]*Compound
 	ByFirstBlock map[string][]*Compound
+	ByFormula	 map[string][]*Compound
 }
 
 func LoadPubChemLite(file string) (*PubChemIndex, error) {
@@ -54,6 +55,7 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 		ByInChI:      make(map[string]*Compound),
 		BySmiles:     make(map[string][]*Compound),
 		ByFirstBlock: make(map[string][]*Compound),
+		ByFormula:	  make(map[string][]*Compound),
 	}
 
 	fmt.Printf("Loading PubChemLite into memory using %v...\n", file)
@@ -86,6 +88,7 @@ func LoadPubChemLite(file string) (*PubChemIndex, error) {
 		index.ByInChI[c.InChI] = c
 		index.BySmiles[c.Smiles] = append(index.BySmiles[c.Smiles], c)
 		index.ByFirstBlock[c.FirstBlock] = append(index.ByFirstBlock[c.FirstBlock], c)
+		index.ByFormula[c.MolecularFormula] = append(index.ByFormula[c.MolecularFormula], c)
 	}
 
 	timeToLoad := time.Since(startTime).Seconds()

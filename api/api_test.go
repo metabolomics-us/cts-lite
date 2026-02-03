@@ -291,6 +291,36 @@ func TestMultiQuery(t *testing.T) {
 	assertCompound(t, wantMethane, gotMethane)
 }
 
+func TestFormulaMatchEndpoint(t *testing.T) {
+	payload := `{"queries":"CH4"}`
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+
+	mockIndex := loadMockIndex(t)
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 but got %d", res.StatusCode)
+	}
+
+	body, _ := io.ReadAll(res.Body)
+	var results []*model.SingleResult
+	json.Unmarshal(body, &results)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	gotMethane := results[0].Matches[0]
+	wantMethane := fakeMethaneCompound()
+
+	assertCompound(t, wantMethane, gotMethane)
+}
+
 func TestCSVFormatResponse(t *testing.T) {
 	payload := `{"queries":"O"}`
 	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))

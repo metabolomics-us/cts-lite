@@ -55,3 +55,47 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.MatchLevel = "Exact SMILES"
 	}
 }
+
+func matchFormula(index *model.PubChemIndex, query string, result *model.SingleResult) {
+	compounds, ok := index.ByFormula[query]
+	if !ok {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+
+	for _, compound := range compounds {
+		result.Matches = append(result.Matches, compound)
+		result.MatchFound = true
+		result.MatchLevel = "Exact Formula"
+	}
+}
+
+func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult) {
+	compounds, ok := index.ByFormula[query]
+	if !ok {
+		// If formula match failed, try smiles
+		compounds, ok = index.BySmiles[query]
+		if !ok {
+			result.MatchFound = false
+			result.ErrMsg = "No compound found"
+			return
+		}
+
+		for _, compound := range compounds {
+			result.QueryType = "smiles"
+			result.Matches = append(result.Matches, compound)
+			result.MatchFound = true
+			result.MatchLevel = "Exact SMILES"
+		}
+		return
+	}
+	
+	for _, compound := range compounds {
+		result.QueryType = "formula"
+		result.Matches = append(result.Matches, compound)
+		result.MatchFound = true
+		result.MatchLevel = "Exact Formula"
+	}
+}
+
