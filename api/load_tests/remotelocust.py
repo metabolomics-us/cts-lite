@@ -34,7 +34,7 @@ class CTSLiteUser(HttpUser):
 
         queries = []
         for row in rows:
-            query_type = random.choice(["InChIKey", "SMILES", "InChI"])
+            query_type = random.choice(["InChIKey", "SMILES", "InChI", "MolecularFormula"])
             queries.append(row[query_type])
 
         logging.debug(f"Performing query with: {queries}")
