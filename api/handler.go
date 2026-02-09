@@ -150,7 +150,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
 	queries := splitter.Split(rawQuery, -1)
-	log.Println("Received", len(queries), "queries")
+	// log.Println("Received", len(queries), "queries")
 
 	results := make([]*model.SingleResult, 0, len(queries))
 	var matchCount int = 0
