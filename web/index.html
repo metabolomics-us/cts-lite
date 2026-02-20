@@ -9,35 +9,36 @@
 </head>
 <body>
     <div class="banner-container">
-        <div class="navbar">
+        <nav class="navbar">
             <a class="navbar-item" href="pages/documentation.html">Documentation</a>
 
             <a class="navbar-item" href="index.html">
             <header>
                 <h1>CTS-Lite</h1>
-                <h3>UC Davis Fiehn Lab</h3>
+                <h2 style="margin: 5px">UC Davis Fiehn Lab</h2>
             </header>
             </a>
 
             <a class="navbar-item" href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank" title="Report issues or request features">Feedback&emsp;&emsp;&emsp;</a>
-        </div>
-        <div>
+        </nav>
+        <main>
             <form id="query-form">
                 <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, SMILES, and Molecular Formulas</label>
-                <p style="font-size: 11pt; margin-top: 0.1rem;">Space, Tab, or Newline separated entries</p>
-                <textarea id="query-input" rows="4" cols="40" placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C "></textarea>
+                <p style="font-size: 0.9rem; margin-top: 0.5rem;">Space, Tab, or Newline separated entries</p>
+                <textarea id="query-input" rows="4" cols="40" 
+                placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C &#10;H2O"></textarea>
                 <br>
-                <button type="submit" style="box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
+                <button type="submit" style="min-height: 44px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
             </form>
             <div id="output-container">
                 <div class="results-header">
                     <label for="output-text" id="output-label">Results</label>
-                    <div id="download-buttons"></div>
+                    <div id="download-buttons" style="min-height: 44px;"></div>
                 </div>
                 <hr>
                 <div id="output-text"></div>
             </div>
-        </div>
+        </main>
     </div>
 <script src="script.js"></script>
 </body>
