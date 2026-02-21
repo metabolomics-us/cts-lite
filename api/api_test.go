@@ -202,8 +202,9 @@ func TestFirstBlockMatchEndpoint(t *testing.T) {
 		t.Fatalf("Expected 2 compounds, got %d", len(results[0].Matches))
 	}
 
-	gotWater := results[0].Matches[0]
-	gotMethane := results[0].Matches[1]
+	// Methane will appear first because of SortingScore
+	gotMethane := results[0].Matches[0]
+	gotWater := results[0].Matches[1]
 
 	wantWater := fakeWaterCompound()
 	wantMethane := fakeMethaneCompound()
