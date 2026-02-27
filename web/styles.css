@@ -6,6 +6,19 @@ p {
   line-height: 1.5;
 }
 
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: auto;
+}
+
+.skip-link:focus {
+  top: 0;
+  left: 0;
+  color: white !important;
+  background-color: #237bdf;
+}
+
 .navbar {
   position: fixed;
   display: flex;
@@ -32,22 +45,14 @@ p {
   align-content: center;
 }
 
+.navbar-item:focus,
 .navbar-item:hover {
-  color: #f3e3b1;
-}
-
-.navbar-item:focus {
-  outline: none; 
+  color: #f1d787;
+  outline: none;
 }
 
 h1, h3 {
   margin: 0.25rem 0;
-}
-
-header {
-  text-align: center;
-  color: #f0f0f0;
-  font-size: 0.8rem;
 }
 
 body {
@@ -113,8 +118,11 @@ button {
   font-weight: bold;
 }
 
+button:focus,
 button:hover {
   background-color: #235288;
+  outline-color: #a0b8d3;
+  outline-width: 3px;
 }
 
 button:disabled {
@@ -317,10 +325,6 @@ button:disabled {
 
 /* Responsive design for mobile devices */
 @media (max-width: 768px) {
-  header {
-    font-size: 0.65rem;
-  }
-
   .banner-container {
     padding: 80px 10px 0 10px; /* Reduced spacing for thinner navbar */
   }
@@ -360,10 +364,6 @@ button:disabled {
 }
 
 @media (max-width: 480px) {
-  header {
-    font-size: 0.65rem;
-  }
-
   .banner-container {
     padding: 70px 5px 0 5px; /* Further reduced for mobile */
   }

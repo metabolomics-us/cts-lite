@@ -10,18 +10,19 @@
 <body>
     <div class="banner-container">
         <nav class="navbar">
+            <!-- Skip link for accessibility, only appears on focus -->
+            <a href="#main-content" class="skip-link navbar-item">Skip to content</a>
+
             <a class="navbar-item" href="pages/documentation.html">Documentation</a>
 
-            <a class="navbar-item" href="index.html">
-            <header>
+            <a class="navbar-item" href="index.html" style="font-size: 0.8rem">
                 <h1>CTS-Lite</h1>
                 <h2 style="margin: 5px">UC Davis Fiehn Lab</h2>
-            </header>
             </a>
 
             <a class="navbar-item" href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank" title="Report issues or request features">Feedback&emsp;&emsp;&emsp;</a>
         </nav>
-        <main>
+        <main id="main-content">
             <form id="query-form">
                 <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, SMILES, and Molecular Formulas</label>
                 <p style="font-size: 0.9rem; margin-top: 0.5rem;">Space, Tab, or Newline separated entries</p>
