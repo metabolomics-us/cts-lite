@@ -1,0 +1,85 @@
+name: Deploy to ECS
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    if: "!contains(github.event.head_commit.message, 'nodeploy') && !contains(github.event.head_commit.message, 'nobuild')"
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.23"
+
+    - name: Run Go Tests
+      run: cd src && go test ./... -v
+
+  build_and_push_image:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: AWS Login
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build the Docker image
+      run: docker build --no-cache . -t cts-lite:latest
+
+    - name: Push to ECR
+      env:
+        ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker tag cts-lite:latest $ECR_REGISTRY/cts-lite:latest
+        docker tag cts-lite:latest $ECR_REGISTRY/cts-lite:$IMAGE_TAG
+        docker push $ECR_REGISTRY/cts-lite:latest
+        docker push $ECR_REGISTRY/cts-lite:$IMAGE_TAG
+
+  redeploy_ecs:
+    needs: build_and_push_image
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Force New ECS Deployment
+      env:
+        CLUSTER: ${{ secrets.AWS_CLUSTER_NAME }}
+        SERVICE: ${{ secrets.AWS_SERVICE_NAME }}
+      run: |
+        aws ecs update-service \
+        --cluster $CLUSTER \
+        --service $SERVICE \
+        --force-new-deployment
+
+    - name: Wait for ECS Service to Stabilize
+      env:
+        CLUSTER: ${{ secrets.AWS_CLUSTER_NAME }}
+        SERVICE: ${{ secrets.AWS_SERVICE_NAME }}
+      run: |
+        aws ecs wait services-stable \
+        --cluster $CLUSTER \
+        --service $SERVICE
+
