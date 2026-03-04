@@ -38,7 +38,7 @@ func main() {
 	datadir := os.Getenv("CTS_DATA_DIR")
 	if datadir == "" {
 		// For local development when not using the Docker image
-		datadir = "./data"
+		datadir = "../data"
 	}
 	dataset := path.Join(datadir, "pcl20260102_and_pcms20260116.csv")
 	index, err := model.LoadPubChemLite(dataset)

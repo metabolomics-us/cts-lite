@@ -65,5 +65,14 @@ func main() {
 		panic(err)
 	}
 
+	if (duplicateCount <= 0) {
+		fmt.Printf("No processing needed: %d duplicates found\n", duplicateCount)
+		err := os.Remove(outFile.Name())
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
+
 	fmt.Printf("Found and removed %d duplicate identifiers in %s.\nFile without dupes stored as deduped_%s\n", duplicateCount, inputPath, inputPath)
 }

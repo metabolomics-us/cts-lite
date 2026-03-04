@@ -80,7 +80,7 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 }
 
 func main() {
-	index, err := model.LoadPubChemLite("../data/PubChemLite_CCSbase_20251128_trimmed.csv")
+	index, err := model.LoadPubChemLite("../../../data/raw_datasets/PubChemLite_CCSbase_20251128_trimmed.csv")
 	if err != nil {
 		log.Fatalf("Failed to load index: %v", err)
 	}
