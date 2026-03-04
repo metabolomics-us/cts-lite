@@ -159,12 +159,12 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
 
-		if q == "" {
-			continue
-		}
-
 		if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") {
 			q = q[1 : len(q)-1]
+		}
+
+		if q == "" {
+			continue
 		}
 
 		result := &model.SingleResult{

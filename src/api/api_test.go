@@ -280,6 +280,17 @@ func TestMatchErrors(t *testing.T) {
 	}
 }
 
+func TestQuotedEmptyQuery(t *testing.T) {
+	// Regression: `""` after quote-stripping becomes empty, which previously caused
+	// a panic in parseQueryType due to an out-of-bounds slice on an empty string.
+	res := doMatchRequest(t, `{"queries":"\"\""}`, nil)
+	results := parseMatchResults(t, res)
+
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for empty quoted query, got %d", len(results))
+	}
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete, "/match", nil)
 	w := httptest.NewRecorder()
