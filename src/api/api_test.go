@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// Data must match mock_pubchemlite.csv exactly
+// Data must match unittest_pubchemlite.csv exactly
 func fakeWaterCompound() *model.Compound {
 	return &model.Compound{
 		Identifier:       "1",
@@ -42,7 +42,23 @@ func fakeWaterCompound() *model.Compound {
 	}
 }
 
-// Data must match mock_pubchemlite.csv exactly
+// Data must match unittest_pubchemlite.csv exactly
+func fakeFormaldehyde() *model.Compound {
+	return &model.Compound{
+		Identifier:       "3",
+		InChIKey:         "FAKEFORMALDEHY-FAKEFRMALD-E",
+		FirstBlock:       "FAKEFORMALDEHY",
+		InChI:            "InChI=1S/CH2O/c1-2/h1H2",
+		Smiles:           "C=O",
+		CompoundName:     "Formaldehyde",
+		MolecularFormula: "CH2O",
+		MonoisotopicMass: "30",
+		PubMedCount:      "5",
+		PatentCount:      "1",
+	}
+}
+
+// Data must match unittest_pubchemlite.csv exactly
 func fakeMethaneCompound() *model.Compound {
 	return &model.Compound{
 		Identifier:       "2",
@@ -65,6 +81,7 @@ func assertCompound(t *testing.T, want *model.Compound, got *model.Compound) {
 	}
 }
 
+// Performs a match request, boiler plate method to avoid duplicate code
 func doMatchRequest(t *testing.T, payload string, extraHeaders map[string]string) *http.Response {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
@@ -151,6 +168,16 @@ func TestMatchEndpoints(t *testing.T) {
 			query:       "CH4",
 			wantMatches: []*model.Compound{methane},
 		},
+		{
+			name:        "direct smiles (smilesGuaranteePattern chars)",
+			query:       "C=O",
+			wantMatches: []*model.Compound{fakeFormaldehyde()},
+		},
+		{
+			name:        "direct formula (formulaGuaranteePattern first char)",
+			query:       "H2O",
+			wantMatches: []*model.Compound{water},
+		},
 	}
 
 	for _, tc := range tests {
@@ -192,6 +219,152 @@ func TestMultiQuery(t *testing.T) {
 	assertCompound(t, fakeMethaneCompound(), results[1].Matches[0])
 }
 
+func TestMatchErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantErrMsg string
+	}{
+		{
+			name:       "inchi no match",
+			query:      "InChI=1S/NOTHING",
+			wantErrMsg: "No compound found",
+		},
+		{
+			name:       "inchikey first block not found",
+			query:      "ZZZZZZZZZZZZZZ-XXXXXXXXXX-Y",
+			wantErrMsg: "No compound(s) found",
+		},
+		{
+			name:       "smiles no match",
+			query:      "CC(O)=O",
+			wantErrMsg: "No compound found",
+		},
+		{
+			name:       "formula no match",
+			query:      "Unknown",
+			wantErrMsg: "No compound found",
+		},
+		{
+			name:       "bad inchikey",
+			query:      "ABCDEFGHIJKLMNO-ABCDEFGHIJ-A",
+			wantErrMsg: "Malformed InChIKey, see documentation",
+		},
+		{
+			name:       "bad inchi",
+			query:      "inchi=1S/H2O",
+			wantErrMsg: "Malformed InChI, see documentation",
+		},
+		{
+			name:       "unidentified query",
+			query:      "12345",
+			wantErrMsg: "Invalid query type, could not identify",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil)
+			results := parseMatchResults(t, res)
+
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if results[0].MatchFound {
+				t.Errorf("expected no match, but MatchFound=true")
+			}
+			if results[0].ErrMsg != tc.wantErrMsg {
+				t.Errorf("expected error %q, got %q", tc.wantErrMsg, results[0].ErrMsg)
+			}
+		})
+	}
+}
+
+func TestMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/match", nil)
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	if w.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Result().StatusCode)
+	}
+}
+
+func TestInvalidJSON(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Result().StatusCode)
+	}
+}
+
+func TestEmptyQuery(t *testing.T) {
+	res := doMatchRequest(t, `{"queries":""}`, nil)
+
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", res.StatusCode)
+	}
+}
+
+func TestQuotedQuery(t *testing.T) {
+	res := doMatchRequest(t, `{"queries":"\"O\""}`, nil)
+	results := parseMatchResults(t, res)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if len(results[0].Matches) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+	}
+	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
+}
+
+func TestCSVFormatQueryParam(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/match?format=csv", strings.NewReader(`{"queries":"O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	if res.Header.Get("Content-Type") != "text/csv" {
+		t.Errorf("expected Content-Type text/csv, got %s", res.Header.Get("Content-Type"))
+	}
+}
+
+func TestCSVNoMatchResponse(t *testing.T) {
+	res := doMatchRequest(t, `{"queries":"InChI=1S/NOTHING"}`, map[string]string{"Accept": "text/csv"})
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+
+	records, err := csv.NewReader(res.Body).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read CSV: %v", err)
+	}
+
+	if len(records) != 2 {
+		t.Fatalf("expected 2 rows (header + 1 no-match row), got %d", len(records))
+	}
+
+	row := records[1]
+	if row[2] != "false" {
+		t.Errorf("expected found_match=false, got %s", row[2])
+	}
+	// All compound-specific fields should be empty
+	for i, field := range row[5:] {
+		if field != "" {
+			t.Errorf("expected empty compound field at index %d, got %q", i+5, field)
+		}
+	}
+}
+
 func TestCSVFormatResponse(t *testing.T) {
 	res := doMatchRequest(t, `{"queries":"O"}`, map[string]string{"Accept": "text/csv"})
 
@@ -229,3 +402,4 @@ func TestCSVFormatResponse(t *testing.T) {
 		t.Errorf("CSV data row mismatch (-want +got):\n%s", diff)
 	}
 }
+
