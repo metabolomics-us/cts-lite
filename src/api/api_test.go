@@ -5,20 +5,25 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
 
-func loadMockIndex(t *testing.T) *model.PubChemIndex {
-	index, err := model.LoadPubChemLite("../../data/test_datasets/unittest_pubchemlite.csv")
+var mockIndex *model.PubChemIndex
+
+func TestMain(m *testing.M) {
+	var err error
+	mockIndex, err = model.LoadPubChemLite("../../data/test_datasets/unittest_pubchemlite.csv")
 	if err != nil {
-		t.Fatalf("failed to load test CSV: %v", err)
+		log.Fatalf("failed to load test CSV: %v", err)
 	}
-	return index
+	os.Exit(m.Run())
 }
 
 // Data must match mock_pubchemlite.csv exactly
@@ -60,213 +65,116 @@ func assertCompound(t *testing.T, want *model.Compound, got *model.Compound) {
 	}
 }
 
-func TestStatusEndpoint(t *testing.T) {
+func doMatchRequest(t *testing.T, payload string, extraHeaders map[string]string) *http.Response {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+	return w.Result()
+}
+
+func parseMatchResults(t *testing.T, res *http.Response) []*model.SingleResult {
+	t.Helper()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 but got %d", res.StatusCode)
+	}
+	body, _ := io.ReadAll(res.Body)
+	var results []*model.SingleResult
+	if err := json.Unmarshal(body, &results); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	return results
+}
+
+func TestStatusHealthEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 
 	Status(w, req)
 
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 but got %d", w.Result().StatusCode)
 	}
 }
 
 func TestDeprecatedGetRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/match?q=O", nil)
-
 	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
 	Match(mockIndex, w, req)
 
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
-	}
-
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
+	results := parseMatchResults(t, w.Result())
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-
 	if len(results[0].Matches) != 1 {
 		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
 	}
-
-	got := results[0].Matches[0]
-	want := fakeWaterCompound()
-
-	assertCompound(t, want, got)
+	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
 }
 
-func TestSmilesMatchEndpoint(t *testing.T) {
-	payload := `{"queries":"O"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
+func TestMatchEndpoints(t *testing.T) {
+	water := fakeWaterCompound()
+	methane := fakeMethaneCompound()
 
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
+	tests := []struct {
+		name        string
+		query       string
+		wantMatches []*model.Compound // ordered as expected in results[0].Matches
+	}{
+		{
+			name:        "smiles",
+			query:       "O",
+			wantMatches: []*model.Compound{water},
+		},
+		{
+			name:        "full InChIKey",
+			query:       "MYFAKEINCHIKEY-ANOTHERONE-E",
+			wantMatches: []*model.Compound{methane},
+		},
+		{
+			name:        "first block (returns both compounds, methane first by SortingScore)",
+			query:       "MYFAKEINCHIKEY-NOTNOTNOTN-O",
+			wantMatches: []*model.Compound{methane, water},
+		},
+		{
+			name:        "InChI",
+			query:       "InChI=1S/H2O/h1H2",
+			wantMatches: []*model.Compound{water},
+		},
+		{
+			name:        "molecular formula",
+			query:       "CH4",
+			wantMatches: []*model.Compound{methane},
+		},
 	}
 
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil)
+			results := parseMatchResults(t, res)
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if len(results[0].Matches) != len(tc.wantMatches) {
+				t.Fatalf("expected %d compound(s), got %d", len(tc.wantMatches), len(results[0].Matches))
+			}
+			for i, want := range tc.wantMatches {
+				assertCompound(t, want, results[0].Matches[i])
+			}
+		})
 	}
-
-	if len(results[0].Matches) != 1 {
-		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
-	}
-
-	got := results[0].Matches[0]
-	want := fakeWaterCompound()
-
-	assertCompound(t, want, got)
-}
-
-func TestFullInChIKeyMatchEndpoint(t *testing.T) {
-	payload := `{"queries":"MYFAKEINCHIKEY-ANOTHERONE-E"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
-	}
-
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-
-	if len(results[0].Matches) != 1 {
-		t.Fatalf("Expected 1 compound, got %d", len(results[0].Matches))
-	}
-
-	got := results[0].Matches[0]
-	want := fakeMethaneCompound()
-
-	assertCompound(t, want, got)
-}
-
-func TestFirstBlockMatchEndpoint(t *testing.T) {
-	payload := `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
-	}
-
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-
-	// First block matching should give us both our fake water and fake methane compounds
-	if len(results[0].Matches) != 2 {
-		t.Fatalf("Expected 2 compounds, got %d", len(results[0].Matches))
-	}
-
-	// Methane will appear first because of SortingScore
-	gotMethane := results[0].Matches[0]
-	gotWater := results[0].Matches[1]
-
-	wantWater := fakeWaterCompound()
-	wantMethane := fakeMethaneCompound()
-
-	assertCompound(t, wantWater, gotWater)
-	assertCompound(t, wantMethane, gotMethane)
-}
-
-func TestInChIMatchEndpoint(t *testing.T) {
-	payload := `{"queries":"InChI=1S/H2O/h1H2"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
-	}
-
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-
-	if len(results[0].Matches) != 1 {
-		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
-	}
-
-	got := results[0].Matches[0]
-	want := fakeWaterCompound()
-
-	assertCompound(t, want, got)
 }
 
 func TestMultiQuery(t *testing.T) {
 	// 5 queries: smiles O, smiles C, bad smiles, fake inchikey, bad InChI // space separated (%20)
-	payload := `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
-	}
-
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
+	res := doMatchRequest(t, `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`, nil)
+	results := parseMatchResults(t, res)
 
 	if len(results) != 5 {
 		t.Fatalf("expected 5 results, got %d", len(results))
@@ -276,64 +184,16 @@ func TestMultiQuery(t *testing.T) {
 	if len(results[0].Matches) != 1 {
 		t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
 	}
-
 	if len(results[1].Matches) != 1 {
 		t.Fatalf("expected 1 compound, got %d", len(results[1].Matches))
 	}
 
-	gotWater := results[0].Matches[0]
-	wantWater := fakeWaterCompound()
-
-	assertCompound(t, wantWater, gotWater)
-
-	gotMethane := results[1].Matches[0]
-	wantMethane := fakeMethaneCompound()
-
-	assertCompound(t, wantMethane, gotMethane)
-}
-
-func TestFormulaMatchEndpoint(t *testing.T) {
-	payload := `{"queries":"CH4"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 but got %d", res.StatusCode)
-	}
-
-	body, _ := io.ReadAll(res.Body)
-	var results []*model.SingleResult
-	json.Unmarshal(body, &results)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-
-	gotMethane := results[0].Matches[0]
-	wantMethane := fakeMethaneCompound()
-
-	assertCompound(t, wantMethane, gotMethane)
+	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
+	assertCompound(t, fakeMethaneCompound(), results[1].Matches[0])
 }
 
 func TestCSVFormatResponse(t *testing.T) {
-	payload := `{"queries":"O"}`
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
-	req.Header.Set("Accept", "text/csv")
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-
-	mockIndex := loadMockIndex(t)
-	Match(mockIndex, w, req)
-
-	res := w.Result()
+	res := doMatchRequest(t, `{"queries":"O"}`, map[string]string{"Accept": "text/csv"})
 
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200 but got %d", res.StatusCode)
