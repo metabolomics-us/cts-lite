@@ -159,11 +159,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
 
-		if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") {
+		// Remove surrounding double quotes if both present
+		if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") && len(q) > 1 {
 			q = q[1 : len(q)-1]
 		}
 
-		if q == "" {
+		// Handle single double quote character, and empty queries
+		if q == "\"" || q == "" {
 			continue
 		}
 
