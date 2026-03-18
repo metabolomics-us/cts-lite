@@ -291,6 +291,19 @@ func TestQuotedEmptyQuery(t *testing.T) {
 	}
 }
 
+func TestSingleDoubleQuoteQuery(t *testing.T) {
+	// Regression: a lone `"` character was not stripped by the quote-removal
+	// logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
+	// empty slice q[1:0]), and was not caught by the subsequent empty-string
+	// check, leading to a panic in parseQueryType.
+	res := doMatchRequest(t, `{"queries":"\""}`, nil)
+	results := parseMatchResults(t, res)
+
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for single double-quote query, got %d", len(results))
+	}
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete, "/match", nil)
 	w := httptest.NewRecorder()
