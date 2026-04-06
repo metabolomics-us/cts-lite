@@ -1,5 +1,5 @@
 # CTS-Lite
-A lightweight Chemical Translation Service using an augmented version the PubChemLite dataset, written in Go
+A lightweight Chemical Translation Service using an augmented version of the PubChemLite dataset
 
 ### Website
 - https://cts-lite.metabolomics.us/
@@ -19,9 +19,9 @@ A lightweight Chemical Translation Service using an augmented version the PubChe
 
 ### Docker
 - CTS-Lite is made up of two docker images
-    - A base image containing only the dataset
-    - The complete application image built on top of the base image
-    - This is done to allow for automatic deployment with GitHub Actions, since the dataset is not tracked in the repository
+    1. A base image containing only the dataset
+    2. The complete application image built on top of the base image
+        - This is done to allow for automatic deployment with GitHub Actions, since the dataset is not tracked in the repository
 
 - To build the images, first build the base image
     - Ensure the dataset is inside `./data/` and referenced accordingly by the Dockerfile in `./data/`
