@@ -1,5 +1,6 @@
-# Ignore all csvs
+# Ignore csvs and zips
 *.csv
+*.zip
 
 __pycache__
 .coveragedata
