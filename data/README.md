@@ -34,6 +34,6 @@ Here is a (deprecated, please use the script) step-by-step guide to creating the
         - `./reorder.sh firstblocks_all-ms.csv reordered-ms.csv`
 6. Merge the reordered csv with the PubChemLite csv:
     - `csvstack PubChemLite_trimmed.csv reordered-ms.csv > total.csv`
-    - Note: order matters. Put the PubChemLite csv first to prioritize keeping its compounds when removing duplicates in the next step
+    - Note: order matters. Put the reordered csv first to prioritize keeping its compounds when removing duplicates in the next step (PubChemLite has some unreliable lit/pat counts)
 7. Once merged, use the "dedupe" module to remove any duplicate compounds from the dataset:
     - `go run ./dedupe/dedupe.go total.csv`
