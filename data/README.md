@@ -12,9 +12,10 @@ CTS-Lite expects the following header for its dataset:
 - `Identifier,FirstBlock,PubMed_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,MonoisotopicMass,CompoundName`
 
 ### Dataset Creation Workflow
-Here is a step-by-step guide to creating the dataset for CTS-Lite
+NOTE: The following workflow is now completely automated via `create_dataset.sh`, simply run the script to create the dataset
 
-1. Download the most recent PubChemLite csv from [zenodo](https://zenodo.org/records/18169629)
+Here is a (deprecated, please use the script) step-by-step guide to creating the dataset for CTS-Lite
+1. Download the most recent PubChemLite csv from [zenodo](https://zenodo.org/records/4081056)
 2. Trim the csv using "pubchemlite_trimmer.sh". This will remove all unnecessary columns:
     - `./pubchemlite_trimmer.sh pubchemlite.csv`
 3. Download additional data from PubChem [here](https://pubchem.ncbi.nlm.nih.gov/classification/#hid=72)
@@ -33,6 +34,6 @@ Here is a step-by-step guide to creating the dataset for CTS-Lite
         - `./reorder.sh firstblocks_all-ms.csv reordered-ms.csv`
 6. Merge the reordered csv with the PubChemLite csv:
     - `csvstack PubChemLite_trimmed.csv reordered-ms.csv > total.csv`
-    - Note: order matters. Put the PubChemLite csv first to prioritize keeping its compounds when removing duplicates in the next step
+    - Note: order matters. Put the reordered csv first to prioritize keeping its compounds when removing duplicates in the next step (PubChemLite has some unreliable lit/pat counts)
 7. Once merged, use the "dedupe" module to remove any duplicate compounds from the dataset:
     - `go run ./dedupe/dedupe.go total.csv`

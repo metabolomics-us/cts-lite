@@ -5,6 +5,6 @@ FROM golang:1.23-alpine
 RUN mkdir -p /base/data
 
 # Ensure the dataset path and filename are correct
-COPY pcl20260102_and_pcms20260116.csv /base/data
+COPY cts-lite_20260407.csv /base/data
 
 ENV CTS_DATA_DIR=/base/data

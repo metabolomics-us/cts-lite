@@ -40,7 +40,7 @@ func main() {
 		// For local development when not using the Docker image
 		datadir = "../data"
 	}
-	dataset := path.Join(datadir, "pcl20260102_and_pcms20260116.csv")
+	dataset := path.Join(datadir, "cts-lite_20260407.csv")
 	index, err := model.LoadPubChemLite(dataset)
 	if err != nil {
 		log.Fatalf("Error loading PubChemLite: %v", err)
