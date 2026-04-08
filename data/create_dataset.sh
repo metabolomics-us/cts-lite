@@ -37,6 +37,12 @@ pubchem_download() {
   wget "https://pubchem.ncbi.nlm.nih.gov/sdq/sphinxql.cgi?infmt=json&outfmt=csv&query={%22download%22:%20%22cid,cmpdname,inchikey,inchi,smiles,mf,exactmass,gpidcnt,pclidcnt%22,%22collection%22:%22compound%22,%22order%22:[%22relevancescore,desc%22],%22start%22:1,%22limit%22:10000000,%22where%22:{%22ands%22:[{%22input%22:{%22type%22:%22netcachekey%22,%22idtype%22:%22cid%22,%22key%22:%22${key}%22}}]}}&showcolumndisplayname=1" -O "${outfile}"
 }
 
+# Names & Identifiers (hnid=1856948)
+pubchem_download 1856948 "names-identifiers.csv"
+divider
+# Literature (hnid=1857367)
+pubchem_download 1857367 "literature.csv"
+divider
 # Other MS (hnid=3857762)
 pubchem_download 3857762 "other-ms.csv"
 divider
