@@ -19,58 +19,55 @@ var mockIndex *model.PubChemIndex
 
 func TestMain(m *testing.M) {
 	var err error
-	mockIndex, err = model.LoadPubChemLite("../../data/test_datasets/unittest_pubchemlite.csv")
+	mockIndex, err = model.LoadCSVToMemory("../../dataset/test_datasets/unittest_data.csv")
 	if err != nil {
 		log.Fatalf("failed to load test CSV: %v", err)
 	}
 	os.Exit(m.Run())
 }
 
-// Data must match unittest_pubchemlite.csv exactly
+// Data must match unittest_data.csv exactly
 func fakeWaterCompound() *model.Compound {
 	return &model.Compound{
 		Identifier:       "1",
 		InChIKey:         "MYFAKEINCHIKEY-ISRIGHTHER-E",
-		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/H2O/h1H2",
 		Smiles:           "O",
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
-		MonoisotopicMass: "100",
-		PubMedCount:      "10",
-		PatentCount:      "2",
+		MonoisotopicMass: 100,
+		PubMedCount:      10,
+		PatentCount:      2,
 	}
 }
 
-// Data must match unittest_pubchemlite.csv exactly
+// Data must match unittest_data.csv exactly
 func fakeFormaldehyde() *model.Compound {
 	return &model.Compound{
 		Identifier:       "3",
 		InChIKey:         "FAKEFORMALDEHY-FAKEFRMALD-E",
-		FirstBlock:       "FAKEFORMALDEHY",
 		InChI:            "InChI=1S/CH2O/c1-2/h1H2",
 		Smiles:           "C=O",
 		CompoundName:     "Formaldehyde",
 		MolecularFormula: "CH2O",
-		MonoisotopicMass: "30",
-		PubMedCount:      "5",
-		PatentCount:      "1",
+		MonoisotopicMass: 30,
+		PubMedCount:      5,
+		PatentCount:      1,
 	}
 }
 
-// Data must match unittest_pubchemlite.csv exactly
+// Data must match unittest_data.csv exactly
 func fakeMethaneCompound() *model.Compound {
 	return &model.Compound{
 		Identifier:       "2",
 		InChIKey:         "MYFAKEINCHIKEY-ANOTHERONE-E",
-		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/CH4/h1H4",
 		Smiles:           "C",
 		CompoundName:     "Methane",
 		MolecularFormula: "CH4",
-		MonoisotopicMass: "99",
-		PubMedCount:      "18",
-		PatentCount:      "7",
+		MonoisotopicMass: 99,
+		PubMedCount:      18,
+		PatentCount:      7,
 	}
 }
 
@@ -282,7 +279,7 @@ func TestMatchErrors(t *testing.T) {
 
 func TestQuotedEmptyQuery(t *testing.T) {
 	// Regression: `""` after quote-stripping becomes empty, which previously caused
-	// a panic in parseQueryType due to an out-of-bounds slice on an empty string.
+	//   a panic in parseQueryType due to an out-of-bounds slice on an empty string
 	res := doMatchRequest(t, `{"queries":"\"\""}`, nil)
 	results := parseMatchResults(t, res)
 
@@ -293,9 +290,9 @@ func TestQuotedEmptyQuery(t *testing.T) {
 
 func TestSingleDoubleQuoteQuery(t *testing.T) {
 	// Regression: a lone `"` character was not stripped by the quote-removal
-	// logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
-	// empty slice q[1:0]), and was not caught by the subsequent empty-string
-	// check, leading to a panic in parseQueryType.
+	//   logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
+	//   empty slice q[1:0]), and was not caught by the subsequent empty-string
+	//   check, leading to a panic in parseQueryType.
 	res := doMatchRequest(t, `{"queries":"\""}`, nil)
 	results := parseMatchResults(t, res)
 
