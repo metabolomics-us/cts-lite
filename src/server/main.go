@@ -51,7 +51,7 @@ func main() {
 	http.HandleFunc("/health", corsMiddleware(api.Status))
 	http.HandleFunc("/status", corsMiddleware(api.Status))
 
-	// Endpoint for matching against PubChemLite
+	// Endpoint for matching against database
 	http.HandleFunc("/match", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		api.Match(index, w, r)
 	}))
