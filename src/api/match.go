@@ -2,100 +2,129 @@ package api
 
 import (
 	"ctslite/model"
+	"log"
 )
 
 func matchInchi(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compound, ok := index.ByInChI[query]
-	if !ok {
+	compounds, err := index.QueryByInChI(query)
+	if err != nil {
+		log.Printf("Error querying by InChI: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
 		result.MatchFound = false
 		result.ErrMsg = "No compound found"
 		return
 	}
-
 	result.MatchFound = true
 	result.MatchLevel = "Exact InChI"
-	result.Matches = []*model.Compound{compound}
+	result.Matches = compounds
 }
 
 func matchInchiKey(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	// Try full inchikey match first
-	compound, ok := index.ByInChIKey[query]
-	if ok {
+	// Try full InChIKey match first
+	compounds, err := index.QueryByInChIKey(query)
+	if err != nil {
+		log.Printf("Error querying by InChIKey: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) > 0 {
 		result.MatchFound = true
 		result.MatchLevel = "Exact InChIKey"
-		result.Matches = []*model.Compound{compound}
-		return
-	} else {
-		// If full inchikey match failed, try first block
-		// The first 14 characters will always be a properly formatted FirstBlock
-		queryFirstBlock := query[:14]
-		compounds, ok := index.ByFirstBlock[queryFirstBlock]
-		if !ok {
-			result.MatchFound = false
-			result.ErrMsg = "No compound(s) found"
-			return
-		}
-		result.MatchFound = true
-		result.MatchLevel = "First Block"
 		result.Matches = compounds
+		return
 	}
+
+	// Fall back to first-block match (first 14 characters of InChIKey)
+	compounds, err = index.QueryByFirstBlock(query[:14])
+	if err != nil {
+		log.Printf("Error querying by first block: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound(s) found"
+		return
+	}
+	result.MatchFound = true
+	result.MatchLevel = "First Block"
+	result.Matches = compounds
 }
 
 func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, ok := index.BySmiles[query]
-	if !ok {
+	compounds, err := index.QueryBySmiles(query)
+	if err != nil {
+		log.Printf("Error querying by SMILES: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
 		result.MatchFound = false
 		result.ErrMsg = "No compound found"
 		return
 	}
-
-	for _, compound := range compounds {
-		result.Matches = append(result.Matches, compound)
-		result.MatchFound = true
-		result.MatchLevel = "Exact SMILES"
-	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact SMILES"
+	result.Matches = compounds
 }
 
 func matchFormula(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, ok := index.ByFormula[query]
-	if !ok {
+	compounds, err := index.QueryByFormula(query)
+	if err != nil {
+		log.Printf("Error querying by formula: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
 		result.MatchFound = false
 		result.ErrMsg = "No compound found"
 		return
 	}
-
-	for _, compound := range compounds {
-		result.Matches = append(result.Matches, compound)
-		result.MatchFound = true
-		result.MatchLevel = "Exact Formula"
-	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact Formula"
+	result.Matches = compounds
 }
 
 func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, ok := index.ByFormula[query]
-	if !ok {
-		// If formula match failed, try smiles
-		compounds, ok = index.BySmiles[query]
-		if !ok {
-			result.MatchFound = false
-			result.ErrMsg = "No compound found"
-			return
-		}
-
-		for _, compound := range compounds {
-			result.QueryType = "smiles"
-			result.Matches = append(result.Matches, compound)
-			result.MatchFound = true
-			result.MatchLevel = "Exact SMILES"
-		}
+	// Try formula first
+	compounds, err := index.QueryByFormula(query)
+	if err != nil {
+		log.Printf("Error querying by formula: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
 		return
 	}
-	
-	for _, compound := range compounds {
+	if len(compounds) > 0 {
 		result.QueryType = "formula"
-		result.Matches = append(result.Matches, compound)
 		result.MatchFound = true
 		result.MatchLevel = "Exact Formula"
+		result.Matches = compounds
+		return
 	}
-}
 
+	// Fall back to SMILES
+	compounds, err = index.QueryBySmiles(query)
+	if err != nil {
+		log.Printf("Error querying by SMILES: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+	result.QueryType = "smiles"
+	result.MatchFound = true
+	result.MatchLevel = "Exact SMILES"
+	result.Matches = compounds
+}
