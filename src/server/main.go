@@ -38,9 +38,12 @@ func main() {
 	datadir := os.Getenv("CTS_DATA_DIR")
 	if datadir == "" {
 		// For local development when not using the Docker image
-		datadir = "../data"
+		datadir = "../dataset"
 	}
 	dbPath := path.Join(datadir, "compounds.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		log.Fatalf("Database file %s does not exist", dbPath)
+	}
 
 	index, err := model.OpenSQLiteIndex(dbPath)
 	if err != nil {
