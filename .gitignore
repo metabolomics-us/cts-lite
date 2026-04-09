@@ -1,7 +1,6 @@
-# Ignore csvs and zips
+data/*.db*
 *.csv
 *.zip
-
 __pycache__
 .coveragedata
 coverage.out
