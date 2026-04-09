@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,13 +97,13 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					result.MatchLevel,
 					result.ErrMsg,
 					match.InChIKey,
-					match.FirstBlock,
+					match.InChIKey[:14], // firstblock
 					match.InChI,
 					match.Smiles,
 					match.CompoundName,
 					match.MolecularFormula,
-					match.PubMedCount,
-					match.PatentCount,
+					strconv.FormatFloat(float64(match.PubMedCount), 'f', -1, 32),
+					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 				}
 				if err := writer.Write(row); err != nil {
 					return fmt.Errorf("failed to write CSV row: %w", err)
@@ -150,7 +151,6 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
 	queries := splitter.Split(rawQuery, -1)
-	// log.Println("Received", len(queries), "queries")
 
 	results := make([]*model.SingleResult, 0, len(queries))
 	var matchCount int = 0
@@ -240,6 +240,5 @@ func Status(w http.ResponseWriter, _ *http.Request) {
 		log.Printf("Status check failed to write response: %v", err)
 		return
 	}
-	// log.Println("Status check successful") // Was inflating the logs unnecessarily
 }
 
