@@ -34,16 +34,17 @@ func main() {
 	fs := http.FileServer(http.Dir("./web"))
 	http.Handle("/", fs)
 
-	// Load PubChemLite into memory
+	// Resolve the SQLite database path
 	datadir := os.Getenv("CTS_DATA_DIR")
 	if datadir == "" {
 		// For local development when not using the Docker image
 		datadir = "../data"
 	}
-	dataset := path.Join(datadir, "cts-lite_20260407.csv")
-	index, err := model.LoadPubChemLite(dataset)
+	dbPath := path.Join(datadir, "compounds.db")
+
+	index, err := model.OpenSQLiteIndex(dbPath)
 	if err != nil {
-		log.Fatalf("Error loading PubChemLite: %v", err)
+		log.Fatalf("Error opening SQLite index: %v", err)
 	}
 
 	// Default endpoints for health checks
