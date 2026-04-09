@@ -38,7 +38,7 @@ func main() {
 	datadir := os.Getenv("CTS_DATA_DIR")
 	if datadir == "" {
 		// For local development when not using the Docker image
-		datadir = "../dataset"
+		datadir = "dataset"
 	}
 	dbPath := path.Join(datadir, "compounds.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {

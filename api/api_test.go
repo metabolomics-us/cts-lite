@@ -19,7 +19,7 @@ var mockIndex *model.PubChemIndex
 
 func TestMain(m *testing.M) {
 	var err error
-	mockIndex, err = model.LoadCSVToMemory("../../dataset/test_datasets/unittest_data.csv")
+	mockIndex, err = model.LoadCSVToMemory("../dataset/test_datasets/unittest_data.csv")
 	if err != nil {
 		log.Fatalf("failed to load test CSV: %v", err)
 	}

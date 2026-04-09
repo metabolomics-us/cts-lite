@@ -5,7 +5,7 @@ import random
 from locust import HttpUser, task, between
 
 class CTSLiteUser(HttpUser):
-    host = "http://localhost:8080"
+    host = "https://cts-lite.metabolomics.us"
     wait_time = between(1, 5)
     
     # Class-level variable to store CSV lines (shared by all users)
@@ -15,7 +15,7 @@ class CTSLiteUser(HttpUser):
     @classmethod
     def on_start_class(cls):
         if not cls.lines:  # only load if empty
-            file = "../../../data/test_datasets/loadtest_data.csv"
+            file = "../../dataset/test_datasets/loadtest_data.csv"
             logging.info(f"Reading data from {file}")
             with open(file, "r") as f:
                 reader = csv.DictReader(f)
@@ -28,17 +28,22 @@ class CTSLiteUser(HttpUser):
 
     @task
     def match_queries(self):
-        line = random.choice(self.lines)
-        query_type = random.choice(["InChIKey", "InChI", "SMILES", "MolecularFormula"])
-        query = line[query_type]
+        # Random number of lines to query from per task
+        num_lines = random.randint(1, 40)
+        rows = random.sample(self.lines, num_lines)
 
-        logging.debug(f"Performing query with: {query}")
-        
-        payload = {"queries": query}
+        queries = []
+        for row in rows:
+            query_type = random.choice(["InChIKey", "SMILES", "InChI", "MolecularFormula"])
+            queries.append(row[query_type])
+
+        logging.debug(f"Performing query with: {queries}")
+
+        payload = {"queries": ' '.join(queries)}
 
         with self.client.post(
             "/match", 
-            json=payload, 
+            json=payload,
             catch_response=True
         ) as response:
             if response.status_code != 200:

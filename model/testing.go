@@ -1,5 +1,7 @@
 package model
 
+// These methods are only used by the tests, to load a 'mock' database
+
 import (
 	"time"
 	"log"
