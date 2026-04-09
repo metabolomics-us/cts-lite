@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reorders CSV columns with csvcut and renames header columns
+# Reorders and renames CSV header columns to align with CTS-Lite
 
 set -euo pipefail
 

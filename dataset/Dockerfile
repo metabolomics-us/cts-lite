@@ -3,8 +3,12 @@
 FROM golang:1.23-alpine
 
 RUN mkdir -p /base/data
-
-# Ensure the dataset path and filename are correct
-COPY cts-lite_20260407.csv /base/data
-
 ENV CTS_DATA_DIR=/base/data
+
+# Copy the dataset
+COPY cts-lite.csv /base/data
+COPY cmd /src/cmd
+
+# Build the database
+RUN go run ./src/cmd/build-db/build-db.go "${CTS_DATA_DIR}/cts-lite.csv" "${CTS_DATA_DIR}/compounds.db"
+

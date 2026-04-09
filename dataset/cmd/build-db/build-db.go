@@ -1,4 +1,4 @@
-// build-db converts a CTS-Lite CSV dataset into a SQLite database.
+// Converts a CTS-Lite CSV dataset into a SQLite database
 
 // Usage:
 //   build-db <input.csv> <output.db>
@@ -53,7 +53,7 @@ func run(csvPath, dbPath string) error {
 	}
 	defer db.Close()
 
-	// Pragmas tuned for bulk insert throughput.
+	// Pragmas tuned for bulk insert throughput
 	for _, pragma := range []string{
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL",

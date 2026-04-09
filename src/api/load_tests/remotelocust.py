@@ -15,7 +15,7 @@ class CTSLiteUser(HttpUser):
     @classmethod
     def on_start_class(cls):
         if not cls.lines:  # only load if empty
-            file = "../../../data/test_datasets/loadtest_pubchemlite.csv"
+            file = "../../../data/test_datasets/loadtest_data.csv"
             logging.info(f"Reading data from {file}")
             with open(file, "r") as f:
                 reader = csv.DictReader(f)
