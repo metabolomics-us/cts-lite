@@ -1,128 +1,168 @@
 package model
 
 import (
-	"encoding/csv"
+	"database/sql"
 	"fmt"
-	"io"
-	"log"
-	"os"
-	"sort"
-	"strconv"
-	"time"
+	"runtime"
+
+	_ "modernc.org/sqlite" // SQLite driver
 )
 
 type Compound struct {
 	Identifier       string  `json:"identifier"`
 	InChIKey         string  `json:"inchikey"`
-	FirstBlock       string  `json:"first_block"`
 	InChI            string  `json:"inchi"`
 	Smiles           string  `json:"smiles"`
 	CompoundName     string  `json:"compound_name"`
 	MolecularFormula string  `json:"molecular_formula"`
-	MonoisotopicMass string  `json:"monoisotopic_mass"`
-	PubMedCount      string  `json:"pubmed_count"`
-	PatentCount      string  `json:"patent_count"`
-	SortingScore	 float64 `json:"-"`	// Internal field, ignore by API
+	MonoisotopicMass float64 `json:"monoisotopic_mass"`
+	PubMedCount      float32 `json:"pubmed_count"`
+	PatentCount      float32 `json:"patent_count"`
 }
 
+type SingleResult struct {
+	Query      string      `json:"query"`
+	QueryType  string      `json:"query_type"`
+	MatchFound bool        `json:"found_match"`
+	MatchLevel string      `json:"match_level"`
+	Matches    []*Compound `json:"matches"`
+	ErrMsg     string      `json:"error_message"`
+}
+
+// PubChemIndex wraps an SQLite database and prepared statements for each lookup type
 type PubChemIndex struct {
-	Compounds    []*Compound
-	ByInChIKey   map[string]*Compound
-	ByInChI      map[string]*Compound
-	BySmiles     map[string][]*Compound
-	ByFirstBlock map[string][]*Compound
-	ByFormula	 map[string][]*Compound
+	db           *sql.DB
+	byInChIKey   *sql.Stmt
+	byFirstBlock *sql.Stmt
+	byInChI      *sql.Stmt
+	bySmiles     *sql.Stmt
+	byFormula    *sql.Stmt
 }
 
-const (
-	literatureWeight = 0.7
-	patentWeight	 = 0.3
-)
+const selectCols = `SELECT identifier, inchikey, inchi, smiles, compound_name,
+	molecular_formula, monoisotopic_mass, pubmed_count, patent_count FROM compounds`
+const orderByScore = ` ORDER BY (0.7 * pubmed_count + 0.3 * patent_count) DESC`
 
-func sortCompoundIndex(m map[string][]*Compound) {
-	for _, compounds := range m {
-		sort.Slice(compounds, func(i, j int) bool {
-			return compounds[i].SortingScore > compounds[j].SortingScore
-		})
-	}
-}
-
-func LoadPubChemLite(file string) (*PubChemIndex, error) {
-	startTime := time.Now()
-	// Open the file
-	f, err := os.Open(file)
+// OpenSQLiteIndex opens a pre-built SQLite database for production use
+func OpenSQLiteIndex(dbPath string) (*PubChemIndex, error) {
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Close the file (deferred)
-	defer func() {
-		err := f.Close()
-		if err != nil {
-			log.Printf("Failed to close file: %v", err)
+	// Performance tuning: mmap lets the OS page cache serve reads directly from
+	//   the mapped file, reducing Go heap and GC pressure
+	pragmas := []string{
+		"PRAGMA mmap_size = 2147483648",  // 2 GB memory-mapped I/O (adjusted for ECS instance resources)
+		"PRAGMA cache_size = -131072",    // 128 MB SQLite page cache
+		"PRAGMA temp_store = MEMORY",
+	}
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to apply pragma %q: %w", p, err)
 		}
-	}()
-
-	reader := csv.NewReader(f)
-	_, _ = reader.Read() // skip header of csv file
-
-	index := &PubChemIndex{
-		ByInChIKey:   make(map[string]*Compound),
-		ByInChI:      make(map[string]*Compound),
-		BySmiles:     make(map[string][]*Compound),
-		ByFirstBlock: make(map[string][]*Compound),
-		ByFormula:	  make(map[string][]*Compound),
 	}
 
-	fmt.Printf("Loading PubChemLite into memory using %v...\n", file)
+	// WAL mode allows multiple concurrent readers; it was set at build time and
+	//   is persisted in the DB file, so we don't need to set it again here
+	db.SetMaxOpenConns(runtime.NumCPU() * 2)
+	db.SetMaxIdleConns(runtime.NumCPU())
 
-	// Loop until we reach EOF
-	for {
-		line, err := reader.Read()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, fmt.Errorf("failed to read file: %w", err)
-		}
-
-		// This only works on the PubChemLite dataset after running the `pubchemlite_trimmer.sh` script
-		c := &Compound{
-			Identifier:       line[0],
-			FirstBlock:       line[1],
-			PubMedCount:      line[2],
-			PatentCount:      line[3],
-			MolecularFormula: line[4],
-			Smiles:           line[5],
-			InChI:            line[6],
-			InChIKey:         line[7],
-			MonoisotopicMass: line[8],
-			CompoundName:     line[9],
-		}
-
-		fPatentCount, err := strconv.ParseFloat(c.PatentCount, 64)
-		if err != nil {
-			return nil, fmt.Errorf("error when parsing string '%s' to float: %w", c.PatentCount, err)
-		}
-		fPubMedCount, err := strconv.ParseFloat(c.PubMedCount, 64)
-		if err != nil {
-			return nil, fmt.Errorf("error when parsing string '%s' to float: %w", c.PubMedCount, err)
-		}
-		c.SortingScore = fPatentCount*patentWeight + fPubMedCount*literatureWeight
-
-		index.Compounds = append(index.Compounds, c)
-		index.ByInChIKey[c.InChIKey] = c
-		index.ByInChI[c.InChI] = c
-		index.BySmiles[c.Smiles] = append(index.BySmiles[c.Smiles], c)
-		index.ByFirstBlock[c.FirstBlock] = append(index.ByFirstBlock[c.FirstBlock], c)
-		index.ByFormula[c.MolecularFormula] = append(index.ByFormula[c.MolecularFormula], c)
-	}
-
-	// Sort indices with arrays by lit/pat count with weights
-	sortCompoundIndex(index.BySmiles)
-	sortCompoundIndex(index.ByFirstBlock)
-	sortCompoundIndex(index.ByFormula)
-
-	timeToLoad := time.Since(startTime).Seconds()
-	fmt.Printf("Loaded %d compounds, took %.2f seconds\n", len(index.Compounds), timeToLoad)
-	return index, nil
+	return newIndex(db)
 }
+
+// newIndex prepares all statements on an already-configured *sql.DB
+func newIndex(db *sql.DB) (*PubChemIndex, error) {
+	idx := &PubChemIndex{db: db}
+
+	stmts := []struct {
+		dest  **sql.Stmt
+		query string
+	}{
+		{&idx.byInChIKey, selectCols + ` WHERE inchikey = ?` + orderByScore},
+		{&idx.byFirstBlock, selectCols + ` WHERE first_block = ?` + orderByScore},
+		{&idx.byInChI, selectCols + ` WHERE inchi = ?` + orderByScore},
+		{&idx.bySmiles, selectCols + ` WHERE smiles = ?` + orderByScore},
+		{&idx.byFormula, selectCols + ` WHERE molecular_formula = ?` + orderByScore},
+	}
+
+	for _, s := range stmts {
+		stmt, err := db.Prepare(s.query)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to prepare statement: %w", err)
+		}
+		*s.dest = stmt
+	}
+
+	return idx, nil
+}
+
+// CreateTableSQL and CreateIndexSQL are exported so cmd/build-db can reuse them
+const CreateTableSQL = `CREATE TABLE IF NOT EXISTS compounds (
+	identifier        TEXT NOT NULL,
+	inchikey          TEXT NOT NULL,
+	first_block       TEXT NOT NULL,
+	inchi             TEXT NOT NULL,
+	smiles            TEXT NOT NULL,
+	compound_name     TEXT NOT NULL,
+	molecular_formula TEXT NOT NULL,
+	monoisotopic_mass REAL NOT NULL,
+	pubmed_count      REAL NOT NULL,
+	patent_count      REAL NOT NULL
+)`
+
+const CreateIndexSQL = `
+CREATE INDEX IF NOT EXISTS idx_inchikey    ON compounds(inchikey);
+CREATE INDEX IF NOT EXISTS idx_first_block ON compounds(first_block);
+CREATE INDEX IF NOT EXISTS idx_inchi       ON compounds(inchi);
+CREATE INDEX IF NOT EXISTS idx_smiles      ON compounds(smiles);
+CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula)`
+
+const InsertSQL = `INSERT INTO compounds
+	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, monoisotopic_mass, pubmed_count, patent_count)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+// query executes a prepared statement and scans all result rows into Compound pointers
+func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) {
+	rows, err := stmt.Query(arg)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
+
+	var compounds []*Compound
+	for rows.Next() {
+		c := &Compound{}
+		if err := rows.Scan(
+			&c.Identifier, &c.InChIKey, &c.InChI, &c.Smiles, &c.CompoundName,
+			&c.MolecularFormula, &c.MonoisotopicMass, &c.PubMedCount, &c.PatentCount,
+		); err != nil {
+			return nil, fmt.Errorf("scan failed: %w", err)
+		}
+		compounds = append(compounds, c)
+	}
+	return compounds, rows.Err()
+}
+
+func (idx *PubChemIndex) QueryByInChIKey(key string) ([]*Compound, error) {
+	return idx.query(idx.byInChIKey, key)
+}
+
+func (idx *PubChemIndex) QueryByFirstBlock(block string) ([]*Compound, error) {
+	return idx.query(idx.byFirstBlock, block)
+}
+
+func (idx *PubChemIndex) QueryByInChI(inchi string) ([]*Compound, error) {
+	return idx.query(idx.byInChI, inchi)
+}
+
+func (idx *PubChemIndex) QueryBySmiles(smiles string) ([]*Compound, error) {
+	return idx.query(idx.bySmiles, smiles)
+}
+
+func (idx *PubChemIndex) QueryByFormula(formula string) ([]*Compound, error) {
+	return idx.query(idx.byFormula, formula)
+}
+
