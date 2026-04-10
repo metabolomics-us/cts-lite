@@ -135,8 +135,10 @@ remove_duplicates() {
 
 print_summary() {
   echo "Dataset '$DATASET_NAME' created successfully!"
+  printf "\t%'d compounds in total\n" "$(( $(wc -l < "${SCRIPT_DIR}/../${DATASET_NAME}") - 1 ))"
   echo "The dataset can be found at '$(realpath "${SCRIPT_DIR}/../${DATASET_NAME}")'"
-  echo "Took $(($(date +%s) - START_TIMER)) seconds"
+  local elapsed=$(( $(date +%s) - START_TIMER ))
+  echo "Took $(( elapsed / 60 ))m $(( elapsed % 60 ))s"
 }
 
 main() {
