@@ -2,13 +2,15 @@
 # - It is used by the GitHub Actions workflow, allowing auto-deployment to AWS without storing the dataset on GitHub
 FROM golang:1.23-alpine
 
-RUN mkdir -p /base/data
+ENV DATASET=cts-lite_20260410.csv
 ENV CTS_DATA_DIR=/base/data
 
+RUN mkdir -p ${CTS_DATA_DIR}
+
 # Copy the dataset
-COPY cts-lite.csv /base/data
-COPY cmd /src/cmd
+COPY ${DATASET} ${CTS_DATA_DIR}
+COPY cmd /cmd
 
 # Build the database
-RUN go run ./src/cmd/build-db/build-db.go "${CTS_DATA_DIR}/cts-lite.csv" "${CTS_DATA_DIR}/compounds.db"
+RUN go run ./cmd/build-db/build-db.go "${CTS_DATA_DIR}/${DATASET}" "${CTS_DATA_DIR}/compounds.db"
 

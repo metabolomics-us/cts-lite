@@ -1,6 +1,6 @@
 # Ignore directories that are unnecessary to the actual the service
-data/
-supplementary/
+dataset/
 .git/
 .github/
+.gitignore
 

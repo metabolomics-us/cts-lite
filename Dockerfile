@@ -1,7 +1,7 @@
 FROM 702514165722.dkr.ecr.us-west-2.amazonaws.com/cts-lite:dataset-only
 
 WORKDIR /app
-COPY ./src .
+COPY . .
 
 # Build the server
 RUN go mod download
