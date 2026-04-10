@@ -53,9 +53,9 @@ cleanup_on_failure() {
   [[ ${#temp_files[@]} -eq 0 ]] && return
 
   divider
-  echo "Unexpected error. Temporary files left behind:"
+  echo "ERROR: an unexpected failure occurred. Temporary files left behind:"
   printf "  %s\n" "${temp_files[@]}"
-  read -r -p "Clean up? [y/N] " response
+  read -r -p "Clean them up? [y/N] " response
   if [[ "${response,,}" == "y" || "${response,,}" == "yes" ]]; then
     rm -f "${temp_files[@]}"
     echo "Cleaned up."
@@ -63,6 +63,7 @@ cleanup_on_failure() {
 }
 
 trap cleanup_on_failure EXIT
+trap 'exit 130' INT TERM
 
 dataset_exists() {
   if [[ -f "${SCRIPT_DIR}/../${DATASET_NAME}" ]]; then
