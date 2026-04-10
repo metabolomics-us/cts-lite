@@ -4,6 +4,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 START_TIMER=$(date +%s)
 DATASET_NAME="${1:-cts-lite_$(date +%Y%m%d).csv}"
 
@@ -84,27 +85,27 @@ merge_csvs() {
 
 adjust_csv_headers () {
   echo "Adjusting headers..."
-  go run ./csv-magic/firstblock/firstblock.go pubchem.csv
+  go run "${SCRIPT_DIR}/csv-magic/firstblock/firstblock.go" pubchem.csv
   divider
-  ./csv-magic/reorder_columns.sh firstblocks_pubchem.csv reordered_pubchem.csv
+  "${SCRIPT_DIR}/csv-magic/reorder_columns.sh" firstblocks_pubchem.csv reordered_pubchem.csv
   divider
   rm pubchem.csv firstblocks_pubchem.csv
 }
 
 remove_duplicates() {
   echo "Removing duplicates..."
-  go run ./csv-magic/dedupe/dedupe.go reordered_pubchem.csv
+  go run "${SCRIPT_DIR}/csv-magic/dedupe/dedupe.go" reordered_pubchem.csv
   echo "Renaming dataset..."
   mv deduped_reordered_pubchem.csv "$DATASET_NAME"
   # Move into the dataset/ folder
-  mv "$DATASET_NAME" ../
+  mv "$DATASET_NAME" "${SCRIPT_DIR}/../"
   rm reordered_pubchem.csv
   divider
 }
 
 print_summary() {
   echo "Dataset '$DATASET_NAME' created successfully!"
-  echo "The dataset can be found at '$(realpath ../"$DATASET_NAME")'"
+  echo "The dataset can be found at '$(realpath "${SCRIPT_DIR}/../${DATASET_NAME}")'"
   echo "Took $(($(date +%s) - START_TIMER)) seconds"
 }
 
