@@ -38,6 +38,32 @@ divider() {
   echo -e "\n---------------------------------------------\n"
 }
 
+cleanup_on_failure() {
+  local exit_code=$?
+  [[ $exit_code -eq 0 ]] && return
+
+  local temp_files=()
+  for category in "${!pubchem_categories[@]}"; do
+    [[ -f "${category}.csv" ]] && temp_files+=("${category}.csv")
+  done
+  for f in pubchem.csv firstblocks_pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv; do
+    [[ -f "$f" ]] && temp_files+=("$f")
+  done
+
+  [[ ${#temp_files[@]} -eq 0 ]] && return
+
+  divider
+  echo "Unexpected error. Temporary files left behind:"
+  printf "  %s\n" "${temp_files[@]}"
+  read -r -p "Clean up? [y/N] " response
+  if [[ "${response,,}" == "y" || "${response,,}" == "yes" ]]; then
+    rm -f "${temp_files[@]}"
+    echo "Cleaned up."
+  fi
+}
+
+trap cleanup_on_failure EXIT
+
 dataset_exists() {
   if [[ -f "${SCRIPT_DIR}/../${DATASET_NAME}" ]]; then
     echo "Dataset '$DATASET_NAME' already exists at '$(realpath "${SCRIPT_DIR}/../${DATASET_NAME}")'. Exiting..."
