@@ -30,7 +30,7 @@ declare -A pubchem_categories=(
 )
 
 # Ensure all required tools are available
-for cmd in csvstack jq curl go wget realpath; do
+for cmd in csvstack jq gzip curl go wget realpath; do
   command -v "$cmd" >/dev/null || { echo "Required tool not found: $cmd" >&2; exit 1; }
 done
 
@@ -139,6 +139,22 @@ print_summary() {
   echo "The dataset can be found at '$(realpath "${SCRIPT_DIR}/../${DATASET_NAME}")'"
   local elapsed=$(( $(date +%s) - START_TIMER ))
   echo "Took $(( elapsed / 60 ))m $(( elapsed % 60 ))s"
+  divider
+}
+
+push_to_s3() {
+  read -r -p "Push the dataset to S3? [y/N] " response
+  if [[ "${response,,}" == "y" || "${response,,}" == "yes" ]]; then
+    echo "Compressing dataset first..."
+    gzip -k "${SCRIPT_DIR}/../${DATASET_NAME}"
+    echo "Pushing to S3..."
+    aws s3 cp "${SCRIPT_DIR}/../${DATASET_NAME}.gz" "s3://cts-lite-datasets/${DATASET_NAME}.gz"
+    aws s3 cp "s3://cts-lite-datasets/${DATASET_NAME}.gz" "s3://cts-lite-datasets/cts-lite_latest.csv.gz"
+    echo "Pushed to S3"
+    rm "${SCRIPT_DIR}/../${DATASET_NAME}.gz"
+  else
+    echo "Skipping push to S3"
+  fi
 }
 
 main() {
@@ -149,6 +165,7 @@ main() {
   adjust_csv_headers
   remove_duplicates
   print_summary
+  push_to_s3
 }
 
 main "$@"
