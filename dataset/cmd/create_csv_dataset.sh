@@ -39,8 +39,8 @@ divider() {
 }
 
 dataset_exists() {
-  if [[ -f "$DATASET_NAME" ]]; then
-    echo "Dataset '$DATASET_NAME' already exists. Exiting..."
+  if [[ -f "${SCRIPT_DIR}/../${DATASET_NAME}" ]]; then
+    echo "Dataset '$DATASET_NAME' already exists at '$(realpath "${SCRIPT_DIR}/../${DATASET_NAME}")'. Exiting..."
     exit 1
   fi
 }
