@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 )
 
 // corsMiddleware adds CORS headers to HTTP responses
@@ -34,13 +33,7 @@ func main() {
 	fs := http.FileServer(http.Dir("./web"))
 	http.Handle("/", fs)
 
-	// Resolve the SQLite database path
-	datadir := os.Getenv("CTS_DATA_DIR")
-	if datadir == "" {
-		// For local development when not using the Docker image
-		datadir = "dataset"
-	}
-	dbPath := path.Join(datadir, "compounds.db")
+	dbPath := "dataset/compounds.db"
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		log.Fatalf("Database file %s does not exist", dbPath)
 	}

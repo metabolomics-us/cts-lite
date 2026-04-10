@@ -16,10 +16,10 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: "1.23"
+        go-version: "1.25"
 
     - name: Run Go Tests
-      run: cd src && go test ./... -v
+      run: go test ./... -v
 
   build_and_push_image:
     needs: test
@@ -38,6 +38,19 @@ jobs:
     - name: AWS Login
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Download dataset
+      run: |
+        aws s3 cp s3://cts-lite-data/cts-lite_latest.csv.gz dataset/cts-lite_latest.csv.gz
+        gzip -d dataset/cts-lite_latest.csv.gz
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.25"
+
+    - name: Build database
+      run: cd dataset && go run ./cmd/build-db/build-db.go cts-lite_latest.csv compounds.db
 
     - name: Build the Docker image
       run: docker build --no-cache . -t cts-lite:latest

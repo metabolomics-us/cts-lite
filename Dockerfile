@@ -1,4 +1,4 @@
-FROM 702514165722.dkr.ecr.us-west-2.amazonaws.com/cts-lite:dataset-only
+FROM golang:1.25-alpine
 
 WORKDIR /app
 COPY . .

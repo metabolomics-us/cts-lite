@@ -12,24 +12,27 @@ A lightweight Chemical Translation Service matching against a curated subset of 
 
 ---
 
-### Development
+## Development
 
-#### Stack
-- Go 1.23
+### Stack
+- Go 1.25
 - SQLite
 - Docker
 - Locust (load testing)
 
-#### Docker
-- CTS-Lite is made up of two docker images
-    1. A base image containing only the dataset
-    2. The complete application image built on top of the base image
-        - This is done to allow for automatic deployment with GitHub Actions, since the dataset is not tracked in the repository
+### Docker
+- CTS-Lite is containerized with Docker
+- The GitHub Actions workflow will automatically build and deploy the complete application image upon any push or merge to the main branch
+- Note: to build the docker image locally, you must have the database built and stored as `dataset/compounds.db`
 
-- To build the images, first build the base image
-    - Ensure the csv dataset is inside `./dataset/` and referenced accordingly by the Dockerfile in `./dataset/`
-    - Inside `./dataset/`, run `docker build -t cts-lite:dataset-only .`
-    - Push that image to the AWS ECR registry
-    - The GitHub Actions workflow will automatically build and deploy the complete application image upon any push to the main branch
-    - Note: to build the application image locally, just run `docker build -t cts-lite .` from the root of the project
+### Dataset Directory
+The dataset directory stores the dataset and the tools used to create it
+
+#### Dataset Creation
+Simply run the `create_csv_dataset.sh` script found under `cmd/`  
+To update the dataset used by production, make sure you elect to push to S3 at the end of the script  
+Then, the next time the app is deployed via GitHub Actions (push/merge to main), the latest dataset will be downloaded from S3 and the database will be rebuilt  
+
+#### cmd
+The cmd directory holds helper programs and scripts used to construct the dataset and database
 

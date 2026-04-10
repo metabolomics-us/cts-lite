@@ -1,5 +1,6 @@
 # Ignore directories that are unnecessary to the actual the service
 dataset/
+!dataset/compounds.db
 .git/
 .github/
 .gitignore
