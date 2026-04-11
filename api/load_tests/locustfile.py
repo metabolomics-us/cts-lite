@@ -2,20 +2,42 @@ import logging
 import csv
 import random
 
-from locust import HttpUser, task, between
+from locust import HttpUser, task, between, events
+
+HOSTS = {
+    "local": "http://localhost:8080",
+    "remote": "https://cts-lite.metabolomics.us",
+}
+
+
+@events.init_command_line_parser.add_listener
+def _(parser):
+    parser.add_argument(
+        "--env",
+        choices=["local", "remote"],
+        default="local",
+        help="Target environment (default: local)",
+    )
+
+
+@events.init.add_listener
+def on_locust_init(environment, **kwargs):
+    env = environment.parsed_options.env if environment.parsed_options else "local"
+    CTSLiteUser.host = HOSTS[env]
+    logging.info(f"Running against {env} host: {CTSLiteUser.host}")
+
 
 class CTSLiteUser(HttpUser):
-    host = "https://cts-lite.metabolomics.us"
+    host = HOSTS["local"]
     wait_time = between(1, 5)
-    
+
     # Class-level variable to store CSV lines (shared by all users)
     lines = []
 
-    # Class method to load data only once
     @classmethod
     def on_start_class(cls):
-        if not cls.lines:  # only load if empty
-            file = "../../../data/test_datasets/loadtest_pubchemlite.csv"
+        if not cls.lines:
+            file = "../../dataset/test_datasets/loadtest_data.csv"
             logging.info(f"Reading data from {file}")
             with open(file, "r") as f:
                 reader = csv.DictReader(f)
@@ -23,12 +45,10 @@ class CTSLiteUser(HttpUser):
             logging.info(f"Loaded {len(cls.lines)} lines from {file}")
 
     def on_start(self):
-        # Call class-level loader
         self.on_start_class()
 
     @task
     def match_queries(self):
-        # Random number of lines to query from per task
         num_lines = random.randint(1, 40)
         rows = random.sample(self.lines, num_lines)
 
@@ -39,15 +59,14 @@ class CTSLiteUser(HttpUser):
 
         logging.debug(f"Performing query with: {queries}")
 
-        payload = {"queries": ' '.join(queries)}
+        payload = {"queries": " ".join(queries)}
 
         with self.client.post(
-            "/match", 
+            "/match",
             json=payload,
-            catch_response=True
+            catch_response=True,
         ) as response:
             if response.status_code != 200:
                 response.failure(f"Failed with status {response.status_code}: {response.text}")
             else:
                 response.success()
-

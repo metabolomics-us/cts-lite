@@ -190,7 +190,7 @@ function displayResults(data, outputElement) {
             </div>
             <div class="match-field">
               <label>First Block:</label>
-              <span class="monospace">${escapeHtml(match.first_block)}</span>
+              <span class="monospace">${escapeHtml(match.inchikey.slice(0,14))}</span>
             </div>
             <div class="match-field">
               <label>InChI:</label>
@@ -210,15 +210,15 @@ function displayResults(data, outputElement) {
             </div>
             <div class="match-field">
               <label>Exact Mass:</label>
-              <span class="monospace">${escapeHtml(match.monoisotopic_mass)}</span>
+              <span class="monospace">${match.monoisotopic_mass}</span>
             </div>
             <div class="match-field">
               <label>PubMed Count:</label>
-              <span class="monospace">${escapeHtml(match.pubmed_count)}</span>
+              <span class="monospace">${match.pubmed_count}</span>
             </div>
             <div class="match-field">
               <label>Patent Count:</label>
-              <span class="monospace">${escapeHtml(match.patent_count)}</span>
+              <span class="monospace">${match.patent_count}</span>
             </div>
           </div>
         `;

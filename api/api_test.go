@@ -19,58 +19,55 @@ var mockIndex *model.PubChemIndex
 
 func TestMain(m *testing.M) {
 	var err error
-	mockIndex, err = model.LoadPubChemLite("../../data/test_datasets/unittest_pubchemlite.csv")
+	mockIndex, err = model.LoadCSVToMemory("../dataset/test_datasets/unittest_data.csv")
 	if err != nil {
 		log.Fatalf("failed to load test CSV: %v", err)
 	}
 	os.Exit(m.Run())
 }
 
-// Data must match unittest_pubchemlite.csv exactly
+// Data must match unittest_data.csv exactly
 func fakeWaterCompound() *model.Compound {
 	return &model.Compound{
 		Identifier:       "1",
 		InChIKey:         "MYFAKEINCHIKEY-ISRIGHTHER-E",
-		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/H2O/h1H2",
 		Smiles:           "O",
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
-		MonoisotopicMass: "100",
-		PubMedCount:      "10",
-		PatentCount:      "2",
+		MonoisotopicMass: 100,
+		PubMedCount:      10,
+		PatentCount:      2,
 	}
 }
 
-// Data must match unittest_pubchemlite.csv exactly
+// Data must match unittest_data.csv exactly
 func fakeFormaldehyde() *model.Compound {
 	return &model.Compound{
 		Identifier:       "3",
 		InChIKey:         "FAKEFORMALDEHY-FAKEFRMALD-E",
-		FirstBlock:       "FAKEFORMALDEHY",
 		InChI:            "InChI=1S/CH2O/c1-2/h1H2",
 		Smiles:           "C=O",
 		CompoundName:     "Formaldehyde",
 		MolecularFormula: "CH2O",
-		MonoisotopicMass: "30",
-		PubMedCount:      "5",
-		PatentCount:      "1",
+		MonoisotopicMass: 30,
+		PubMedCount:      5,
+		PatentCount:      1,
 	}
 }
 
-// Data must match unittest_pubchemlite.csv exactly
+// Data must match unittest_data.csv exactly
 func fakeMethaneCompound() *model.Compound {
 	return &model.Compound{
 		Identifier:       "2",
 		InChIKey:         "MYFAKEINCHIKEY-ANOTHERONE-E",
-		FirstBlock:       "MYFAKEINCHIKEY",
 		InChI:            "InChI=1S/CH4/h1H4",
 		Smiles:           "C",
 		CompoundName:     "Methane",
 		MolecularFormula: "CH4",
-		MonoisotopicMass: "99",
-		PubMedCount:      "18",
-		PatentCount:      "7",
+		MonoisotopicMass: 99,
+		PubMedCount:      18,
+		PatentCount:      7,
 	}
 }
 
@@ -282,7 +279,7 @@ func TestMatchErrors(t *testing.T) {
 
 func TestQuotedEmptyQuery(t *testing.T) {
 	// Regression: `""` after quote-stripping becomes empty, which previously caused
-	// a panic in parseQueryType due to an out-of-bounds slice on an empty string.
+	//   a panic in parseQueryType due to an out-of-bounds slice on an empty string
 	res := doMatchRequest(t, `{"queries":"\"\""}`, nil)
 	results := parseMatchResults(t, res)
 
@@ -293,9 +290,9 @@ func TestQuotedEmptyQuery(t *testing.T) {
 
 func TestSingleDoubleQuoteQuery(t *testing.T) {
 	// Regression: a lone `"` character was not stripped by the quote-removal
-	// logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
-	// empty slice q[1:0]), and was not caught by the subsequent empty-string
-	// check, leading to a panic in parseQueryType.
+	//   logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
+	//   empty slice q[1:0]), and was not caught by the subsequent empty-string
+	//   check, leading to a panic in parseQueryType.
 	res := doMatchRequest(t, `{"queries":"\""}`, nil)
 	results := parseMatchResults(t, res)
 
@@ -424,6 +421,58 @@ func TestCSVFormatResponse(t *testing.T) {
 	}
 	if diff := cmp.Diff(expectedData, records[1]); diff != "" {
 		t.Errorf("CSV data row mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestMatchErrorPaths verifies that all matchXxx functions return an internal
+// error message (rather than panicking) when the underlying database is closed.
+// Each sub-test uses a fresh index so closing it does not affect other tests.
+func TestMatchErrorPaths(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{"inchi", `{"queries":"InChI=1S/H2O/h1H2"}`},
+		{"inchikey_exact", `{"queries":"MYFAKEINCHIKEY-ISRIGHTHER-E"}`},
+		// Full InChIKey miss → falls through to first-block lookup
+		{"inchikey_firstblock", `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`},
+		{"smiles", `{"queries":"O"}`},
+		{"formula", `{"queries":"H2O"}`},
+		{"smiles_or_formula", `{"queries":"CH4"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			brokenIndex, err := model.LoadCSVToMemory("../dataset/test_datasets/unittest_data.csv")
+			if err != nil {
+				t.Fatalf("failed to load index: %v", err)
+			}
+			brokenIndex.Close() // close DB to force query errors
+
+			req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(tc.payload))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			Match(brokenIndex, w, req)
+
+			res := w.Result()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got %d", res.StatusCode)
+			}
+			body, _ := io.ReadAll(res.Body)
+			var results []*model.SingleResult
+			if err := json.Unmarshal(body, &results); err != nil {
+				t.Fatalf("failed to parse response: %v", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if results[0].MatchFound {
+				t.Error("expected MatchFound=false on DB error")
+			}
+			if results[0].ErrMsg != "Internal server error" {
+				t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
+			}
+		})
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 )
 
 // corsMiddleware adds CORS headers to HTTP responses
@@ -15,7 +14,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Set CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 
 		// Handle preflight OPTIONS request
@@ -34,23 +33,21 @@ func main() {
 	fs := http.FileServer(http.Dir("./web"))
 	http.Handle("/", fs)
 
-	// Load PubChemLite into memory
-	datadir := os.Getenv("CTS_DATA_DIR")
-	if datadir == "" {
-		// For local development when not using the Docker image
-		datadir = "../data"
+	dbPath := "dataset/compounds.db"
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		log.Fatalf("Database file %s does not exist", dbPath)
 	}
-	dataset := path.Join(datadir, "cts-lite_20260407.csv")
-	index, err := model.LoadPubChemLite(dataset)
+
+	index, err := model.OpenSQLiteIndex(dbPath)
 	if err != nil {
-		log.Fatalf("Error loading PubChemLite: %v", err)
+		log.Fatalf("Error opening SQLite index: %v", err)
 	}
 
 	// Default endpoints for health checks
 	http.HandleFunc("/health", corsMiddleware(api.Status))
 	http.HandleFunc("/status", corsMiddleware(api.Status))
 
-	// Endpoint for matching against PubChemLite
+	// Endpoint for matching against database
 	http.HandleFunc("/match", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		api.Match(index, w, r)
 	}))

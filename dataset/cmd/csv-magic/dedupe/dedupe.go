@@ -67,10 +67,6 @@ func main() {
 
 	if (duplicateCount <= 0) {
 		fmt.Printf("No processing needed: %d duplicates found\n", duplicateCount)
-		err := os.Remove(outFile.Name())
-		if err != nil {
-			panic(err)
-		}
 		return
 	}
 
