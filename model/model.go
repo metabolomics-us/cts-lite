@@ -166,3 +166,8 @@ func (idx *PubChemIndex) QueryByFormula(formula string) ([]*Compound, error) {
 	return idx.query(idx.byFormula, formula)
 }
 
+// Close releases the database connection and all prepared statements.
+func (idx *PubChemIndex) Close() error {
+	return idx.db.Close()
+}
+

@@ -424,3 +424,55 @@ func TestCSVFormatResponse(t *testing.T) {
 	}
 }
 
+// TestMatchErrorPaths verifies that all matchXxx functions return an internal
+// error message (rather than panicking) when the underlying database is closed.
+// Each sub-test uses a fresh index so closing it does not affect other tests.
+func TestMatchErrorPaths(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{"inchi", `{"queries":"InChI=1S/H2O/h1H2"}`},
+		{"inchikey_exact", `{"queries":"MYFAKEINCHIKEY-ISRIGHTHER-E"}`},
+		// Full InChIKey miss → falls through to first-block lookup
+		{"inchikey_firstblock", `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`},
+		{"smiles", `{"queries":"O"}`},
+		{"formula", `{"queries":"H2O"}`},
+		{"smiles_or_formula", `{"queries":"CH4"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			brokenIndex, err := model.LoadCSVToMemory("../dataset/test_datasets/unittest_data.csv")
+			if err != nil {
+				t.Fatalf("failed to load index: %v", err)
+			}
+			brokenIndex.Close() // close DB to force query errors
+
+			req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(tc.payload))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			Match(brokenIndex, w, req)
+
+			res := w.Result()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got %d", res.StatusCode)
+			}
+			body, _ := io.ReadAll(res.Body)
+			var results []*model.SingleResult
+			if err := json.Unmarshal(body, &results); err != nil {
+				t.Fatalf("failed to parse response: %v", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if results[0].MatchFound {
+				t.Error("expected MatchFound=false on DB error")
+			}
+			if results[0].ErrMsg != "Internal server error" {
+				t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
+			}
+		})
+	}
+}
+

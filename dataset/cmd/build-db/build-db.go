@@ -111,6 +111,11 @@ func bulkInsert(db *sql.DB, reader *csv.Reader) (int, error) {
 			return 0, fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
+		if len(line) < 10 {
+			tx.Rollback()
+			return 0, fmt.Errorf("row %d has %d fields, expected 10", count+1, len(line))
+		}
+
 		if _, err := stmt.Exec(
 			line[0], // identifier
 			line[7], // inchikey
