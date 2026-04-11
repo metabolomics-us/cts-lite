@@ -41,7 +41,7 @@ jobs:
 
     - name: Download dataset
       run: |
-        aws s3 cp s3://cts-lite-data/cts-lite_latest.csv.gz dataset/cts-lite_latest.csv.gz
+        aws s3 cp s3://cts-lite-datasets/cts-lite_latest.csv.gz dataset/cts-lite_latest.csv.gz
         gzip -d dataset/cts-lite_latest.csv.gz
 
     - name: Setup Go
