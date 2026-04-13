@@ -153,6 +153,9 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for top-hit parameter
+	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
+
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
 	queries := splitter.Split(rawQuery, -1)
@@ -220,6 +223,10 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchCount++
 		}
 
+		// Check for top-hit-only
+		if topHitOnly && result.MatchFound {
+			result.Matches = result.Matches[:1]
+		}
 		results = append(results, result)
 	}
 

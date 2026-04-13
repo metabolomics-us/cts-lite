@@ -40,8 +40,12 @@ document.addEventListener("DOMContentLoaded", () => {
     output.textContent = "Matching...";
     outputLabel.textContent = "Results";
 
+    // Check for top-hit-only toggle
+    const topHitOnly = document.getElementById("top-hit-only").checked;
+    const url = topHitOnly ? "/match" : "/match?top_hit_only=false";
+
     try {
-      const response = await fetch("/match", {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
