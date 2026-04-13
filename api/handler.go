@@ -71,7 +71,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	header := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
 		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "pubmed_count", "patent_count",
+		"molecular_formula", "literature_count", "patent_count",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
@@ -107,7 +107,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					match.Smiles,
 					match.CompoundName,
 					match.MolecularFormula,
-					strconv.FormatFloat(float64(match.PubMedCount), 'f', -1, 32),
+					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 				}
 				if err := writer.Write(row); err != nil {
@@ -152,6 +152,9 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Query was empty", http.StatusBadRequest)
 		return
 	}
+
+	// Check for top-hit parameter
+	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
@@ -220,6 +223,10 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchCount++
 		}
 
+		// Check for top-hit-only
+		if topHitOnly && result.MatchFound {
+			result.Matches = result.Matches[:1]
+		}
 		results = append(results, result)
 	}
 

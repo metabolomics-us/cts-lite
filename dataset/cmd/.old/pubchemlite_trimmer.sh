@@ -25,7 +25,7 @@ fi
 
 echo "Trimming PubChemLite CSV file: $input_file"
 
-csvcut -c Identifier,FirstBlock,PubMed_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,MonoisotopicMass,CompoundName \
+csvcut -c Identifier,FirstBlock,Literature_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,MonoisotopicMass,CompoundName \
   "$input_file" > "$output_file"
 
 echo "The trimmed dataset has been saved as: $output_file"

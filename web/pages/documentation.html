@@ -60,6 +60,7 @@
  -d '{"queries":"query1 query2 ..."}' \
  "cts-lite.metabolomics.us/match"</code>
                 </div>
+
                 <p>
                     You can add the text/csv header to your command to get results in <strong>CSV format</strong>:
                 </p>
@@ -71,8 +72,18 @@
  "cts-lite.metabolomics.us/match"</code>
                 </div>
 
+                <p>
+                To query for <strong>all hits</strong>, instead of just the top hit per query, add the following parameter:
+                </p>
+                <div class="code-block">
+                <code>curl -X POST \
+ -H "Content-Type: application/json" \
+ -d '{"queries":"query1 query2 ..."}' \
+ "cts-lite.metabolomics.us/match?top_hit_only=false"</code>
+                </div>
+
                 <h4 class="doc-subheading">JSON Example Response</h4>
-                <p>Example query <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   bad_query</code></p>
+                <p>Example query: <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
                 <div class="code-block">
                     <pre><code>[
   {
@@ -88,14 +99,14 @@
         "smiles": "I",
         "compound_name": "iodane",
         "molecular_formula": "HI",
-        "pubmed_count": "10707",
+        "literature_count": "10707",
         "patent_count": "363920"
       }
     ],
     "error_message": ""
   },
   {
-    "query": "bad_query",
+    "query": "will_fail",
     "query_type": "unidentified",
     "found_match": false,
     "match_level": "",
@@ -157,6 +168,18 @@
                 <p>
                     InChIKey queries can match by first-block if they don't find an exact match. This gives the <code class="inline-code">First Block</code> 
                     match level value. Other query types can only be <code class="inline-code">Exact</code> matches.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading">Top Hit Only</h3>
+                <p>
+                    By default, CTS-Lite will return the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
+                </p>
+
+                <p>
+                For each query, the top hit is determined by ranking the hits on a weighted relevance score:<br>
+                <code class="inline-code">(0.7 * literature_count) + (0.3 * patent_count)</code>.
                 </p>
             </section>
 

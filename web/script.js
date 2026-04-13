@@ -1,9 +1,25 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const settingsToggle = document.getElementById("settings-toggle");
+  const settingsPanel = document.getElementById("settings-panel");
+
+  settingsToggle.addEventListener("click", () => {
+    const isOpen = settingsPanel.classList.toggle("open");
+    settingsToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!settingsToggle.contains(e.target) && !settingsPanel.contains(e.target)) {
+      settingsPanel.classList.remove("open");
+      settingsToggle.setAttribute("aria-expanded", "false");
+    }
+  });
+
   const form = document.getElementById("query-form");
   const input = document.getElementById("query-input");
   const output = document.getElementById("output-text");
   const outputContainer = document.getElementById("output-container");
   const outputLabel = document.getElementById("output-label");
+  const topHitLabel = document.getElementById("top-hit-label");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault(); 
@@ -24,9 +40,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // Reset output texts
     output.textContent = "Matching...";
     outputLabel.textContent = "Results";
+    topHitLabel.style.display = "none";
+
+    // Check for top-hit-only toggle
+    const topHitOnly = document.getElementById("top-hit-only").checked;
+    const url = topHitOnly ? "/match" : "/match?top_hit_only=false";
 
     try {
-      const response = await fetch("/match", {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -46,10 +67,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const downloadCSV = document.createElement('button');
       downloadCSV.className = 'download-btn';
       downloadCSV.type = 'button'; 
-      downloadCSV.innerHTML = 'CSV <img src="assets/download.svg" alt="Download" width="17" height="17">';
+      downloadCSV.innerHTML = 'CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">';
       downloadCSV.addEventListener('click', () => {
         let csv = "";
-        csv += "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,pubmed_count,patent_count\n";
+        csv += "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count\n";
     
         data.forEach(result => {
           if (result.matches && result.matches.length > 0) {
@@ -69,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 `"${(match.compound_name || '').replace(/"/g, '""')}"`,
                 (match.molecular_formula || '').replace(/"/g, '""'),
                 match.monoisotopic_mass,
-                match.pubmed_count,
+                match.literature_count,
                 match.patent_count
               ];
               csv += row.join(",") + "\n";
@@ -90,7 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
               '', // compound_name
               '', // molecular_formula
               '', // monoisotopic_mass
-              '', // pubmed_count
+              '', // literature_count
               ''  // patent_count
             ];
             csv += row.join(",") + "\n";
@@ -110,7 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const downloadJSON = document.createElement('button');
       downloadJSON.className = 'download-btn';
       downloadJSON.type = 'button'; 
-      downloadJSON.innerHTML = 'JSON <img src="assets/download.svg" alt="Download" width="17" height="17">';
+      downloadJSON.innerHTML = 'JSON <img src="assets/download-icon.svg" alt="Download" width="17" height="17">';
       downloadJSON.addEventListener('click', () => {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
         const downloadAnchorNode = document.createElement('a');
@@ -125,6 +146,8 @@ document.addEventListener("DOMContentLoaded", () => {
       displayResults(data, output);
       let numMatches = countNumMatches(data);
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${data.length} ${data.length === 1 ? 'match' : 'matches'}`;
+      topHitLabel.textContent = topHitOnly ? "Top Hit Only" : "All Hits";
+      topHitLabel.style.display = "block";
 
     } catch (err) {
       output.textContent = `Error: ${err.message}`;
@@ -213,8 +236,8 @@ function displayResults(data, outputElement) {
               <span class="monospace">${match.monoisotopic_mass}</span>
             </div>
             <div class="match-field">
-              <label>PubMed Count:</label>
-              <span class="monospace">${match.pubmed_count}</span>
+              <label>Literature Count:</label>
+              <span class="monospace">${match.literature_count}</span>
             </div>
             <div class="match-field">
               <label>Patent Count:</label>

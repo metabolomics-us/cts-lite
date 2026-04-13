@@ -55,6 +55,11 @@ h1, h3 {
   margin: 0.25rem 0;
 }
 
+#navbar-logo {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
 body {
   background-color: #f9f4e5;
   font-family: Arial, sans-serif;
@@ -82,7 +87,7 @@ form, #output-container {
   width: 650px;
   min-height: 120px;
   box-sizing: border-box;
-  margin-bottom: 3rem;
+  margin: 0 auto 3rem;
   overflow-wrap: break-word;
 }
 
@@ -141,7 +146,7 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.1rem;
 }
 
 #download-buttons {
@@ -272,7 +277,7 @@ button:disabled {
 .match-field label {
   font-weight: bold;
   color: #465766;
-  min-width: 120px;
+  min-width: 140px;
   font-size: 0.85rem;
 }
 
@@ -323,10 +328,130 @@ button:disabled {
   outline-offset: -1px;
 }
 
+/* Form actions row (Match button + cog) */
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.form-actions > button[type="submit"] {
+  margin-top: 0;
+}
+
+.cog-wrapper {
+  position: relative;
+}
+
+.cog-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.5rem;
+  margin-top: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  font-weight: normal;
+  color: #777;
+}
+
+.cog-btn:hover,
+.cog-btn:focus {
+  background-color: #e0e0e0;
+  outline-color: #a0b8d3;
+}
+
+.settings-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 0.9rem 1.1rem;
+  min-width: 190px;
+  z-index: 100;
+}
+
+.settings-panel.open {
+  display: block;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+/* Toggle switch */
+.toggle-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggle-label input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.toggle-label input[type="checkbox"]:focus {
+  outline: none;
+}
+
+.toggle-label input[type="checkbox"]:focus + .toggle-track {
+  outline: 2px solid #36679e;
+  outline-offset: 3px;
+}
+
+.toggle-track {
+  position: relative;
+  width: 2.6rem;
+  height: 1.4rem;
+  background-color: #acacac;
+  border-radius: 999px;
+  transition: background-color 0.2s;
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-label input[type="checkbox"]:checked + .toggle-track {
+  background-color: #1a3e68;
+}
+
+.toggle-label input[type="checkbox"]:checked + .toggle-track::after {
+  transform: translateX(1.2rem);
+}
+
 /* Responsive design for mobile devices */
 @media (max-width: 768px) {
   .banner-container {
-    padding: 80px 10px 0 10px; /* Reduced spacing for thinner navbar */
+    padding: 140px 10px 0 10px;
   }
   
   form, #output-container {
@@ -346,7 +471,11 @@ button:disabled {
     padding: 6px 10px;
     font-size: 0.85rem;
   }
-  
+
+  #navbar-logo {
+    font-size: 0.62rem;
+  }
+
   .query-details {
     flex-direction: column;
     gap: 0.5rem;
@@ -365,7 +494,7 @@ button:disabled {
 
 @media (max-width: 480px) {
   .banner-container {
-    padding: 70px 5px 0 5px; /* Further reduced for mobile */
+    padding: 120px 5px 0 5px;
   }
   
   form, #output-container {
@@ -383,7 +512,11 @@ button:disabled {
     padding: 4px 8px;
     font-size: 0.75rem;
   }
-  
+
+  #navbar-logo {
+    font-size: 0.55rem;
+  }
+
   .result-item {
     padding: 0.75rem;
   }
