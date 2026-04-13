@@ -110,7 +110,7 @@ func TestBulkInsert(t *testing.T) {
 	lines := strings.SplitN(testCSVContent, "\n", 2)
 	reader := csv.NewReader(strings.NewReader(lines[1]))
 
-	count, err := bulkInsert(db, reader)
+	count, err := bulkInsert(db, reader, batchSize)
 	if err != nil {
 		t.Fatalf("bulkInsert failed: %v", err)
 	}
@@ -136,8 +136,34 @@ func TestBulkInsert_MalformedCSV(t *testing.T) {
 	malformed := "a,b,c\n"
 	reader := csv.NewReader(strings.NewReader(malformed))
 
-	_, err = bulkInsert(db, reader)
+	_, err = bulkInsert(db, reader, batchSize)
 	if err == nil {
 		t.Error("expected error for malformed CSV row, got nil")
+	}
+}
+
+// TestBulkInsert_BatchCommit exercises the mid-loop batch commit path by using
+// a batch size of 1, which forces a commit after every row.
+func TestBulkInsert_BatchCommit(t *testing.T) {
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_busy_timeout=5000")
+	if err != nil {
+		t.Fatalf("failed to open in-memory DB: %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+
+	if _, err := db.Exec(model.CreateTableSQL); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	lines := strings.SplitN(testCSVContent, "\n", 2)
+	reader := csv.NewReader(strings.NewReader(lines[1]))
+
+	count, err := bulkInsert(db, reader, 1)
+	if err != nil {
+		t.Fatalf("bulkInsert failed: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 rows inserted, got %d", count)
 	}
 }

@@ -1,6 +1,8 @@
 package model
 
 import (
+	"database/sql"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,6 +18,75 @@ func loadTestIndex(t *testing.T) *PubChemIndex {
 		t.Fatalf("LoadCSVToMemory failed: %v", err)
 	}
 	return idx
+}
+
+// createTempDB writes a proper SQLite .db file (with schema) to a temp path.
+func createTempDB(t *testing.T) string {
+	t.Helper()
+	f, err := os.CreateTemp("", "cts-lite-test-*.db")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	f.Close()
+	t.Cleanup(func() { os.Remove(f.Name()) })
+
+	db, err := sql.Open("sqlite", f.Name())
+	if err != nil {
+		t.Fatalf("failed to open temp DB: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(CreateTableSQL); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	if _, err := db.Exec(CreateIndexSQL); err != nil {
+		t.Fatalf("failed to create indices: %v", err)
+	}
+	return f.Name()
+}
+
+// TestOpenSQLiteIndex verifies the happy path: a properly formed .db file opens,
+// applies pragmas, and returns a functional index (empty DB, so no results).
+func TestOpenSQLiteIndex(t *testing.T) {
+	dbPath := createTempDB(t)
+
+	idx, err := OpenSQLiteIndex(dbPath)
+	if err != nil {
+		t.Fatalf("OpenSQLiteIndex failed: %v", err)
+	}
+	defer idx.Close()
+
+	compounds, err := idx.QueryBySmiles("O")
+	if err != nil {
+		t.Fatalf("QueryBySmiles returned error: %v", err)
+	}
+	if len(compounds) != 0 {
+		t.Errorf("expected 0 compounds from empty DB, got %d", len(compounds))
+	}
+}
+
+// TestOpenSQLiteIndex_BadPath verifies that a non-existent directory path returns an error.
+func TestOpenSQLiteIndex_BadPath(t *testing.T) {
+	_, err := OpenSQLiteIndex("/nonexistent/path/to/file.db")
+	if err == nil {
+		t.Error("expected error for bad path, got nil")
+	}
+}
+
+// TestOpenSQLiteIndex_MissingTable verifies that a valid SQLite file with no
+// compounds table causes newIndex to fail during statement preparation.
+func TestOpenSQLiteIndex_MissingTable(t *testing.T) {
+	f, err := os.CreateTemp("", "cts-lite-empty-*.db")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	f.Close()
+	t.Cleanup(func() { os.Remove(f.Name()) })
+
+	_, err = OpenSQLiteIndex(f.Name())
+	if err == nil {
+		t.Error("expected error for DB with missing compounds table, got nil")
+	}
 }
 
 func TestLoadCSVToMemory(t *testing.T) {
