@@ -18,10 +18,15 @@ var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-
 var smilesGuaranteePattern = regexp.MustCompile(`[=#\/\\:\.@+\-\[\]\(\)]`)
 var formulaGuaranteePattern = regexp.MustCompile(`^[ADEGHKLMRTUVWXYZ]$`) // Characters that cannot be found at the start of smiles
 var smilesOrFormulaPattern = regexp.MustCompile(`^[ABCDEFGHIKLMNOPRSTUVWXYZ]$`) // Characters that can start both smiles and formulas
+var pubchemIDPattern = regexp.MustCompile(`^[0-9]+$`) // Only numbers
 
 func parseQueryType(q string) string {
 	// Order of cases matters here
 	switch {
+	case pubchemIDPattern.MatchString(q):
+		// log.Println("Query identified as PubChem ID")
+		return "pubchem_id"
+
 	case inchikeyPattern.MatchString(q):
 		// log.Println("Query identified as InChIKey")
 		return "inchikey"
@@ -175,6 +180,9 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch result.QueryType {
+		case "pubchem_id":
+			matchPubChemID(index, q, result)
+
 		case "inchi":
 			matchInchi(index, q, result)
 
@@ -203,6 +211,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			result.ErrMsg = "Invalid query type, could not identify"
 
 		default:
+			log.Printf("ERROR: An unexpected error occured when parsing the request. Query type unhandled. Query: '%s'", q)
 			http.Error(w, "An unexpected error occurred when parsing the request", http.StatusInternalServerError)
 			return
 		}

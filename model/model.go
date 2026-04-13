@@ -32,6 +32,7 @@ type SingleResult struct {
 // PubChemIndex wraps an SQLite database and prepared statements for each lookup type
 type PubChemIndex struct {
 	db           *sql.DB
+	byPubChemID  *sql.Stmt
 	byInChIKey   *sql.Stmt
 	byFirstBlock *sql.Stmt
 	byInChI      *sql.Stmt
@@ -80,6 +81,7 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		dest  **sql.Stmt
 		query string
 	}{
+		{&idx.byPubChemID, selectCols + ` WHERE identifier = ?` + orderByScore},
 		{&idx.byInChIKey, selectCols + ` WHERE inchikey = ?` + orderByScore},
 		{&idx.byFirstBlock, selectCols + ` WHERE first_block = ?` + orderByScore},
 		{&idx.byInChI, selectCols + ` WHERE inchi = ?` + orderByScore},
@@ -114,6 +116,7 @@ const CreateTableSQL = `CREATE TABLE IF NOT EXISTS compounds (
 )`
 
 const CreateIndexSQL = `
+CREATE INDEX IF NOT EXISTS idx_pubchem_id  ON compounds(identifier);
 CREATE INDEX IF NOT EXISTS idx_inchikey    ON compounds(inchikey);
 CREATE INDEX IF NOT EXISTS idx_first_block ON compounds(first_block);
 CREATE INDEX IF NOT EXISTS idx_inchi       ON compounds(inchi);
@@ -144,6 +147,10 @@ func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) 
 		compounds = append(compounds, c)
 	}
 	return compounds, rows.Err()
+}
+
+func (idx *PubChemIndex) QueryByPubChemID(id string) ([]*Compound, error) {
+	return idx.query(idx.byPubChemID, id)
 }
 
 func (idx *PubChemIndex) QueryByInChIKey(key string) ([]*Compound, error) {

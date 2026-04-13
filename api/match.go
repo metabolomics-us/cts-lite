@@ -5,6 +5,24 @@ import (
 	"log"
 )
 
+func matchPubChemID(index *model.PubChemIndex, query string, result *model.SingleResult) {
+	compounds, err := index.QueryByPubChemID(query)
+	if err != nil {
+		log.Printf("Error querying by PubChem ID: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact PubChem ID"
+	result.Matches = compounds
+}
+
 func matchInchi(index *model.PubChemIndex, query string, result *model.SingleResult) {
 	compounds, err := index.QueryByInChI(query)
 	if err != nil {
