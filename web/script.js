@@ -306,6 +306,8 @@ function getMatchStatusClass(result) {
 
 function formatQueryType(queryType) {
   switch (queryType.toLowerCase()) {
+    case 'pubchem_id':
+      return 'PubChem CID';
     case 'inchikey':
       return 'InChIKey';
     case 'smiles':

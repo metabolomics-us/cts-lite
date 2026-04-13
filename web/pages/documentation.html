@@ -31,14 +31,14 @@
                 <p class="doc-intro">
                     <strong style="color: #1a3e68">CTS-Lite</strong> is a lightweight chemical translation service based on the Fiehn Lab's original 
                     <a href="https://cts.fiehnlab.ucdavis.edu/" target="_blank" class="doc-link">CTS</a>. 
-                    It allows users to match InChIs, InChIKeys, SMILES, and Molecular Formulas against a curated subset of the PubChem database.
+                    It allows users to match <i>InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs</i> against a curated subset of the PubChem database containing 10.6 million compounds.
                 </p>
             </section>
 
             <section class="doc-section">
                 <h3 class="doc-heading">Using CTS-Lite</h3>
                 <p>
-                    To use CTS-Lite, simply enter InChIs, InChIKeys, SMILES, and Molecular Formulas into the input box on the main page. 
+                    To use CTS-Lite, simply enter your queries into the input box on the main page. 
                     You can separate entries using spaces, tabs, or newlines. When you click <code class="inline-code">Match</code>, the results will 
                     be displayed in the results section. Results can be downloaded in JSON and CSV formats using the 
                     buttons provided.
@@ -123,6 +123,9 @@
                         <code class="inline-code">= # - / \ : . @ + [ ] ( )</code> 
                     </li>
                     <li>
+                        <strong>PubChem CIDs</strong> are identified as queries which only contain numbers
+                    </li>
+                    <li>
                         <strong>Molecular Formulas</strong> are recognized by starting with letters that cannot be at the start of SMILES:
                         <code class="inline-code">ADEGHKLMRTUVWXYZ</code>
                     </li>
@@ -153,7 +156,7 @@
                 <h3 class="doc-heading">Match Levels</h3>
                 <p>
                     InChIKey queries can match by first-block if they don't find an exact match. This gives the <code class="inline-code">First Block</code> 
-                    match level value. SMILES, InChI, and Molecular Formula queries can only be <code class="inline-code">Exact</code> matches.
+                    match level value. Other query types can only be <code class="inline-code">Exact</code> matches.
                 </p>
             </section>
 
