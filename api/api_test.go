@@ -199,6 +199,46 @@ func TestMatchEndpoints(t *testing.T) {
 	}
 }
 
+func TestTopHitOnly(t *testing.T) {
+	// MYFAKEINCHIKEY-NOTNOTNOTN-O matches via first block, returning both
+	// Methane (score 14.7) and Water (score 7.6) when all hits are requested.
+	const query = `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`
+
+	t.Run("default returns only top hit", func(t *testing.T) {
+		res := doMatchRequest(t, query, nil, false)
+		results := parseMatchResults(t, res)
+
+		if len(results[0].Matches) != 1 {
+			t.Fatalf("expected 1 match, got %d", len(results[0].Matches))
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+	})
+
+	t.Run("top_hit_only=true returns only top hit", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/match?top_hit_only=true", strings.NewReader(query))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		Match(mockIndex, w, req)
+		results := parseMatchResults(t, w.Result())
+
+		if len(results[0].Matches) != 1 {
+			t.Fatalf("expected 1 match, got %d", len(results[0].Matches))
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+	})
+
+	t.Run("top_hit_only=false returns all hits", func(t *testing.T) {
+		res := doMatchRequest(t, query, nil, true)
+		results := parseMatchResults(t, res)
+
+		if len(results[0].Matches) != 2 {
+			t.Fatalf("expected 2 matches, got %d", len(results[0].Matches))
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+		assertCompound(t, fakeWaterCompound(), results[0].Matches[1])
+	})
+}
+
 func TestMultiQuery(t *testing.T) {
 	// 5 queries: smiles O, smiles C, bad smiles, fake inchikey, bad InChI // space separated (%20)
 	res := doMatchRequest(t, `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`, nil, false)
