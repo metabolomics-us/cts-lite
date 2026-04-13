@@ -18,10 +18,15 @@ var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-
 var smilesGuaranteePattern = regexp.MustCompile(`[=#\/\\:\.@+\-\[\]\(\)]`)
 var formulaGuaranteePattern = regexp.MustCompile(`^[ADEGHKLMRTUVWXYZ]$`) // Characters that cannot be found at the start of smiles
 var smilesOrFormulaPattern = regexp.MustCompile(`^[ABCDEFGHIKLMNOPRSTUVWXYZ]$`) // Characters that can start both smiles and formulas
+var pubchemIDPattern = regexp.MustCompile(`^[0-9]+$`) // Only numbers
 
 func parseQueryType(q string) string {
 	// Order of cases matters here
 	switch {
+	case pubchemIDPattern.MatchString(q):
+		// log.Println("Query identified as PubChem ID")
+		return "pubchem_id"
+
 	case inchikeyPattern.MatchString(q):
 		// log.Println("Query identified as InChIKey")
 		return "inchikey"
@@ -66,7 +71,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	header := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
 		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "pubmed_count", "patent_count",
+		"molecular_formula", "literature_count", "patent_count",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
@@ -102,7 +107,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					match.Smiles,
 					match.CompoundName,
 					match.MolecularFormula,
-					strconv.FormatFloat(float64(match.PubMedCount), 'f', -1, 32),
+					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 				}
 				if err := writer.Write(row); err != nil {
@@ -148,6 +153,9 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for top-hit parameter
+	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
+
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
 	queries := splitter.Split(rawQuery, -1)
@@ -175,6 +183,9 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch result.QueryType {
+		case "pubchem_id":
+			matchPubChemID(index, q, result)
+
 		case "inchi":
 			matchInchi(index, q, result)
 
@@ -203,6 +214,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			result.ErrMsg = "Invalid query type, could not identify"
 
 		default:
+			log.Printf("ERROR: An unexpected error occured when parsing the request. Query type unhandled. Query: '%s'", q)
 			http.Error(w, "An unexpected error occurred when parsing the request", http.StatusInternalServerError)
 			return
 		}
@@ -211,6 +223,10 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchCount++
 		}
 
+		// Check for top-hit-only
+		if topHitOnly && result.MatchFound {
+			result.Matches = result.Matches[:1]
+		}
 		results = append(results, result)
 	}
 

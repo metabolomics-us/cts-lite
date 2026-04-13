@@ -24,6 +24,7 @@ A lightweight Chemical Translation Service matching against a curated subset of 
 - CTS-Lite is containerized with Docker
 - The GitHub Actions workflow will automatically build and deploy the complete application image upon any push or merge to the main branch
 - Note: to build the docker image locally, you must have the database built and stored as `dataset/compounds.db`
+    - `cd dataset && go run cmd/build-db/build-db.go cts-lite.csv compounds.db`
 
 ### Dataset Directory
 The dataset directory stores the dataset and the tools used to create it

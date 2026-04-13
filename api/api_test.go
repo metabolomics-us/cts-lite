@@ -36,7 +36,7 @@ func fakeWaterCompound() *model.Compound {
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
 		MonoisotopicMass: 100,
-		PubMedCount:      10,
+		LiteratureCount:  10,
 		PatentCount:      2,
 	}
 }
@@ -51,7 +51,7 @@ func fakeFormaldehyde() *model.Compound {
 		CompoundName:     "Formaldehyde",
 		MolecularFormula: "CH2O",
 		MonoisotopicMass: 30,
-		PubMedCount:      5,
+		LiteratureCount:  5,
 		PatentCount:      1,
 	}
 }
@@ -66,7 +66,7 @@ func fakeMethaneCompound() *model.Compound {
 		CompoundName:     "Methane",
 		MolecularFormula: "CH4",
 		MonoisotopicMass: 99,
-		PubMedCount:      18,
+		LiteratureCount:  18,
 		PatentCount:      7,
 	}
 }
@@ -79,9 +79,13 @@ func assertCompound(t *testing.T, want *model.Compound, got *model.Compound) {
 }
 
 // Performs a match request, boiler plate method to avoid duplicate code
-func doMatchRequest(t *testing.T, payload string, extraHeaders map[string]string) *http.Response {
+func doMatchRequest(t *testing.T, payload string, extraHeaders map[string]string, allHits bool) *http.Response {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	url := "/match"
+	if allHits {
+		url = "/match?top_hit_only=false"
+	}
+	req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)
@@ -179,7 +183,7 @@ func TestMatchEndpoints(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil)
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil, true)
 			results := parseMatchResults(t, res)
 
 			if len(results) != 1 {
@@ -195,9 +199,49 @@ func TestMatchEndpoints(t *testing.T) {
 	}
 }
 
+func TestTopHitOnly(t *testing.T) {
+	// MYFAKEINCHIKEY-NOTNOTNOTN-O matches via first block, returning both
+	// Methane (score 14.7) and Water (score 7.6) when all hits are requested.
+	const query = `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`
+
+	t.Run("default returns only top hit", func(t *testing.T) {
+		res := doMatchRequest(t, query, nil, false)
+		results := parseMatchResults(t, res)
+
+		if len(results[0].Matches) != 1 {
+			t.Fatalf("expected 1 match, got %d", len(results[0].Matches))
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+	})
+
+	t.Run("top_hit_only=true returns only top hit", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/match?top_hit_only=true", strings.NewReader(query))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		Match(mockIndex, w, req)
+		results := parseMatchResults(t, w.Result())
+
+		if len(results[0].Matches) != 1 {
+			t.Fatalf("expected 1 match, got %d", len(results[0].Matches))
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+	})
+
+	t.Run("top_hit_only=false returns all hits", func(t *testing.T) {
+		res := doMatchRequest(t, query, nil, true)
+		results := parseMatchResults(t, res)
+
+		if len(results[0].Matches) != 2 {
+			t.Fatalf("expected 2 matches, got %d", len(results[0].Matches))
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+		assertCompound(t, fakeWaterCompound(), results[0].Matches[1])
+	})
+}
+
 func TestMultiQuery(t *testing.T) {
 	// 5 queries: smiles O, smiles C, bad smiles, fake inchikey, bad InChI // space separated (%20)
-	res := doMatchRequest(t, `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`, nil)
+	res := doMatchRequest(t, `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 5 {
@@ -254,14 +298,14 @@ func TestMatchErrors(t *testing.T) {
 		},
 		{
 			name:       "unidentified query",
-			query:      "12345",
+			query:      "12345a",
 			wantErrMsg: "Invalid query type, could not identify",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil)
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil, false)
 			results := parseMatchResults(t, res)
 
 			if len(results) != 1 {
@@ -280,7 +324,7 @@ func TestMatchErrors(t *testing.T) {
 func TestQuotedEmptyQuery(t *testing.T) {
 	// Regression: `""` after quote-stripping becomes empty, which previously caused
 	//   a panic in parseQueryType due to an out-of-bounds slice on an empty string
-	res := doMatchRequest(t, `{"queries":"\"\""}`, nil)
+	res := doMatchRequest(t, `{"queries":"\"\""}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 0 {
@@ -293,7 +337,7 @@ func TestSingleDoubleQuoteQuery(t *testing.T) {
 	//   logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
 	//   empty slice q[1:0]), and was not caught by the subsequent empty-string
 	//   check, leading to a panic in parseQueryType.
-	res := doMatchRequest(t, `{"queries":"\""}`, nil)
+	res := doMatchRequest(t, `{"queries":"\""}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 0 {
@@ -323,7 +367,7 @@ func TestInvalidJSON(t *testing.T) {
 }
 
 func TestEmptyQuery(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":""}`, nil)
+	res := doMatchRequest(t, `{"queries":""}`, nil, false)
 
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", res.StatusCode)
@@ -331,7 +375,7 @@ func TestEmptyQuery(t *testing.T) {
 }
 
 func TestQuotedQuery(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":"\"O\""}`, nil)
+	res := doMatchRequest(t, `{"queries":"\"O\""}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 1 {
@@ -359,7 +403,7 @@ func TestCSVFormatQueryParam(t *testing.T) {
 }
 
 func TestCSVNoMatchResponse(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":"InChI=1S/NOTHING"}`, map[string]string{"Accept": "text/csv"})
+	res := doMatchRequest(t, `{"queries":"InChI=1S/NOTHING"}`, map[string]string{"Accept": "text/csv"}, false)
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.StatusCode)
@@ -387,7 +431,7 @@ func TestCSVNoMatchResponse(t *testing.T) {
 }
 
 func TestCSVFormatResponse(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":"O"}`, map[string]string{"Accept": "text/csv"})
+	res := doMatchRequest(t, `{"queries":"O"}`, map[string]string{"Accept": "text/csv"}, false)
 
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200 but got %d", res.StatusCode)
@@ -408,7 +452,7 @@ func TestCSVFormatResponse(t *testing.T) {
 	expectedHeader := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
 		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "pubmed_count", "patent_count",
+		"molecular_formula", "literature_count", "patent_count",
 	}
 	if diff := cmp.Diff(expectedHeader, records[0]); diff != "" {
 		t.Errorf("CSV header mismatch (-want +got):\n%s", diff)
@@ -424,6 +468,97 @@ func TestCSVFormatResponse(t *testing.T) {
 	}
 }
 
+func TestMatchPubChemID(t *testing.T) {
+	tests := []struct {
+		name        string
+		query       string
+		wantFound   bool
+		wantErrMsg  string
+		wantCompound *model.Compound
+	}{
+		{
+			name:         "match by PubChem ID",
+			query:        "1",
+			wantFound:    true,
+			wantCompound: fakeWaterCompound(),
+		},
+		{
+			name:       "no match for unknown PubChem ID",
+			query:      "999",
+			wantFound:  false,
+			wantErrMsg: "No compound found",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil, false)
+			results := parseMatchResults(t, res)
+
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if results[0].MatchFound != tc.wantFound {
+				t.Errorf("expected MatchFound=%v, got %v", tc.wantFound, results[0].MatchFound)
+			}
+			if tc.wantFound {
+				if len(results[0].Matches) != 1 {
+					t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+				}
+				assertCompound(t, tc.wantCompound, results[0].Matches[0])
+			} else {
+				if results[0].ErrMsg != tc.wantErrMsg {
+					t.Errorf("expected error %q, got %q", tc.wantErrMsg, results[0].ErrMsg)
+				}
+			}
+		})
+	}
+}
+
+// brokenFirstBlockIndex loads a private in-memory index and drops the
+// first_block column so that QueryByFirstBlock fails at execution time.
+// A private ":memory:" DB is used so the schema change does not affect mockIndex.
+func brokenFirstBlockIndex(t *testing.T) *model.PubChemIndex {
+	t.Helper()
+	idx, err := model.LoadCSVToPrivateMemory("../dataset/test_datasets/unittest_data.csv")
+	if err != nil {
+		t.Fatalf("failed to load index: %v", err)
+	}
+	db := idx.DB()
+	if _, err := db.Exec("DROP INDEX IF EXISTS idx_first_block"); err != nil {
+		idx.Close()
+		t.Fatalf("failed to drop first_block index: %v", err)
+	}
+	if _, err := db.Exec("ALTER TABLE compounds DROP COLUMN first_block"); err != nil {
+		idx.Close()
+		t.Fatalf("failed to drop first_block column: %v", err)
+	}
+	return idx
+}
+
+// TestMatchInchIKeyFirstBlockErrorPath covers the second error branch in
+// matchInchiKey: the exact InChIKey lookup succeeds (returns empty) but the
+// subsequent first-block lookup fails because the column has been dropped.
+func TestMatchInchIKeyFirstBlockErrorPath(t *testing.T) {
+	// MYFAKEINCHIKEY-NOTNOTNOTN-O has no exact InChIKey match, so matchInchiKey
+	// falls through to QueryByFirstBlock, which now returns an error.
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(`{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(brokenFirstBlockIndex(t), w, req)
+
+	results := parseMatchResults(t, w.Result())
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].MatchFound {
+		t.Error("expected MatchFound=false on first-block DB error")
+	}
+	if results[0].ErrMsg != "Internal server error" {
+		t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
+	}
+}
+
 // TestMatchErrorPaths verifies that all matchXxx functions return an internal
 // error message (rather than panicking) when the underlying database is closed.
 // Each sub-test uses a fresh index so closing it does not affect other tests.
@@ -436,9 +571,12 @@ func TestMatchErrorPaths(t *testing.T) {
 		{"inchikey_exact", `{"queries":"MYFAKEINCHIKEY-ISRIGHTHER-E"}`},
 		// Full InChIKey miss → falls through to first-block lookup
 		{"inchikey_firstblock", `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`},
-		{"smiles", `{"queries":"O"}`},
+		// C=O contains '=' so smilesGuaranteePattern matches → type smiles → matchSmiles
+		{"smiles_direct", `{"queries":"C=O"}`},
 		{"formula", `{"queries":"H2O"}`},
 		{"smiles_or_formula", `{"queries":"CH4"}`},
+		// Numeric query → type pubchem_id → matchPubChemID
+		{"pubchem_id", `{"queries":"1"}`},
 	}
 
 	for _, tc := range cases {
