@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const output = document.getElementById("output-text");
   const outputContainer = document.getElementById("output-container");
   const outputLabel = document.getElementById("output-label");
+  const topHitLabel = document.getElementById("top-hit-label");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault(); 
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Reset output texts
     output.textContent = "Matching...";
     outputLabel.textContent = "Results";
+    topHitLabel.style.display = "none";
 
     // Check for top-hit-only toggle
     const topHitOnly = document.getElementById("top-hit-only").checked;
@@ -144,6 +146,8 @@ document.addEventListener("DOMContentLoaded", () => {
       displayResults(data, output);
       let numMatches = countNumMatches(data);
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${data.length} ${data.length === 1 ? 'match' : 'matches'}`;
+      topHitLabel.textContent = topHitOnly ? "Top Hit Only" : "All Hits";
+      topHitLabel.style.display = "block";
 
     } catch (err) {
       output.textContent = `Error: ${err.message}`;
