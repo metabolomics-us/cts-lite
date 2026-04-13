@@ -98,7 +98,7 @@ func main() {
 	defer w.Flush()
 
 	// header:
-	w.Write([]string{"Identifier", "FirstBlock", "PubMed_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "MonoisotopicMass", "CompoundName"})
+	w.Write([]string{"Identifier", "FirstBlock", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "MonoisotopicMass", "CompoundName"})
 
 	batchSize := 400
 	maxCID := 1000000

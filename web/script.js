@@ -70,7 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadCSV.innerHTML = 'CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">';
       downloadCSV.addEventListener('click', () => {
         let csv = "";
-        csv += "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,pubmed_count,patent_count\n";
+        csv += "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count\n";
     
         data.forEach(result => {
           if (result.matches && result.matches.length > 0) {
@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 `"${(match.compound_name || '').replace(/"/g, '""')}"`,
                 (match.molecular_formula || '').replace(/"/g, '""'),
                 match.monoisotopic_mass,
-                match.pubmed_count,
+                match.literature_count,
                 match.patent_count
               ];
               csv += row.join(",") + "\n";
@@ -111,7 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
               '', // compound_name
               '', // molecular_formula
               '', // monoisotopic_mass
-              '', // pubmed_count
+              '', // literature_count
               ''  // patent_count
             ];
             csv += row.join(",") + "\n";
@@ -236,8 +236,8 @@ function displayResults(data, outputElement) {
               <span class="monospace">${match.monoisotopic_mass}</span>
             </div>
             <div class="match-field">
-              <label>PubMed Count:</label>
-              <span class="monospace">${match.pubmed_count}</span>
+              <label>Literature Count:</label>
+              <span class="monospace">${match.literature_count}</span>
             </div>
             <div class="match-field">
               <label>Patent Count:</label>

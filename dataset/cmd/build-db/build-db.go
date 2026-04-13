@@ -92,7 +92,7 @@ func run(csvPath, dbPath string) error {
 }
 
 // bulkInsert inserts all CSV rows using batched transactions for performance
-// CSV column order: identifier, first_block, pubmed_count, patent_count,
+// CSV column order: identifier, first_block, literature_count, patent_count,
 //   molecular_formula, smiles, inchi, inchikey, monoisotopic_mass, compound_name
 func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 	tx, stmt, err := beginBatch(db)
@@ -125,7 +125,7 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			line[9], // compound_name
 			line[4], // molecular_formula
 			line[8], // monoisotopic_mass
-			line[2], // pubmed_count
+			line[2], // literature_count
 			line[3], // patent_count
 		); err != nil {
 			tx.Rollback()

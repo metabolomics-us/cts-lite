@@ -16,7 +16,7 @@ type Compound struct {
 	CompoundName     string  `json:"compound_name"`
 	MolecularFormula string  `json:"molecular_formula"`
 	MonoisotopicMass float64 `json:"monoisotopic_mass"`
-	PubMedCount      float32 `json:"pubmed_count"`
+	LiteratureCount  float32 `json:"literature_count"`
 	PatentCount      float32 `json:"patent_count"`
 }
 
@@ -41,8 +41,8 @@ type PubChemIndex struct {
 }
 
 const selectCols = `SELECT identifier, inchikey, inchi, smiles, compound_name,
-	molecular_formula, monoisotopic_mass, pubmed_count, patent_count FROM compounds`
-const orderByScore = ` ORDER BY (0.7 * pubmed_count + 0.3 * patent_count) DESC`
+	molecular_formula, monoisotopic_mass, literature_count, patent_count FROM compounds`
+const orderByScore = ` ORDER BY (0.7 * literature_count + 0.3 * patent_count) DESC`
 
 // OpenSQLiteIndex opens a pre-built SQLite database for production use
 func OpenSQLiteIndex(dbPath string) (*PubChemIndex, error) {
@@ -111,7 +111,7 @@ const CreateTableSQL = `CREATE TABLE IF NOT EXISTS compounds (
 	compound_name     TEXT NOT NULL,
 	molecular_formula TEXT NOT NULL,
 	monoisotopic_mass REAL NOT NULL,
-	pubmed_count      REAL NOT NULL,
+	literature_count  REAL NOT NULL,
 	patent_count      REAL NOT NULL
 )`
 
@@ -124,7 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_smiles      ON compounds(smiles);
 CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula)`
 
 const InsertSQL = `INSERT INTO compounds
-	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, monoisotopic_mass, pubmed_count, patent_count)
+	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, monoisotopic_mass, literature_count, patent_count)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // query executes a prepared statement and scans all result rows into Compound pointers
@@ -140,7 +140,7 @@ func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) 
 		c := &Compound{}
 		if err := rows.Scan(
 			&c.Identifier, &c.InChIKey, &c.InChI, &c.Smiles, &c.CompoundName,
-			&c.MolecularFormula, &c.MonoisotopicMass, &c.PubMedCount, &c.PatentCount,
+			&c.MolecularFormula, &c.MonoisotopicMass, &c.LiteratureCount, &c.PatentCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}

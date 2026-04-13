@@ -71,7 +71,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	header := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
 		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "pubmed_count", "patent_count",
+		"molecular_formula", "literature_count", "patent_count",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
@@ -107,7 +107,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					match.Smiles,
 					match.CompoundName,
 					match.MolecularFormula,
-					strconv.FormatFloat(float64(match.PubMedCount), 'f', -1, 32),
+					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 				}
 				if err := writer.Write(row); err != nil {

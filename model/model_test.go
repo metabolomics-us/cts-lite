@@ -151,7 +151,7 @@ func TestQueryByInChIKey_Miss(t *testing.T) {
 }
 
 // TestQueryByFirstBlock_OrderedByScore verifies that multiple compounds sharing
-// a first block are returned in descending SortingScore order (0.7*pubmed + 0.3*patent).
+// a first block are returned in descending SortingScore order (0.7*literature + 0.3*patent).
 // Water: 0.7*10 + 0.3*2 = 7.6   Methane: 0.7*18 + 0.3*7 = 14.7  → Methane first.
 func TestQueryByFirstBlock_OrderedByScore(t *testing.T) {
 	idx := loadTestIndex(t)
@@ -321,7 +321,7 @@ func TestCompoundFields(t *testing.T) {
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
 		MonoisotopicMass: 100,
-		PubMedCount:      10,
+		LiteratureCount:  10,
 		PatentCount:      2,
 	}
 	if diff := cmp.Diff(want, compounds[0]); diff != "" {
