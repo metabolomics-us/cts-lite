@@ -29,7 +29,23 @@
                 <textarea id="query-input" rows="5" cols="40" 
                 placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C &#10;H2O &#10;962"></textarea>
                 <br>
-                <button type="submit" style="min-height: 44px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
+                <div class="form-actions">
+                    <button type="submit" style="min-height: 44px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
+                    <div class="cog-wrapper">
+                        <button type="button" class="cog-btn" id="settings-toggle" aria-label="Settings button" aria-expanded="false">
+                            <img src="assets/settings-icon.svg" alt="settings" width="22" height="22">
+                        </button>
+                        <div class="settings-panel" id="settings-panel">
+                            <div class="settings-row">
+                                <span>Top Hit Only</span>
+                                <label class="toggle-label" aria-label="Top hit only">
+                                    <input type="checkbox" checked id="top-hit-only">
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </form>
             <div id="output-container">
                 <div class="results-header">

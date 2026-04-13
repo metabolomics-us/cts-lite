@@ -1,4 +1,19 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const settingsToggle = document.getElementById("settings-toggle");
+  const settingsPanel = document.getElementById("settings-panel");
+
+  settingsToggle.addEventListener("click", () => {
+    const isOpen = settingsPanel.classList.toggle("open");
+    settingsToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!settingsToggle.contains(e.target) && !settingsPanel.contains(e.target)) {
+      settingsPanel.classList.remove("open");
+      settingsToggle.setAttribute("aria-expanded", "false");
+    }
+  });
+
   const form = document.getElementById("query-form");
   const input = document.getElementById("query-input");
   const output = document.getElementById("output-text");
@@ -46,7 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const downloadCSV = document.createElement('button');
       downloadCSV.className = 'download-btn';
       downloadCSV.type = 'button'; 
-      downloadCSV.innerHTML = 'CSV <img src="assets/download.svg" alt="Download" width="17" height="17">';
+      downloadCSV.innerHTML = 'CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">';
       downloadCSV.addEventListener('click', () => {
         let csv = "";
         csv += "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,pubmed_count,patent_count\n";
@@ -110,7 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const downloadJSON = document.createElement('button');
       downloadJSON.className = 'download-btn';
       downloadJSON.type = 'button'; 
-      downloadJSON.innerHTML = 'JSON <img src="assets/download.svg" alt="Download" width="17" height="17">';
+      downloadJSON.innerHTML = 'JSON <img src="assets/download-icon.svg" alt="Download" width="17" height="17">';
       downloadJSON.addEventListener('click', () => {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
         const downloadAnchorNode = document.createElement('a');
