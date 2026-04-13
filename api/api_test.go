@@ -79,9 +79,13 @@ func assertCompound(t *testing.T, want *model.Compound, got *model.Compound) {
 }
 
 // Performs a match request, boiler plate method to avoid duplicate code
-func doMatchRequest(t *testing.T, payload string, extraHeaders map[string]string) *http.Response {
+func doMatchRequest(t *testing.T, payload string, extraHeaders map[string]string, allHits bool) *http.Response {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(payload))
+	url := "/match"
+	if allHits {
+		url = "/match?top_hit_only=false"
+	}
+	req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)
@@ -179,7 +183,7 @@ func TestMatchEndpoints(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil)
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil, true)
 			results := parseMatchResults(t, res)
 
 			if len(results) != 1 {
@@ -197,7 +201,7 @@ func TestMatchEndpoints(t *testing.T) {
 
 func TestMultiQuery(t *testing.T) {
 	// 5 queries: smiles O, smiles C, bad smiles, fake inchikey, bad InChI // space separated (%20)
-	res := doMatchRequest(t, `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`, nil)
+	res := doMatchRequest(t, `{"queries":"O C BADSMILES MYFAKEINCHIKEY-ISRIGHTHER-E InChI=BADINCHI"}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 5 {
@@ -261,7 +265,7 @@ func TestMatchErrors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil)
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil, false)
 			results := parseMatchResults(t, res)
 
 			if len(results) != 1 {
@@ -280,7 +284,7 @@ func TestMatchErrors(t *testing.T) {
 func TestQuotedEmptyQuery(t *testing.T) {
 	// Regression: `""` after quote-stripping becomes empty, which previously caused
 	//   a panic in parseQueryType due to an out-of-bounds slice on an empty string
-	res := doMatchRequest(t, `{"queries":"\"\""}`, nil)
+	res := doMatchRequest(t, `{"queries":"\"\""}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 0 {
@@ -293,7 +297,7 @@ func TestSingleDoubleQuoteQuery(t *testing.T) {
 	//   logic (HasPrefix && HasSuffix both true for a 1-char string, causing an
 	//   empty slice q[1:0]), and was not caught by the subsequent empty-string
 	//   check, leading to a panic in parseQueryType.
-	res := doMatchRequest(t, `{"queries":"\""}`, nil)
+	res := doMatchRequest(t, `{"queries":"\""}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 0 {
@@ -323,7 +327,7 @@ func TestInvalidJSON(t *testing.T) {
 }
 
 func TestEmptyQuery(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":""}`, nil)
+	res := doMatchRequest(t, `{"queries":""}`, nil, false)
 
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", res.StatusCode)
@@ -331,7 +335,7 @@ func TestEmptyQuery(t *testing.T) {
 }
 
 func TestQuotedQuery(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":"\"O\""}`, nil)
+	res := doMatchRequest(t, `{"queries":"\"O\""}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 1 {
@@ -359,7 +363,7 @@ func TestCSVFormatQueryParam(t *testing.T) {
 }
 
 func TestCSVNoMatchResponse(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":"InChI=1S/NOTHING"}`, map[string]string{"Accept": "text/csv"})
+	res := doMatchRequest(t, `{"queries":"InChI=1S/NOTHING"}`, map[string]string{"Accept": "text/csv"}, false)
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.StatusCode)
@@ -387,7 +391,7 @@ func TestCSVNoMatchResponse(t *testing.T) {
 }
 
 func TestCSVFormatResponse(t *testing.T) {
-	res := doMatchRequest(t, `{"queries":"O"}`, map[string]string{"Accept": "text/csv"})
+	res := doMatchRequest(t, `{"queries":"O"}`, map[string]string{"Accept": "text/csv"}, false)
 
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200 but got %d", res.StatusCode)
