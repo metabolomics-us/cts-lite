@@ -403,7 +403,20 @@ button:disabled {
 }
 
 .toggle-label input[type="checkbox"] {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.toggle-label input[type="checkbox"]:focus {
+  outline: none;
+}
+
+.toggle-label input[type="checkbox"]:focus + .toggle-track {
+  outline: 2px solid #36679e;
+  outline-offset: 3px;
 }
 
 .toggle-track {
