@@ -3,18 +3,37 @@ package model
 // These methods are only used by the tests, to load a 'mock' database
 
 import (
-	"time"
-	"log"
-	"os"
-	"fmt"
 	"database/sql"
 	"encoding/csv"
+	"fmt"
 	"io"
+	"log"
+	"os"
+	"time"
 )
 
-// LoadCSVToMemory builds an in-memory SQLite database from a CSV file
-// Used by tests so they don't require a pre-built .db file
+// LoadCSVToMemory builds a shared-cache in-memory SQLite database from a CSV
+// file. Used by tests so they don't require a pre-built .db file.
 func LoadCSVToMemory(csvPath string) (*PubChemIndex, error) {
+	// Shared-cache in-memory DB so all connections in the pool see the same data
+	return loadCSVToSQLite(csvPath, "file::memory:?cache=shared")
+}
+
+// LoadCSVToPrivateMemory builds a private (non-shared) in-memory SQLite
+// database from a CSV file. Unlike LoadCSVToMemory, schema changes on the
+// returned index do not affect other indexes in the same process.
+func LoadCSVToPrivateMemory(csvPath string) (*PubChemIndex, error) {
+	return loadCSVToSQLite(csvPath, ":memory:")
+}
+
+// DB returns the underlying *sql.DB. Exposed so tests in other packages can
+// perform schema surgery (e.g. dropping a column to simulate an error path)
+// without modifying the model API.
+func (idx *PubChemIndex) DB() *sql.DB {
+	return idx.db
+}
+
+func loadCSVToSQLite(csvPath, dsn string) (*PubChemIndex, error) {
 	startTime := time.Now()
 
 	f, err := os.Open(csvPath)
@@ -27,8 +46,7 @@ func LoadCSVToMemory(csvPath string) (*PubChemIndex, error) {
 		}
 	}()
 
-	// Shared-cache in-memory DB so all connections in the pool see the same data
-	db, err := sql.Open("sqlite", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open in-memory database: %w", err)
 	}
@@ -49,7 +67,8 @@ func LoadCSVToMemory(csvPath string) (*PubChemIndex, error) {
 
 // populateDB creates the schema and bulk-inserts rows from a CSV reader (for tests)
 // CSV column order: identifier, first_block, pubmed_count, patent_count,
-//   molecular_formula, smiles, inchi, inchikey, monoisotopic_mass, compound_name
+//
+//	molecular_formula, smiles, inchi, inchikey, monoisotopic_mass, compound_name
 func populateDB(db *sql.DB, reader *csv.Reader) error {
 	if _, err := db.Exec(CreateTableSQL); err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
@@ -104,4 +123,3 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 
 	return nil
 }
-

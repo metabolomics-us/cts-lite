@@ -103,6 +103,17 @@ func TestLoadCSVToMemory(t *testing.T) {
 	}
 }
 
+func TestLoadCSVToPrivateMemory(t *testing.T) {
+	idx, err := LoadCSVToPrivateMemory(testCSV)
+	if err != nil {
+		t.Fatalf("LoadCSVToPrivateMemory failed: %v", err)
+	}
+	defer idx.Close()
+	if idx.DB() == nil {
+		t.Error("expected non-nil DB")
+	}
+}
+
 func TestLoadCSVToMemory_FileNotFound(t *testing.T) {
 	_, err := LoadCSVToMemory("/nonexistent/path/to.csv")
 	if err == nil {

@@ -468,6 +468,97 @@ func TestCSVFormatResponse(t *testing.T) {
 	}
 }
 
+func TestMatchPubChemID(t *testing.T) {
+	tests := []struct {
+		name        string
+		query       string
+		wantFound   bool
+		wantErrMsg  string
+		wantCompound *model.Compound
+	}{
+		{
+			name:         "match by PubChem ID",
+			query:        "1",
+			wantFound:    true,
+			wantCompound: fakeWaterCompound(),
+		},
+		{
+			name:       "no match for unknown PubChem ID",
+			query:      "999",
+			wantFound:  false,
+			wantErrMsg: "No compound found",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := doMatchRequest(t, `{"queries":"`+tc.query+`"}`, nil, false)
+			results := parseMatchResults(t, res)
+
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if results[0].MatchFound != tc.wantFound {
+				t.Errorf("expected MatchFound=%v, got %v", tc.wantFound, results[0].MatchFound)
+			}
+			if tc.wantFound {
+				if len(results[0].Matches) != 1 {
+					t.Fatalf("expected 1 compound, got %d", len(results[0].Matches))
+				}
+				assertCompound(t, tc.wantCompound, results[0].Matches[0])
+			} else {
+				if results[0].ErrMsg != tc.wantErrMsg {
+					t.Errorf("expected error %q, got %q", tc.wantErrMsg, results[0].ErrMsg)
+				}
+			}
+		})
+	}
+}
+
+// brokenFirstBlockIndex loads a private in-memory index and drops the
+// first_block column so that QueryByFirstBlock fails at execution time.
+// A private ":memory:" DB is used so the schema change does not affect mockIndex.
+func brokenFirstBlockIndex(t *testing.T) *model.PubChemIndex {
+	t.Helper()
+	idx, err := model.LoadCSVToPrivateMemory("../dataset/test_datasets/unittest_data.csv")
+	if err != nil {
+		t.Fatalf("failed to load index: %v", err)
+	}
+	db := idx.DB()
+	if _, err := db.Exec("DROP INDEX IF EXISTS idx_first_block"); err != nil {
+		idx.Close()
+		t.Fatalf("failed to drop first_block index: %v", err)
+	}
+	if _, err := db.Exec("ALTER TABLE compounds DROP COLUMN first_block"); err != nil {
+		idx.Close()
+		t.Fatalf("failed to drop first_block column: %v", err)
+	}
+	return idx
+}
+
+// TestMatchInchIKeyFirstBlockErrorPath covers the second error branch in
+// matchInchiKey: the exact InChIKey lookup succeeds (returns empty) but the
+// subsequent first-block lookup fails because the column has been dropped.
+func TestMatchInchIKeyFirstBlockErrorPath(t *testing.T) {
+	// MYFAKEINCHIKEY-NOTNOTNOTN-O has no exact InChIKey match, so matchInchiKey
+	// falls through to QueryByFirstBlock, which now returns an error.
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(`{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(brokenFirstBlockIndex(t), w, req)
+
+	results := parseMatchResults(t, w.Result())
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].MatchFound {
+		t.Error("expected MatchFound=false on first-block DB error")
+	}
+	if results[0].ErrMsg != "Internal server error" {
+		t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
+	}
+}
+
 // TestMatchErrorPaths verifies that all matchXxx functions return an internal
 // error message (rather than panicking) when the underlying database is closed.
 // Each sub-test uses a fresh index so closing it does not affect other tests.
@@ -480,9 +571,12 @@ func TestMatchErrorPaths(t *testing.T) {
 		{"inchikey_exact", `{"queries":"MYFAKEINCHIKEY-ISRIGHTHER-E"}`},
 		// Full InChIKey miss → falls through to first-block lookup
 		{"inchikey_firstblock", `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`},
-		{"smiles", `{"queries":"O"}`},
+		// C=O contains '=' so smilesGuaranteePattern matches → type smiles → matchSmiles
+		{"smiles_direct", `{"queries":"C=O"}`},
 		{"formula", `{"queries":"H2O"}`},
 		{"smiles_or_formula", `{"queries":"CH4"}`},
+		// Numeric query → type pubchem_id → matchPubChemID
+		{"pubchem_id", `{"queries":"1"}`},
 	}
 
 	for _, tc := range cases {
