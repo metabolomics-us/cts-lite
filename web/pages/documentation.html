@@ -36,7 +36,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">Using CTS-Lite</h3>
+                <h3 class="doc-heading" id="using-cts-lite">Using CTS-Lite<button class="heading-anchor" onclick="copyHeadingLink(event,'using-cts-lite')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     To use CTS-Lite, simply enter your queries into the input box on the main page. 
                     You can separate entries using spaces, tabs, or newlines. When you click <code class="inline-code">Match</code>, the results will 
@@ -50,7 +50,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">REST API</h3>
+                <h3 class="doc-heading" id="rest-api">REST API<button class="heading-anchor" onclick="copyHeadingLink(event,'rest-api')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     To make queries using the REST API, use the following format:
                 </p>
@@ -118,7 +118,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">Query Types</h3>
+                <h3 class="doc-heading" id="query-types">Query Types<button class="heading-anchor" onclick="copyHeadingLink(event,'query-types')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     Query types are parsed using the following logic:
                 </p>
@@ -164,7 +164,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading" id="match-levels">Match Levels</h3>
+                <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     Given the setting for first block matches is enabled (it is by default), InChIKey queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
                 </p>
@@ -177,7 +177,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading" id="top-hit-only">Top Hit Only</h3>
+                <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     By default, CTS-Lite will return only the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
                 </p>
@@ -188,7 +188,29 @@
                 </p>
             </section>
 
+            <div id="copied-toast" class="copied-toast" role="status"></div>
         </main>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.heading-anchor').forEach(function(btn) {
+                btn.setAttribute('aria-label', 'Copy link to this section');
+            });
+        });
+
+        function copyHeadingLink(e, id) {
+            var url = location.href.split('#')[0] + '#' + id;
+            document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+            var toast = document.getElementById('copied-toast');
+            toast.textContent = 'Link copied!';
+            toast.classList.add('visible');
+            setTimeout(function() {
+                toast.classList.remove('visible');
+            }, 1500);
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(url);
+            }
+        }
+    </script>
 </body>
 </html>

@@ -129,6 +129,68 @@
   border-bottom-color: #1a3e68;
 }
 
+.heading-anchor {
+  display: inline-flex;
+  align-items: center;
+  background: transparent !important;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  margin-left: 0.2rem;
+  margin-top: 0;
+  min-height: unset;
+  font-weight: normal;
+  border-radius: 4px;
+  vertical-align: middle;
+  color: #8aa6c2;
+  transition: color 0.15s;
+}
+
+.heading-anchor:hover,
+.heading-anchor:focus {
+  background: transparent !important;
+  outline: none;
+  color: #1a3e68;
+}
+
+.heading-anchor:focus-visible {
+  outline: 2px solid #36679e;
+  outline-offset: 2px;
+}
+
+.heading-anchor img {
+  display: block;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.heading-anchor:hover img,
+.heading-anchor:focus img {
+  opacity: 1;
+}
+
+.copied-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a3e68;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2000;
+}
+
+.copied-toast.visible {
+  opacity: 1;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .documentation-container {
