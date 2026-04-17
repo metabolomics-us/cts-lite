@@ -129,7 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
       const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
-      appliedSettingsLabel.title = "Applied settings";
+      appliedSettingsLabel.title = "applied settings";
       appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}`;
       appliedSettingsLabel.style.display = "block";
 
