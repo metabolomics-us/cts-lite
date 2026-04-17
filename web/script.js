@@ -83,7 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const input = document.getElementById("query-input");
   const output = document.getElementById("output-text");
   const outputLabel = document.getElementById("output-label");
-  const topHitLabel = document.getElementById("top-hit-label");
+  const appliedSettingsLabel = document.getElementById("top-hit-label");
   const downloadButtons = document.getElementById("download-buttons");
   const paginationControls = document.getElementById("pagination-controls");
 
@@ -103,9 +103,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     output.textContent = "Matching...";
     outputLabel.textContent = "Results";
-    topHitLabel.style.display = "none";
+    appliedSettingsLabel.style.display = "none";
 
     const topHitOnly = document.getElementById("top-hit-only").checked;
+    const firstBlockMatches = document.getElementById("first-block-matches").checked;
     const url = topHitOnly ? "/match" : "/match?top_hit_only=false";
 
     try {
@@ -126,8 +127,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const numMatches = countNumMatches(allData);
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
-      topHitLabel.textContent = topHitOnly ? "Top Hit Only" : "All Hits";
-      topHitLabel.style.display = "block";
+      const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
+      const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
+      appliedSettingsLabel.title = "Applied settings";
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}`;
+      appliedSettingsLabel.style.display = "block";
 
     } catch (err) {
       output.textContent = `Error: ${err.message}`;

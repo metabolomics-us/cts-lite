@@ -3,7 +3,7 @@
 .documentation-container {
   max-width: 900px;
   width: 100%;
-  padding: 2rem;
+  padding: 2rem 2rem 50vh;
   margin: 0 auto;
 }
 
@@ -38,6 +38,7 @@
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
   border-bottom: 3px solid #1a3e68;
+  scroll-margin-top: 150px;
 }
 
 .doc-subheading {
