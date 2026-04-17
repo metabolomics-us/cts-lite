@@ -166,15 +166,20 @@
             <section class="doc-section">
                 <h3 class="doc-heading" id="match-levels">Match Levels</h3>
                 <p>
-                    InChIKey queries can match by first-block if they don't find an exact match. This gives the <code class="inline-code">First Block</code> 
-                    match level value. Other query types can only be <code class="inline-code">Exact</code> matches.
+                    Given the setting for first block matches is enabled (it is by default), InChIKey queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
+                </p>
+                <p>
+                    For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
+                </p>
+                <p>
+                    All other query types can only be <code class="inline-code">Exact</code> matches.
                 </p>
             </section>
 
             <section class="doc-section">
                 <h3 class="doc-heading" id="top-hit-only">Top Hit Only</h3>
                 <p>
-                    By default, CTS-Lite will return the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
+                    By default, CTS-Lite will return only the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
                 </p>
 
                 <p>
