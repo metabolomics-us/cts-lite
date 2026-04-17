@@ -150,8 +150,10 @@ button:disabled {
 }
 
 #download-buttons {
-  display: flex;
+  display: none;
   gap: 0.5rem;
+  min-height: 44px;
+  margin-bottom: 5px;
 }
 
 #input-label {
@@ -449,6 +451,126 @@ button:disabled {
 }
 
 /* Responsive design for mobile devices */
+/* Pagination */
+#pagination-controls {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 2px solid #dee2e6;
+  font-family: Arial, sans-serif;
+}
+
+.pagination-btn {
+  margin-top: 0;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.9rem;
+  min-height: 36px;
+}
+
+.page-num-btn {
+  padding: 0.4rem 0;
+  width: 36px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.page-num-btn.active {
+  background-color: #fff;
+  color: #1a3e68;
+  border: 2px solid #1a3e68;
+  opacity: 1;
+  cursor: default;
+  font-weight: bold;
+}
+
+.page-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  justify-content: center;
+}
+
+.page-ellipsis {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #495057;
+  user-select: none;
+}
+
+.settings-panel select {
+  background-color: #fff;
+  border: 1px solid #acacac;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #333;
+}
+
+.settings-panel select:focus {
+  outline: 2px solid #36679e;
+  outline-offset: 1px;
+}
+
+/* Collapsible result cards */
+.result-item {
+  position: relative;
+}
+
+.collapse-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.25rem;
+  margin: 0;
+  min-height: unset;
+  min-width: unset;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-weight: normal;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background-color 0.15s;
+}
+
+.collapse-btn:hover,
+.collapse-btn:focus {
+  background-color: #e0e0e0;
+  outline-color: #a0b8d3;
+}
+
+.collapse-btn svg {
+  transition: transform 0.2s;
+  display: block;
+}
+
+.result-item.collapsed .collapse-btn svg {
+  transform: rotate(-90deg);
+}
+
+.result-body {
+  overflow: hidden;
+}
+
+.result-item.collapsed .result-body {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .banner-container {
     padding: 140px 10px 0 10px;
