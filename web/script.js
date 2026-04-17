@@ -107,7 +107,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const topHitOnly = document.getElementById("top-hit-only").checked;
     const firstBlockMatches = document.getElementById("first-block-matches").checked;
-    const url = topHitOnly ? "/match" : "/match?top_hit_only=false";
+    let url = "/match?";
+    if (!topHitOnly) {
+      url += "&top_hit_only=false";
+    }
+    if (!firstBlockMatches) {
+      url += "&first_block_matches=false";
+    }
 
     try {
       const response = await fetch(url, {
