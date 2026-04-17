@@ -81,12 +81,12 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		dest  **sql.Stmt
 		query string
 	}{
-		{&idx.byPubChemID, selectCols + ` WHERE identifier = ?` + orderByScore},
-		{&idx.byInChIKey, selectCols + ` WHERE inchikey = ?` + orderByScore},
+		{&idx.byPubChemID,  selectCols + ` WHERE identifier = ?` + orderByScore},
+		{&idx.byInChIKey,   selectCols + ` WHERE inchikey = ?` + orderByScore},
 		{&idx.byFirstBlock, selectCols + ` WHERE first_block = ?` + orderByScore},
-		{&idx.byInChI, selectCols + ` WHERE inchi = ?` + orderByScore},
-		{&idx.bySmiles, selectCols + ` WHERE smiles = ?` + orderByScore},
-		{&idx.byFormula, selectCols + ` WHERE molecular_formula = ?` + orderByScore},
+		{&idx.byInChI,      selectCols + ` WHERE inchi = ?` + orderByScore},
+		{&idx.bySmiles,     selectCols + ` WHERE smiles = ?` + orderByScore},
+		{&idx.byFormula,    selectCols + ` WHERE molecular_formula = ?` + orderByScore},
 	}
 
 	for _, s := range stmts {
@@ -177,4 +177,3 @@ func (idx *PubChemIndex) QueryByFormula(formula string) ([]*Compound, error) {
 func (idx *PubChemIndex) Close() error {
 	return idx.db.Close()
 }
-
