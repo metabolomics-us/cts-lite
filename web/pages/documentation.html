@@ -196,6 +196,16 @@
             document.querySelectorAll('.heading-anchor').forEach(function(btn) {
                 btn.setAttribute('aria-label', 'Copy link to this section');
             });
+
+            if (location.hash) {
+                var target = document.querySelector(location.hash);
+                if (target) {
+                    window.scrollTo(0, 0);
+                    setTimeout(function() {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                    }, 150);
+                }
+            }
         });
 
         function copyHeadingLink(e, id) {
