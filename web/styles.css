@@ -216,7 +216,7 @@ button:disabled {
 
 .match-status.first-block-match {
   background-color: #fff3cd;
-  color: #745903;
+  color: #594503;
   border: 1px solid #ffeaa7;
 }
 
@@ -468,6 +468,7 @@ button:disabled {
   padding: 0.4rem 0.9rem;
   font-size: 0.9rem;
   min-height: 36px;
+  white-space: nowrap;
 }
 
 .page-num-btn {
@@ -475,6 +476,7 @@ button:disabled {
   width: 36px;
   flex-shrink: 0;
   text-align: center;
+  font-size: 0.9rem;
 }
 
 .page-num-btn.active {
@@ -534,8 +536,8 @@ button:disabled {
   margin: 0;
   min-height: unset;
   min-width: unset;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   cursor: pointer;
   display: flex;
