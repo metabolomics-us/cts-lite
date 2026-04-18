@@ -240,9 +240,11 @@ function displayResults(data, outputElement, offset = 0) {
     const resultDiv = document.createElement("div");
     resultDiv.className = "result-item";
     resultDiv.innerHTML = `
-      <button type="button" class="collapse-btn" aria-label="Toggle result">${CHEVRON_SVG}</button>
       <div class="query-section">
-        <h3>Query ${offset + index + 1}: ${escapeHtml(result.query)}</h3>
+        <div class="query-header">
+          <h3>Query ${offset + index + 1}: ${escapeHtml(result.query)}</h3>
+          <button type="button" class="collapse-btn" aria-label="Toggle result">${CHEVRON_SVG}</button>
+        </div>
         <div class="query-details">
           <span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>
           <span class="match-status ${getMatchStatusClass(result)}">${getMatchStatusText(result)}</span>

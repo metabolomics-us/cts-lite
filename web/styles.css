@@ -521,14 +521,20 @@ button:disabled {
 }
 
 /* Collapsible result cards */
-.result-item {
-  position: relative;
+.query-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.query-header h3 {
+  flex: 1;
+  min-width: 0;
 }
 
 .collapse-btn {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
+  flex-shrink: 0;
   background: transparent;
   border: none;
   box-shadow: none;
