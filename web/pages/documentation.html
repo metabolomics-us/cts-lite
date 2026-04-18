@@ -73,13 +73,17 @@
                 </div>
 
                 <p>
-                To query for <strong>all hits</strong>, instead of just the top hit per query, add the following parameter:
+                To query for <strong>all hits</strong> instead of just the top hit per query, add the following parameter:
                 </p>
                 <div class="code-block">
-                <code>curl -X POST \
- -H "Content-Type: application/json" \
- -d '{"queries":"query1 query2 ..."}' \
- "cts-lite.metabolomics.us/match?top_hit_only=false"</code>
+                <code>"cts-lite.metabolomics.us/match?top_hit_only=false"</code>
+                </div>
+
+                <p>
+                To <strong>disable first block</strong> InChIKey matches, add the following parameter:
+                </p>
+                <div class="code-block">
+                <code>"cts-lite.metabolomics.us/match?first_block_matches=false"</code>
                 </div>
 
                 <h4 class="doc-subheading">JSON Example Response</h4>
@@ -94,7 +98,6 @@
     "matches": [
       {
         "inchikey": "XMBWDFGMSWQBCA-UHFFFAOYSA-N",
-        "first_block": "XMBWDFGMSWQBCA",
         "inchi": "InChI=1S/HI/h1H",
         "smiles": "I",
         "compound_name": "iodane",
@@ -170,6 +173,9 @@
                 </p>
                 <p>
                     For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
+                </p>
+                <p>
+                    Disable first block matches through the API by adding the <code class="inline-code">first_block_matches=false</code> parameter.
                 </p>
                 <p>
                     All other query types can only be <code class="inline-code">Exact</code> matches.
