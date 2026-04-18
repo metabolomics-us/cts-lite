@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
         csv += [
           result.query, result.query_type, result.found_match,
           "", `"${(result.error_message || "").replace(/"/g, '""')}"`,
-          "", "", "", "", "", "", "", "", "", ""
+          "", "", "", "", "", "", "", "", ""
         ].join(",") + "\n";
       }
     });
