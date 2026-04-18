@@ -70,7 +70,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	// Write CSV header
 	header := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
-		"inchikey", "first_block", "inchi", "smiles", "compound_name",
+		"inchikey", "inchi", "smiles", "compound_name",
 		"molecular_formula", "literature_count", "patent_count",
 	}
 	if err := writer.Write(header); err != nil {
@@ -87,7 +87,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				fmt.Sprintf("%t", result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
-				"", "", "", "", "", "", "", "", // Empty compound fields
+				"", "", "", "", "", "", "", // Empty compound fields
 			}
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
@@ -102,7 +102,6 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					result.MatchLevel,
 					result.ErrMsg,
 					match.InChIKey,
-					match.InChIKey[:14], // firstblock
 					match.InChI,
 					match.Smiles,
 					match.CompoundName,

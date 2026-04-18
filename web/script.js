@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
-    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,first_block,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count\n";
+    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count\n";
     allData.forEach(result => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
@@ -50,7 +50,6 @@ document.addEventListener("DOMContentLoaded", () => {
             `"${(result.error_message || "").replace(/"/g, '""')}"`,
             (match.identifier || "").replace(/"/g, '""'),
             (match.inchikey || "").replace(/"/g, '""'),
-            (match.first_block || "").replace(/"/g, '""'),
             `"${match.inchi.replace(/"/g, '""')}"`,
             match.smiles.replace(/"/g, '""'),
             `"${(match.compound_name || "").replace(/"/g, '""')}"`,
@@ -224,7 +223,6 @@ function displayResults(data, outputElement, offset = 0) {
             <div class="match-details">
               <div class="match-field"><label>PubChem CID:</label><span class="monospace">${escapeHtml(match.identifier)}</span></div>
               <div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>
-              <div class="match-field"><label>First Block:</label><span class="monospace">${escapeHtml(match.inchikey.slice(0, 14))}</span></div>
               <div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>
               <div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>
               <div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>
