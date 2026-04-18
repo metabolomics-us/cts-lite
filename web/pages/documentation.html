@@ -203,6 +203,27 @@
                 btn.setAttribute('aria-label', 'Copy link to this section');
             });
 
+            document.querySelectorAll('.code-block').forEach(function(block) {
+                var btn = document.createElement('button');
+                btn.className = 'copy-btn';
+                btn.setAttribute('aria-label', 'Copy code');
+                btn.innerHTML = '<img src="../assets/copy-icon.svg" alt="">';
+                btn.addEventListener('click', function() {
+                    var code = block.querySelector('code');
+                    var toast = document.getElementById('copied-toast');
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(code.textContent.trim());
+                    }
+                    toast.textContent = 'Copied!';
+                    toast.classList.add('visible');
+                    setTimeout(function() {
+                        toast.classList.remove('visible');
+                        toast.textContent = '';
+                    }, 1500);
+                });
+                block.appendChild(btn);
+            });
+
             if (location.hash) {
                 var target = document.querySelector(location.hash);
                 if (target) {
@@ -218,7 +239,7 @@
             var url = location.href.split('#')[0] + '#' + id;
             document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
             var toast = document.getElementById('copied-toast');
-            toast.textContent = 'Link copied!';
+            toast.textContent = 'Copied!';
             toast.classList.add('visible');
             setTimeout(function() {
                 toast.classList.remove('visible');

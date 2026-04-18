@@ -77,6 +77,47 @@
   padding: 1rem 1.25rem;
   margin: 1rem 0;
   overflow-x: auto;
+  position: relative;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  background: transparent !important;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  margin: 0;
+  min-height: unset;
+  font-weight: normal;
+  border-radius: 4px;
+  color: #888;
+  transition: color 0.15s;
+}
+
+.copy-btn:hover,
+.copy-btn:focus {
+  background: transparent !important;
+  outline: none;
+  color: #1a3e68;
+}
+
+.copy-btn:focus-visible {
+  outline: 2px solid #36679e;
+  outline-offset: 2px;
+}
+
+.copy-btn img {
+  display: block;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.copy-btn:hover img,
+.copy-btn:focus img {
+  opacity: 1;
 }
 
 .code-block code {
