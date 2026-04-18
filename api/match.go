@@ -41,7 +41,7 @@ func matchInchi(index *model.PubChemIndex, query string, result *model.SingleRes
 	result.Matches = compounds
 }
 
-func matchInchiKey(index *model.PubChemIndex, query string, result *model.SingleResult) {
+func matchInchiKey(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool) {
 	// Try full InChIKey match first
 	compounds, err := index.QueryByInChIKey(query)
 	if err != nil {
@@ -58,21 +58,27 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 	}
 
 	// Fall back to first-block match (first 14 characters of InChIKey)
-	compounds, err = index.QueryByFirstBlock(query[:14])
-	if err != nil {
-		log.Printf("Error querying by first block: %v", err)
+	if allowFirstBlockMatches {
+		compounds, err = index.QueryByFirstBlock(query[:14])
+		if err != nil {
+			log.Printf("Error querying by first block: %v", err)
+			result.MatchFound = false
+			result.ErrMsg = "Internal server error"
+			return
+		}
+		if len(compounds) == 0 {
+			result.MatchFound = false
+			result.ErrMsg = "No compound(s) found"
+			return
+		}
+		result.MatchFound = true
+		result.MatchLevel = "First Block"
+		result.Matches = compounds
+	} else {
 		result.MatchFound = false
-		result.ErrMsg = "Internal server error"
+		result.ErrMsg = "No compound(s) found, first block matches disabled"
 		return
 	}
-	if len(compounds) == 0 {
-		result.MatchFound = false
-		result.ErrMsg = "No compound(s) found"
-		return
-	}
-	result.MatchFound = true
-	result.MatchLevel = "First Block"
-	result.Matches = compounds
 }
 
 func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult) {
