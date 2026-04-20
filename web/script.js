@@ -43,27 +43,27 @@ document.addEventListener("DOMContentLoaded", () => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
           csv += [
-            result.query,
-            result.query_type,
-            result.found_match,
-            (result.match_level || "").replace(/"/g, '""'),
-            `"${(result.error_message || "").replace(/"/g, '""')}"`,
-            (match.identifier || "").replace(/"/g, '""'),
-            (match.inchikey || "").replace(/"/g, '""'),
-            `"${match.inchi.replace(/"/g, '""')}"`,
-            match.smiles.replace(/"/g, '""'),
-            `"${(match.compound_name || "").replace(/"/g, '""')}"`,
-            (match.molecular_formula || "").replace(/"/g, '""'),
-            match.monoisotopic_mass,
-            match.literature_count,
-            match.patent_count
+            csvField(result.query),
+            csvField(result.query_type),
+            csvField(result.found_match),
+            csvField(result.match_level),
+            csvField(result.error_message),
+            csvField(match.identifier),
+            csvField(match.inchikey),
+            csvField(match.inchi),
+            csvField(match.smiles),
+            csvField(match.compound_name),
+            csvField(match.molecular_formula),
+            csvField(match.monoisotopic_mass),
+            csvField(match.literature_count),
+            csvField(match.patent_count)
           ].join(",") + "\n";
         });
       } else {
         csv += [
-          result.query, result.query_type, result.found_match,
-          "", `"${(result.error_message || "").replace(/"/g, '""')}"`,
-          "", "", "", "", "", "", "", "", ""
+          csvField(result.query), csvField(result.query_type), csvField(result.found_match),
+          csvField(""), csvField(result.error_message),
+          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
         ].join(",") + "\n";
       }
     });
@@ -311,6 +311,14 @@ function formatQueryType(queryType) {
 
 function countNumMatches(data) {
   return data.filter(r => r.found_match).length;
+}
+
+function csvField(value) {
+  const s = value == null ? "" : String(value);
+  if (s.includes(",") || s.includes('"')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
 }
 
 function timestamp() {
