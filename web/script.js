@@ -96,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!query) {
       outputLabel.textContent = "Error";
+      appliedSettingsLabel.style.display = "none";
       output.textContent = "Please enter a query";
       return;
     }
