@@ -36,7 +36,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">Using CTS-Lite</h3>
+                <h3 class="doc-heading" id="using-cts-lite">Using CTS-Lite<button class="heading-anchor" onclick="copyHeadingLink(event,'using-cts-lite')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     To use CTS-Lite, simply enter your queries into the input box on the main page. 
                     You can separate entries using spaces, tabs, or newlines. When you click <code class="inline-code">Match</code>, the results will 
@@ -50,7 +50,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">REST API</h3>
+                <h3 class="doc-heading" id="rest-api">REST API<button class="heading-anchor" onclick="copyHeadingLink(event,'rest-api')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     To make queries using the REST API, use the following format:
                 </p>
@@ -73,13 +73,17 @@
                 </div>
 
                 <p>
-                To query for <strong>all hits</strong>, instead of just the top hit per query, add the following parameter:
+                To query for <strong>all hits</strong> instead of just the top hit per query, add the following parameter:
                 </p>
                 <div class="code-block">
-                <code>curl -X POST \
- -H "Content-Type: application/json" \
- -d '{"queries":"query1 query2 ..."}' \
- "cts-lite.metabolomics.us/match?top_hit_only=false"</code>
+                <code>"cts-lite.metabolomics.us/match?top_hit_only=false"</code>
+                </div>
+
+                <p>
+                To <strong>disable first block</strong> InChIKey matches, add the following parameter:
+                </p>
+                <div class="code-block">
+                <code>"cts-lite.metabolomics.us/match?first_block_matches=false"</code>
                 </div>
 
                 <h4 class="doc-subheading">JSON Example Response</h4>
@@ -94,7 +98,6 @@
     "matches": [
       {
         "inchikey": "XMBWDFGMSWQBCA-UHFFFAOYSA-N",
-        "first_block": "XMBWDFGMSWQBCA",
         "inchi": "InChI=1S/HI/h1H",
         "smiles": "I",
         "compound_name": "iodane",
@@ -118,7 +121,7 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">Query Types</h3>
+                <h3 class="doc-heading" id="query-types">Query Types<button class="heading-anchor" onclick="copyHeadingLink(event,'query-types')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     Query types are parsed using the following logic:
                 </p>
@@ -164,17 +167,25 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">Match Levels</h3>
+                <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                    InChIKey queries can match by first-block if they don't find an exact match. This gives the <code class="inline-code">First Block</code> 
-                    match level value. Other query types can only be <code class="inline-code">Exact</code> matches.
+                    Given the setting for first block matches is enabled (it is by default), InChIKey queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
+                </p>
+                <p>
+                    For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
+                </p>
+                <p>
+                    Disable first block matches through the API by adding the <code class="inline-code">first_block_matches=false</code> parameter.
+                </p>
+                <p>
+                    All other query types can only be <code class="inline-code">Exact</code> matches.
                 </p>
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading">Top Hit Only</h3>
+                <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                    By default, CTS-Lite will return the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
+                    By default, CTS-Lite will return only the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
                 </p>
 
                 <p>
@@ -183,7 +194,60 @@
                 </p>
             </section>
 
+            <div id="copied-toast" class="copied-toast" role="status"></div>
         </main>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.heading-anchor').forEach(function(btn) {
+                btn.setAttribute('aria-label', 'Copy link to this section');
+            });
+
+            document.querySelectorAll('.code-block').forEach(function(block) {
+                var btn = document.createElement('button');
+                btn.className = 'copy-btn';
+                btn.setAttribute('aria-label', 'Copy code');
+                btn.innerHTML = '<img src="../assets/copy-icon.svg" alt="">';
+                btn.addEventListener('click', function() {
+                    var code = block.querySelector('code');
+                    var toast = document.getElementById('copied-toast');
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(code.textContent.trim());
+                    }
+                    toast.textContent = 'Copied!';
+                    toast.classList.add('visible');
+                    setTimeout(function() {
+                        toast.classList.remove('visible');
+                        toast.textContent = '';
+                    }, 1500);
+                });
+                block.appendChild(btn);
+            });
+
+            if (location.hash) {
+                var target = document.querySelector(location.hash);
+                if (target) {
+                    window.scrollTo(0, 0);
+                    setTimeout(function() {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                    }, 150);
+                }
+            }
+        });
+
+        function copyHeadingLink(e, id) {
+            var url = location.href.split('#')[0] + '#' + id;
+            document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+            var toast = document.getElementById('copied-toast');
+            toast.textContent = 'Copied!';
+            toast.classList.add('visible');
+            setTimeout(function() {
+                toast.classList.remove('visible');
+            }, 1500);
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(url);
+            }
+        }
+    </script>
 </body>
 </html>

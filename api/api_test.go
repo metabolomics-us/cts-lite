@@ -451,8 +451,8 @@ func TestCSVFormatResponse(t *testing.T) {
 	// Check header
 	expectedHeader := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
-		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "literature_count", "patent_count",
+		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
+		"molecular_formula", "monoisotopic_mass", "literature_count", "patent_count",
 	}
 	if diff := cmp.Diff(expectedHeader, records[0]); diff != "" {
 		t.Errorf("CSV header mismatch (-want +got):\n%s", diff)
@@ -461,10 +461,34 @@ func TestCSVFormatResponse(t *testing.T) {
 	// Check data row
 	expectedData := []string{
 		"O", "smiles", "true", "Exact SMILES", "",
-		"MYFAKEINCHIKEY-ISRIGHTHER-E", "MYFAKEINCHIKEY", "InChI=1S/H2O/h1H2", "O", "Water", "H2O", "10", "2",
+		"1", "MYFAKEINCHIKEY-ISRIGHTHER-E", "InChI=1S/H2O/h1H2", "O", "Water", "H2O", "100", "10", "2",
 	}
 	if diff := cmp.Diff(expectedData, records[1]); diff != "" {
 		t.Errorf("CSV data row mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCSVCommaInQuery(t *testing.T) {
+	// Regression: InChI queries contain commas; the query field must be quoted
+	// so csv.NewReader does not split it mid-field.
+	const inchi = "InChI=1S/C10H18O/c1-9(2)7-4-5-10(9,3)8(11)6-7/h7-8,11H,4-6H2,1-3H3/t7-,8+,10+/m0/s1"
+	res := doMatchRequest(t, `{"queries":"`+inchi+`"}`, map[string]string{"Accept": "text/csv"}, false)
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+
+	records, err := csv.NewReader(res.Body).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse CSV (likely unquoted comma in query field): %v", err)
+	}
+
+	if len(records) != 2 {
+		t.Fatalf("expected 2 rows (header + 1 no-match row), got %d", len(records))
+	}
+
+	if records[1][0] != inchi {
+		t.Errorf("query field mangled by commas: want %q, got %q", inchi, records[1][0])
 	}
 }
 

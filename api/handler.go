@@ -70,8 +70,8 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	// Write CSV header
 	header := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
-		"inchikey", "first_block", "inchi", "smiles", "compound_name",
-		"molecular_formula", "literature_count", "patent_count",
+		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
+		"molecular_formula", "monoisotopic_mass", "literature_count", "patent_count",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
@@ -87,7 +87,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				fmt.Sprintf("%t", result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
-				"", "", "", "", "", "", "", "", // Empty compound fields
+				"", "", "", "", "", "", "", "", "", // Empty compound fields
 			}
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
@@ -101,12 +101,13 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					fmt.Sprintf("%t", result.MatchFound),
 					result.MatchLevel,
 					result.ErrMsg,
+					match.Identifier,
 					match.InChIKey,
-					match.InChIKey[:14], // firstblock
 					match.InChI,
 					match.Smiles,
 					match.CompoundName,
 					match.MolecularFormula,
+					strconv.FormatFloat(match.MonoisotopicMass, 'f', -1, 64),
 					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 				}
@@ -155,6 +156,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 	// Check for top-hit parameter
 	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
+	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	splitter := regexp.MustCompile(`[\s]+`)
@@ -190,7 +192,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchInchi(index, q, result)
 
 		case "inchikey":
-			matchInchiKey(index, q, result)
+			matchInchiKey(index, q, result, allowFirstBlockMatches)
 
 		case "smiles":
 			matchSmiles(index, q, result)

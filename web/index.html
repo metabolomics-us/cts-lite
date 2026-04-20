@@ -26,7 +26,7 @@
             <form id="query-form">
                 <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs</label>
                 <p style="font-size: 0.9rem; margin-top: 0.5rem;">Space, Tab, or Newline separated entries</p>
-                <textarea id="query-input" rows="5" cols="40" 
+                <textarea id="query-input" rows="5" cols="40"
                 placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C &#10;H2O &#10;962"></textarea>
                 <br>
                 <div class="form-actions">
@@ -37,11 +37,27 @@
                         </button>
                         <div class="settings-panel" id="settings-panel">
                             <div class="settings-row">
-                                <span>Top Hit Only</span>
+                                <span>Top Hit Only <a href="pages/documentation.html#top-hit-only" target="_blank" aria-label="Top Hit Only documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/info-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="Top hit only">
                                     <input type="checkbox" checked id="top-hit-only">
                                     <span class="toggle-track"></span>
                                 </label>
+                            </div>
+                            <div class="settings-row" style="margin-top: 0.75rem;">
+                                <span>First Block Matches <a href="pages/documentation.html#match-levels" target="_blank" aria-label="Match levels documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/info-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <label class="toggle-label" aria-label="First block matches">
+                                    <input type="checkbox" checked id="first-block-matches">
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" style="margin-top: 0.75rem;">
+                                <span>Results Per Page</span>
+                                <select id="page-size-select" aria-label="Results per page">
+                                    <option value="10" selected>10</option>
+                                    <option value="20">20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -50,11 +66,23 @@
             <div id="output-container">
                 <div class="results-header">
                     <label for="output-text" id="output-label">Results</label>
-                    <div id="download-buttons" style="min-height: 44px; margin-bottom: 5px;"></div>
+                    <div id="download-buttons">
+                        <button class="download-btn" id="download-csv" type="button">
+                            CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
+                        </button>
+                        <button class="download-btn" id="download-json" type="button">
+                            JSON <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
+                        </button>
+                    </div>
                 </div>
                 <label id="top-hit-label" style="display: none; margin: -0.4rem 0 0.5rem 0; font-size: 0.85rem; color: #444444;"></label>
                 <hr>
                 <div id="output-text"></div>
+                <div id="pagination-controls">
+                    <button type="button" class="pagination-btn" id="prev-page">&#8592; Prev</button>
+                    <div id="page-info" class="page-info"></div>
+                    <button type="button" class="pagination-btn" id="next-page">Next &#8594;</button>
+                </div>
             </div>
         </main>
     </div>
