@@ -15,8 +15,11 @@ p {
 .skip-link:focus {
   top: 0;
   left: 0;
-  color: white !important;
-  background-color: #237bdf;
+  background-color: #1a3e68;
+  border-radius: 0 0 5px 5px;
+  border: 3px solid #f1d787;
+  border-top: none;
+  transition: top 0.2s;
 }
 
 .navbar {
