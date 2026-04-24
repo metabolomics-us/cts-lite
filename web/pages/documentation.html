@@ -55,9 +55,7 @@
                 <p>
                     To make queries using the REST API, use the following formats:
                 </p>
-                <p style="margin-bottom: -10px">
-                    JSON (Standard):
-                </p>
+                <p style="margin-bottom: -10px">JSON (Standard):</p>
                 <div class="code-block">
                 <code>curl -X POST \
  -H "Content-Type: application/json" \
@@ -65,9 +63,7 @@
  "cts-lite.metabolomics.us/match"</code>
                 </div>
 
-                <p style="margin-bottom: -10px">
-                CSV:
-                </p>
+                <p style="margin-bottom: -10px">CSV:</p>
                 <div class="code-block">
                 <code>curl -X POST \
  -H "Content-Type: application/json" \
@@ -131,7 +127,8 @@
                 <div class="code-block">
                     <pre><code>query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count
 XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042
-will_fail,unidentified,false,,"Invalid query type, could not identify",,,,,,,,,</pre></code>
+will_fail,unidentified,false,,"Invalid query type, could not identify",,,,,,,,,
+                </pre></code>
             </section>
 
             <section class="doc-section">
