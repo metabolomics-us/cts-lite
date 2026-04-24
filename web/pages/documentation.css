@@ -5,6 +5,7 @@
   width: 100%;
   padding: 2rem 2rem 50vh;
   margin: 0 auto;
+  scroll-margin-top: 150px;
 }
 
 .doc-title {
@@ -74,9 +75,8 @@
   border: 1px solid #e0e0e0;
   border-left: 4px solid #1a3e68;
   border-radius: 4px;
-  padding: 1rem 1.25rem;
+  padding: 1rem 3.5rem 1rem 1.25rem;
   margin: 1rem 0;
-  overflow-x: auto;
   position: relative;
 }
 
@@ -125,14 +125,16 @@
   font-size: 0.95rem;
   color: #2d3436;
   display: block;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: pre;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
 }
 
 .code-block pre {
   margin: 0;
   padding: 0;
   overflow-x: auto;
+  scrollbar-gutter: stable;
 }
 
 .inline-code {
@@ -258,7 +260,7 @@
   }
 
   .code-block {
-    padding: 0.75rem 1rem;
+    padding: 0.75rem 3.5rem 0.75rem 1rem;
   }
 
   .code-block code {
