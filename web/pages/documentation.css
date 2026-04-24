@@ -5,6 +5,7 @@
   width: 100%;
   padding: 2rem 2rem 50vh;
   margin: 0 auto;
+  scroll-margin-top: 150px;
 }
 
 .doc-title {
