@@ -51,8 +51,12 @@
 
             <section class="doc-section">
                 <h3 class="doc-heading" id="rest-api">REST API<button class="heading-anchor" onclick="copyHeadingLink(event,'rest-api')"><img src="../assets/hyperlink-icon.svg" alt=""></button></h3>
+                <h4 class="doc-subheading">Request Formats</h4>
                 <p>
-                    To make queries using the REST API, use the following format:
+                    To make queries using the REST API, use the following formats:
+                </p>
+                <p style="margin-bottom: -10px">
+                    JSON (Standard):
                 </p>
                 <div class="code-block">
                 <code>curl -X POST \
@@ -61,34 +65,36 @@
  "cts-lite.metabolomics.us/match"</code>
                 </div>
 
-                <p>
-                    You can add the text/csv header to your command to get results in <strong>CSV format</strong>:
+                <p style="margin-bottom: -10px">
+                CSV:
                 </p>
                 <div class="code-block">
                 <code>curl -X POST \
  -H "Content-Type: application/json" \
- -H "Accept: text/csv" \
+ <strong>-H "Accept: text/csv" \</strong>
  -d '{"queries":"query1 query2 ..."}' \
  "cts-lite.metabolomics.us/match"</code>
                 </div>
 
-                <p>
-                To query for <strong>all hits</strong> instead of just the top hit per query, add the following parameter:
+                <h4 class="doc-subheading">Request Parameters</h4>
+                <p style="margin-bottom: -10px">
+                Disable top hit only:
                 </p>
                 <div class="code-block">
-                <code>"cts-lite.metabolomics.us/match?top_hit_only=false"</code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?top_hit_only=false"</strong></code>
                 </div>
 
-                <p>
-                To <strong>disable first block</strong> InChIKey matches, add the following parameter:
+                <p style="margin-bottom: -10px">
+                Disable first block matches:
                 </p>
                 <div class="code-block">
-                <code>"cts-lite.metabolomics.us/match?first_block_matches=false"</code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?first_block_matches=false"</strong></code>
                 </div>
 
-                <h4 class="doc-subheading">JSON Example Response</h4>
+                <h4 class="doc-subheading">Response Formats</h4>
                 <p>Example query: <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
-                <div class="code-block">
+                <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>
+                <div class="code-block" style="margin-left: 10px;">
                     <pre><code>[
   {
     "query": "XMBWDFGMSWQBCA-UHDFADDYSA-N",
@@ -97,13 +103,15 @@
     "match_level": "First Block",
     "matches": [
       {
+        "identifier": "24841",
         "inchikey": "XMBWDFGMSWQBCA-UHFFFAOYSA-N",
         "inchi": "InChI=1S/HI/h1H",
         "smiles": "I",
-        "compound_name": "iodane",
+        "compound_name": "Hydrogen iodide",
         "molecular_formula": "HI",
-        "literature_count": "10707",
-        "patent_count": "363920"
+        "monoisotopic_mass": 127.9123,
+        "literature_count": 4430,
+        "patent_count": 329042
       }
     ],
     "error_message": ""
@@ -118,6 +126,12 @@
   }
 ]</code></pre>
                 </div>
+
+                <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px;">CSV</p>
+                <div class="code-block" style="margin-left: 10px;">
+                    <pre><code>query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count
+XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042
+will_fail,unidentified,false,,"Invalid query type, could not identify",,,,,,,,,</pre></code>
             </section>
 
             <section class="doc-section">
