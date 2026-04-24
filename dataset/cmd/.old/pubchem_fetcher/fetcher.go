@@ -31,13 +31,13 @@ type PugResponse struct {
 	} `json:"PropertyTable"`
 }
 
-func firstBlockFromInchiKey(ik string) string {
-	if ik == "" {
-		return ""
-	}
-	parts := strings.SplitN(ik, "-", 2)
-	return parts[0]
-}
+// func firstBlockFromInchiKey(ik string) string {
+// 	if ik == "" {
+// 		return ""
+// 	}
+// 	parts := strings.SplitN(ik, "-", 2)
+// 	return parts[0]
+// }
 
 func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 	cidStrs := make([]string, len(cids))
@@ -98,7 +98,7 @@ func main() {
 	defer w.Flush()
 
 	// header:
-	w.Write([]string{"Identifier", "FirstBlock", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "MonoisotopicMass", "CompoundName"})
+	w.Write([]string{"Identifier", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "MonoisotopicMass", "CompoundName"})
 
 	batchSize := 400
 	maxCID := 1000000
@@ -131,11 +131,8 @@ func main() {
 				continue
 			}
 
-			firstBlock := firstBlockFromInchiKey(p.InChIKey)
-
 			row := []string{
 				fmt.Sprintf("%d", p.CID),
-				firstBlock,
 				fmt.Sprintf("%d", p.LiteratureCount),
 				fmt.Sprintf("%d", p.PatentCount),
 				p.MolecularFormula,
