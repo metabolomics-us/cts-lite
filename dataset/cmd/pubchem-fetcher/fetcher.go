@@ -1,14 +1,19 @@
-package fetcher
+package main 
+
+// Usage:
+// go run fetcher.go <cid-list-file>
 
 import (
-	"ctslite/model"
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,23 +36,13 @@ type PugResponse struct {
 	} `json:"PropertyTable"`
 }
 
-// func firstBlockFromInchiKey(ik string) string {
-// 	if ik == "" {
-// 		return ""
-// 	}
-// 	parts := strings.SplitN(ik, "-", 2)
-// 	return parts[0]
-// }
-
 func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 	cidStrs := make([]string, len(cids))
 	for i, c := range cids {
 		cidStrs[i] = fmt.Sprintf("%d", c)
 	}
-	cidList := strings.Join(cidStrs, ",")
-	url := fmt.Sprintf("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/%s/property/InChIKey,InChI,SMILES,ExactMass,LiteratureCount,PatentCount,Title,MolecularFormula/JSON", cidList)
-
-	log.Printf("Making request")
+	const endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/property/InChIKey,InChI,SMILES,ExactMass,LiteratureCount,PatentCount,Title,MolecularFormula/JSON"
+	body := url.Values{"cid": {strings.Join(cidStrs, ",")}}.Encode()
 
 	// Simple retry
 	var lastErr error
@@ -55,7 +50,7 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 		if attempt > 0 {
 			log.Printf("Retrying request, attempt %d", attempt+1)
 		}
-		resp, err := http.Get(url)
+		resp, err := http.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(body))
 		if err != nil {
 			lastErr = err
 			time.Sleep(500 * time.Millisecond)
@@ -65,7 +60,12 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 		if resp.StatusCode != 200 {
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			lastErr = fmt.Errorf("status %d: %s", resp.StatusCode, string(bodyBytes))
-			time.Sleep(500 * time.Millisecond)
+			if resp.StatusCode == 403 {
+				log.Printf("Request denied, waiting 10s for rate limit reset")
+				time.Sleep(10 * time.Second)
+			} else {
+				time.Sleep(500 * time.Millisecond)
+			}
 			continue
 		}
 		var pr PugResponse
@@ -79,16 +79,43 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 	return nil, lastErr
 }
 
-func main() {
-	index, err := model.LoadCSVToMemory("../../../dataset/cts-lite.csv")
+func readCIDsFromFile(path string) ([]int, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		log.Fatalf("Failed to load index: %v", err)
+		return nil, err
 	}
+	defer f.Close()
+
+	var cids []int
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		cid, err := strconv.Atoi(line)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CID %q: %w", line, err)
+		}
+		cids = append(cids, cid)
+	}
+	return cids, scanner.Err()
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		log.Fatalf("usage: fetcher <cid-list-file>")
+	}
+
+	allCIDs, err := readCIDsFromFile(os.Args[1])
+	if err != nil {
+		log.Fatalf("read CID file: %v", err)
+	}
+	log.Printf("Loaded %d CIDs from %s", len(allCIDs), os.Args[1])
 
 	// Use timestamped filename to avoid overwriting
 	fileName := fmt.Sprintf("pubchem_rows%v.csv", time.Now().Unix())
 	outFile, err := os.Create(fileName)
-
 	if err != nil {
 		log.Fatalf("create csv: %v", err)
 	}
@@ -97,40 +124,28 @@ func main() {
 	w := csv.NewWriter(outFile)
 	defer w.Flush()
 
-	// header:
+	// Header:
 	w.Write([]string{"Identifier", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "MonoisotopicMass", "CompoundName"})
 
-	batchSize := 400
-	maxCID := 1000000
-	startCID := 1 // change as needed (currently 1 to 1 million)
+	batchSize := 300
 
-	// iterate in batches
-	for i := startCID; i <= maxCID; i += batchSize {
-		end := i + batchSize - 1
-		if end > maxCID {
-			end = maxCID
+	// Iterate in batches
+	for i := 0; i < len(allCIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(allCIDs) {
+			end = len(allCIDs)
 		}
-		cids := make([]int, 0, end-i+1)
-		for c := i; c <= end; c++ {
-			cids = append(cids, c)
-		}
+		batch := allCIDs[i:end]
+		log.Printf("Making request, %d/%d CIDs", end, len(allCIDs))
 
-		pr, err := fetchPropertiesBatch(cids)
+		pr, err := fetchPropertiesBatch(batch)
 		if err != nil {
-			log.Printf("fetch batch %d-%d failed: %v", i, end, err)
+			log.Printf("fetch batch [%d:%d] failed: %v", i, end, err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
 		for _, p := range pr.PropertyTable.Properties {
-			// filter out compounds without any patents or literature
-			if p.LiteratureCount == 0 && p.PatentCount == 0 {
-				continue
-			} else if index.ByInChIKey[p.InChIKey] != nil {
-				// already in our index
-				continue
-			}
-
 			row := []string{
 				fmt.Sprintf("%d", p.CID),
 				fmt.Sprintf("%d", p.LiteratureCount),
@@ -152,7 +167,7 @@ func main() {
 			log.Fatalf("csv writer error: %v", err)
 		}
 
-		// pause to avoid rate limiting
-		time.Sleep(350 * time.Millisecond)
+		// Pause to avoid rate limiting
+		time.Sleep(250 * time.Millisecond)
 	}
 }
