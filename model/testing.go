@@ -66,8 +66,7 @@ func loadCSVToSQLite(csvPath, dsn string) (*PubChemIndex, error) {
 }
 
 // populateDB creates the schema and bulk-inserts rows from a CSV reader (for tests)
-// CSV column order: identifier, first_block, literature_count, patent_count,
-//
+// CSV column order: identifier, literature_count, patent_count,
 //	molecular_formula, smiles, inchi, inchikey, monoisotopic_mass, compound_name
 func populateDB(db *sql.DB, reader *csv.Reader) error {
 	if _, err := db.Exec(CreateTableSQL); err != nil {
@@ -98,15 +97,15 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 
 		if _, err := stmt.Exec(
 			line[0], // identifier
-			line[7], // inchikey
-			line[1], // first_block
-			line[6], // inchi
-			line[5], // smiles
-			line[9], // compound_name
-			line[4], // molecular_formula
-			line[8], // monoisotopic_mass
-			line[2], // literature_count
-			line[3], // patent_count
+			line[6], // inchikey
+			line[6][:14], // first_block
+			line[5], // inchi
+			line[4], // smiles
+			line[8], // compound_name
+			line[3], // molecular_formula
+			line[7], // monoisotopic_mass
+			line[1], // literature_count
+			line[2], // patent_count
 		); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("failed to insert row: %w", err)

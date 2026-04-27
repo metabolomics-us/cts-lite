@@ -33,7 +33,7 @@ func main() {
 	output := [][]string{records[0]} // Start with header
 	for _, row := range records[1:] {
 		identifier := row[0]
-		inchikey := row[7]
+		inchikey := row[6]
 		if seen[identifier] == true || seen[inchikey] == true {
 			duplicateCount++
 			// Ignore line for new output

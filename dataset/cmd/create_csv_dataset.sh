@@ -9,12 +9,12 @@ START_TIMER=$(date +%s)
 DATASET_NAME="${1:-cts-lite_$(date +%Y%m%d).csv}"
 
 # Map of PubChem categories to their corresponding ids
-declare -A pubchem_categories=(                                                                                                                 
+declare -A pubchem_categories=(
   ["names-and-identifiers"]=1856948
-  ["literature"]=1857367                                                                                                                        
-  ["other-ms"]=3857762                              
-  ["gc-ms"]=1856940                                                                                                                             
-  ["lc-ms"]=3857761                                 
+  ["literature"]=1857367
+  ["other-ms"]=3857762
+  ["gc-ms"]=1856940
+  ["lc-ms"]=3857761
   ["ms-ms"]=1857020
   ["agrochemical"]=1857282
   ["pathways"]=3647702
@@ -46,7 +46,7 @@ cleanup_on_failure() {
   for category in "${!pubchem_categories[@]}"; do
     [[ -f "${category}.csv" ]] && temp_files+=("${category}.csv")
   done
-  for f in pubchem.csv firstblocks_pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv; do
+  for f in pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv; do
     [[ -f "$f" ]] && temp_files+=("$f")
   done
 
@@ -115,11 +115,9 @@ merge_csvs() {
 
 adjust_csv_headers () {
   echo "Adjusting headers..."
-  go run "${SCRIPT_DIR}/csv-magic/firstblock/firstblock.go" pubchem.csv
+  "${SCRIPT_DIR}/csv-magic/reorder_columns.sh" pubchem.csv reordered_pubchem.csv
   divider
-  "${SCRIPT_DIR}/csv-magic/reorder_columns.sh" firstblocks_pubchem.csv reordered_pubchem.csv
-  divider
-  rm pubchem.csv firstblocks_pubchem.csv
+  rm pubchem.csv
 }
 
 remove_duplicates() {
