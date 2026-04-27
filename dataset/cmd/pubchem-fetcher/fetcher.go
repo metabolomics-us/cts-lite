@@ -125,7 +125,7 @@ func main() {
 	defer w.Flush()
 
 	// Header:
-	w.Write([]string{"Identifier", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "MonoisotopicMass", "CompoundName"})
+	w.Write([]string{"Identifier", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "ExactMass", "CompoundName"})
 
 	batchSize := 300
 

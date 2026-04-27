@@ -35,7 +35,7 @@ func fakeWaterCompound() *model.Compound {
 		Smiles:           "O",
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
-		MonoisotopicMass: 100,
+		ExactMass: 100,
 		LiteratureCount:  10,
 		PatentCount:      2,
 	}
@@ -50,7 +50,7 @@ func fakeFormaldehyde() *model.Compound {
 		Smiles:           "C=O",
 		CompoundName:     "Formaldehyde",
 		MolecularFormula: "CH2O",
-		MonoisotopicMass: 30,
+		ExactMass: 30,
 		LiteratureCount:  5,
 		PatentCount:      1,
 	}
@@ -65,7 +65,7 @@ func fakeMethaneCompound() *model.Compound {
 		Smiles:           "C",
 		CompoundName:     "Methane",
 		MolecularFormula: "CH4",
-		MonoisotopicMass: 99,
+		ExactMass: 99,
 		LiteratureCount:  18,
 		PatentCount:      7,
 	}
@@ -452,7 +452,7 @@ func TestCSVFormatResponse(t *testing.T) {
 	expectedHeader := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
 		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-		"molecular_formula", "monoisotopic_mass", "literature_count", "patent_count",
+		"molecular_formula", "exact_mass", "literature_count", "patent_count",
 	}
 	if diff := cmp.Diff(expectedHeader, records[0]); diff != "" {
 		t.Errorf("CSV header mismatch (-want +got):\n%s", diff)

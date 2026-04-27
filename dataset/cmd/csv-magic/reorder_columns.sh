@@ -20,7 +20,7 @@ Compound_CID,Linked_PubChem_Literature_Count,Linked_PubChem_Patent_Count,Molecul
 # Rename columns
 awk 'BEGIN{OFS=","}
 NR==1 {
-  print "Identifier,Literature_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,MonoisotopicMass,CompoundName"
+  print "Identifier,Literature_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,ExactMass,CompoundName"
   next
 }
 { print }' > "$OUT"

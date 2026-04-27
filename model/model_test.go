@@ -320,7 +320,7 @@ func TestCompoundFields(t *testing.T) {
 		Smiles:           "O",
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
-		MonoisotopicMass: 100,
+		ExactMass: 100,
 		LiteratureCount:  10,
 		PatentCount:      2,
 	}
