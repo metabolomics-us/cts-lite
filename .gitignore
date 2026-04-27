@@ -4,4 +4,5 @@ data/*.db*
 __pycache__
 .coveragedata
 coverage.out
-compounds.db*
+*.db*
+
