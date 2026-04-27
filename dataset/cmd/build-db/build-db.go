@@ -116,6 +116,11 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			return 0, fmt.Errorf("row %d has %d fields, expected 9", count+1, len(line))
 		}
 
+		// Skip lines without inchikeys
+		if line[6] == "" {
+			continue
+		}
+
 		if _, err := stmt.Exec(
 			line[0], // identifier
 			line[6], // inchikey

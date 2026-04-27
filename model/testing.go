@@ -95,6 +95,11 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 			return fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
+		// Skip lines without inchikeys
+		if line[6] == "" {
+			continue
+		}
+
 		if _, err := stmt.Exec(
 			line[0], // identifier
 			line[6], // inchikey
