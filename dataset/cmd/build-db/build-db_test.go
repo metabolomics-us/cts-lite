@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-const testCSVContent = `Identifier,FirstBlock,Literature_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,MonoisotopicMass,CompoundName
-1,MYFAKEINCHIKEY,10,2,H2O,O,InChI=1S/H2O/h1H2,MYFAKEINCHIKEY-ISRIGHTHER-E,100,Water
-2,MYFAKEINCHIKEY,18,7,CH4,C,InChI=1S/CH4/h1H4,MYFAKEINCHIKEY-ANOTHERONE-E,99,Methane
+const testCSVContent = `Identifier,Literature_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,ExactMass,CompoundName
+1,10,2,H2O,O,InChI=1S/H2O/h1H2,MYFAKEINCHIKEY-ISRIGHTHER-E,100,Water
+2,18,7,CH4,C,InChI=1S/CH4/h1H4,MYFAKEINCHIKEY-ANOTHERONE-E,99,Methane
 `
 
 // writeTempCSV writes testCSVContent to a temp file and returns its path.

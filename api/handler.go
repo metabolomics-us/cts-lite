@@ -71,7 +71,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	header := []string{
 		"query", "query_type", "found_match", "match_level", "error_message",
 		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-		"molecular_formula", "monoisotopic_mass", "literature_count", "patent_count",
+		"molecular_formula", "exact_mass", "literature_count", "patent_count",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
@@ -107,7 +107,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					match.Smiles,
 					match.CompoundName,
 					match.MolecularFormula,
-					strconv.FormatFloat(match.MonoisotopicMass, 'f', -1, 64),
+					strconv.FormatFloat(match.ExactMass, 'f', -1, 64),
 					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 				}
@@ -240,13 +240,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		err := writeResultsAsCSV(w, results)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to write CSV response: %v", err), http.StatusInternalServerError)
+			log.Printf("Failed to write CSV response: %v", err)
 		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		err := json.NewEncoder(w).Encode(results)
 		if err != nil {
-			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			log.Printf("Failed to encode JSON response: %v", err)
 		}
 	}
 

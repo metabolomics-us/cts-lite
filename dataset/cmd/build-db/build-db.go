@@ -1,7 +1,7 @@
 // Converts a CTS-Lite CSV dataset into a SQLite database
 
 // Usage:
-//   build-db <input.csv> <output.db>
+//   go run build-db.go <input.csv> <output.db>
 
 package main
 
@@ -92,8 +92,8 @@ func run(csvPath, dbPath string) error {
 }
 
 // bulkInsert inserts all CSV rows using batched transactions for performance
-// CSV column order: identifier, first_block, literature_count, patent_count,
-//   molecular_formula, smiles, inchi, inchikey, monoisotopic_mass, compound_name
+// CSV column order: identifier, literature_count, patent_count,
+//   molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name
 func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 	tx, stmt, err := beginBatch(db)
 	if err != nil {
@@ -111,22 +111,27 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			return 0, fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		if len(line) < 10 {
+		if len(line) != 9 {
 			tx.Rollback()
-			return 0, fmt.Errorf("row %d has %d fields, expected 10", count+1, len(line))
+			return 0, fmt.Errorf("row %d has %d fields, expected 9", count+1, len(line))
+		}
+
+		// Skip lines without inchikeys
+		if line[6] == "" {
+			continue
 		}
 
 		if _, err := stmt.Exec(
 			line[0], // identifier
-			line[7], // inchikey
-			line[1], // first_block
-			line[6], // inchi
-			line[5], // smiles
-			line[9], // compound_name
-			line[4], // molecular_formula
-			line[8], // monoisotopic_mass
-			line[2], // literature_count
-			line[3], // patent_count
+			line[6], // inchikey
+			line[6][:14], // first_block
+			line[5], // inchi
+			line[4], // smiles
+			line[8], // compound_name
+			line[3], // molecular_formula
+			line[7], // exact_mass
+			line[1], // literature_count
+			line[2], // patent_count
 		); err != nil {
 			tx.Rollback()
 			return 0, fmt.Errorf("failed to insert row %d: %w", count+1, err)

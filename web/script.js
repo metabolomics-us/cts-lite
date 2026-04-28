@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
-    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,monoisotopic_mass,literature_count,patent_count\n";
+    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
     allData.forEach(result => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
@@ -54,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
             csvField(match.smiles),
             csvField(match.compound_name),
             csvField(match.molecular_formula),
-            csvField(match.monoisotopic_mass),
+            csvField(match.exact_mass),
             csvField(match.literature_count),
             csvField(match.patent_count)
           ].join(",") + "\n";
@@ -228,7 +228,7 @@ function displayResults(data, outputElement, offset = 0) {
               <div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>
               <div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>
               <div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>
-              <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.monoisotopic_mass}</span></div>
+              <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
               <div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>
               <div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>
             </div>
