@@ -1,6 +1,7 @@
 data/*.db*
 *.csv
 *.zip
+*.gz
 __pycache__
 .coveragedata
 coverage.out
