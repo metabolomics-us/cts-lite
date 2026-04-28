@@ -1,7 +1,7 @@
 package main 
 
 // Usage:
-// go run fetcher.go <cid-list-file>
+// go run fetcher.go <cid-list-file> [output-file]
 
 import (
 	"bufio"
@@ -130,7 +130,7 @@ func main() {
 	// Header:
 	w.Write([]string{"Compound_CID", "Linked_PubChem_Literature_Count", "Linked_PubChem_Patent_Count", "Molecular_Formula", "SMILES", "InChI", "InChIKey", "Exact_Mass", "Name"})
 
-	batchSize := 300
+	batchSize := 1000
 
 	// Iterate in batches
 	for i := 0; i < len(allCIDs); i += batchSize {
