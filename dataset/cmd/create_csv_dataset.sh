@@ -108,6 +108,7 @@ download_csvs() {
 fetch_missing_gnps() {
   echo "Fetching missing GNPS entries..."
   go run "${SCRIPT_DIR}/pubchem-fetcher/fetcher.go" "${SCRIPT_DIR}/../missing_gnps_ids.txt" gnps_compounds.csv
+  echo "$(( $(wc -l < gnps_compounds.csv) - 1 )) GNPS entries fetched"
   divider
 }
 
