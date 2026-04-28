@@ -52,7 +52,7 @@ jobs:
     - name: Build database
       run: |
         cd dataset && go run ./cmd/build-db/build-db.go cts-lite_latest.csv compounds.db
-        rm cts-lite_latest.csv
+        rm -v cts-lite_latest.csv
 
     - name: Build the Docker image
       run: docker build --no-cache . -t cts-lite:latest
