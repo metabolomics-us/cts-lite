@@ -240,13 +240,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		err := writeResultsAsCSV(w, results)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to write CSV response: %v", err), http.StatusInternalServerError)
+			log.Printf("Failed to write CSV response: %v", err)
 		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		err := json.NewEncoder(w).Encode(results)
 		if err != nil {
-			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			log.Printf("Failed to encode JSON response: %v", err)
 		}
 	}
 
