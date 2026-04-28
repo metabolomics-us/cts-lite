@@ -46,7 +46,7 @@ cleanup_on_failure() {
   for category in "${!pubchem_categories[@]}"; do
     [[ -f "${category}.csv" ]] && temp_files+=("${category}.csv")
   done
-  for f in pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv; do
+  for f in pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv gnps_compounds.csv; do
     [[ -f "$f" ]] && temp_files+=("$f")
   done
 
@@ -105,11 +105,17 @@ download_csvs() {
   done
 }
 
+fetch_missing_gnps() {
+  echo "Fetching missing GNPS entries..."
+  go run "${SCRIPT_DIR}/pubchem-fetcher/fetcher.go" "${SCRIPT_DIR}/../missing_gnps_ids.txt" gnps_compounds.csv
+  divider
+}
+
 merge_csvs() {
   echo "Merging all csvs..."
   keys=("${!pubchem_categories[@]}")                  
-  csvstack "${keys[@]/%/.csv}" > pubchem.csv
-  rm "${keys[@]/%/.csv}"
+  csvstack "${keys[@]/%/.csv}" gnps_compounds.csv > pubchem.csv
+  rm "${keys[@]/%/.csv}" gnps_compounds.csv
   divider
 }
 
@@ -159,6 +165,7 @@ main() {
   dataset_exists
   print_categories_to_download
   download_csvs
+  fetch_missing_gnps
   merge_csvs
   adjust_csv_headers
   remove_duplicates

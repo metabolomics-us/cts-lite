@@ -113,8 +113,11 @@ func main() {
 	}
 	log.Printf("Loaded %d CIDs from %s", len(allCIDs), os.Args[1])
 
-	// Use timestamped filename to avoid overwriting
 	fileName := fmt.Sprintf("pubchem_rows%v.csv", time.Now().Unix())
+	if len(os.Args) > 2 && os.Args[2] != "" {
+		fileName = os.Args[2]
+	}
+
 	outFile, err := os.Create(fileName)
 	if err != nil {
 		log.Fatalf("create csv: %v", err)
@@ -125,7 +128,7 @@ func main() {
 	defer w.Flush()
 
 	// Header:
-	w.Write([]string{"Identifier", "Literature_Count", "Patent_Count", "MolecularFormula", "SMILES", "InChI", "InChIKey", "ExactMass", "CompoundName"})
+	w.Write([]string{"Compound_CID", "Linked_PubChem_Literature_Count", "Linked_PubChem_Patent_Count", "Molecular_Formula", "SMILES", "InChI", "InChIKey", "Exact_Mass", "Name"})
 
 	batchSize := 300
 
