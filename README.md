@@ -1,5 +1,5 @@
 # CTS-Lite
-A lightweight Chemical Translation Service matching against a curated subset of the PubChem database.
+A lightweight Chemical Translation Service using a curated subset of 10.6 million compounds from the PubChem database.
 
 ### Website
 - https://cts-lite.metabolomics.us/
@@ -27,13 +27,13 @@ A lightweight Chemical Translation Service matching against a curated subset of 
     - `cd dataset && go run cmd/build-db/build-db.go cts-lite.csv compounds.db`
 
 ### Dataset Directory
-The dataset directory stores the dataset and the tools used to create it
+The dataset directory stores the dataset and the tools used to create it.  
 
 #### Dataset Creation
-Simply run the `create_csv_dataset.sh` script found under `cmd/`  
-To update the dataset used by production, make sure you elect to push to S3 at the end of the script  
-Then, the next time the app is deployed via GitHub Actions (push/merge to main), the latest dataset will be downloaded from S3 and the database will be rebuilt  
+Simply run the `create_csv_dataset.sh` script found under `cmd/`.  
+To update the dataset used by production, make sure you elect to push to S3 at the end of the script.  
+Then, the next time the app is deployed via GitHub Actions (push/merge to main), the latest dataset will be downloaded from S3 and the database will be rebuilt.  
 
-#### cmd
-The cmd directory holds helper programs and scripts used to construct the dataset and database
+#### cmd/
+The cmd directory holds helper programs and scripts used to construct the dataset and database.  
 
