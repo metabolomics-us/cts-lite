@@ -678,4 +678,8 @@ button:disabled {
     flex: 1;
     min-width: 120px;
   }
+
+  #applied-settings-label {
+    margin-top: 0.3rem !important;
+  }
 }

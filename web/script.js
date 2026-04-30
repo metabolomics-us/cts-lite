@@ -82,7 +82,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const input = document.getElementById("query-input");
   const output = document.getElementById("output-text");
   const outputLabel = document.getElementById("output-label");
-  const appliedSettingsLabel = document.getElementById("top-hit-label");
+  const appliedSettingsLabel = document.getElementById("applied-settings-label");
   const downloadButtons = document.getElementById("download-buttons");
   const paginationControls = document.getElementById("pagination-controls");
 
