@@ -29,7 +29,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func serveDoc(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "./web/pages/documentation.html")
+	http.ServeFile(w, r, "./web/pages/docs.html")
 }
 
 func main() {

@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /
 Disallow: /documentation
-Disallow: /pages/documentation.html
+Disallow: /pages/docs.html
 Disallow: /health
 Disallow: /status
 Disallow: /match
