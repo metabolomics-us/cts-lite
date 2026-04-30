@@ -148,19 +148,6 @@
   color: #2c3f36;
 }
 
-.doc-note {
-  background-color: #fff9e6;
-  border-left: 4px solid #ffc107;
-  padding: 1rem 1.25rem;
-  margin: 1.5rem 0;
-  border-radius: 4px;
-  color: #644d03;
-}
-
-.doc-note strong {
-  color: #644d03;
-}
-
 .heading-anchor {
   display: inline-flex;
   align-items: center;
