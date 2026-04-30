@@ -28,10 +28,23 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func serveDoc(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "./web/pages/documentation.html")
+}
+
 func main() {
 	// Serve the frontend
 	fs := http.FileServer(http.Dir("./web"))
 	http.Handle("/", fs)
+
+	// Clean URLs for documentation page
+	http.HandleFunc("/docs", serveDoc)
+	http.HandleFunc("/documentation", serveDoc)
+
+	// Redirect legacy path to canonical URL
+	http.HandleFunc("/pages/documentation.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs", http.StatusMovedPermanently)
+	})
 
 	dbPath := "dataset/compounds.db"
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
