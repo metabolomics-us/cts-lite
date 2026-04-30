@@ -45,6 +45,9 @@ func main() {
 	http.HandleFunc("/pages/documentation.html", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/docs", http.StatusMovedPermanently)
 	})
+	http.HandleFunc("/pages/docs.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs", http.StatusMovedPermanently)
+	})
 
 	dbPath := "dataset/compounds.db"
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
