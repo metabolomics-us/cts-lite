@@ -15,7 +15,7 @@ import (
 	"os"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const batchSize = 100_000
@@ -47,17 +47,18 @@ func run(csvPath, dbPath string) error {
 		return nil
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
 
-	// Pragmas tuned for bulk insert throughput
+	// Pragmas tuned for write-once bulk insert — no crash recovery needed
 	for _, pragma := range []string{
-		"PRAGMA journal_mode = WAL",
-		"PRAGMA synchronous = NORMAL",
-		"PRAGMA cache_size = -524288", // 512 MB during build
+		"PRAGMA journal_mode = OFF",
+		"PRAGMA synchronous = OFF",
+		"PRAGMA locking_mode = EXCLUSIVE",
+		"PRAGMA cache_size = -524288",
 		"PRAGMA temp_store = MEMORY",
 	} {
 		if _, err := db.Exec(pragma); err != nil {

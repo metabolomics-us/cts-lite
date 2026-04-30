@@ -7,7 +7,6 @@ on:
 
 jobs:
   test:
-    if: "!contains(github.event.head_commit.message, 'nodeploy') && !contains(github.event.head_commit.message, 'nobuild')"
     runs-on: ubuntu-latest
 
     steps:
@@ -17,23 +16,27 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: "1.25"
+        cache: true
 
     - name: Run Go Tests
       run: go test ./... -v
 
   build_and_push_image:
+    if: "!contains(github.event.head_commit.message, 'nobuild')"
     needs: test
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Free disk space
+    - name: Free Disk Space
       run: |
+        echo "Before:"
         df -h
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
                     /usr/local/share/boost /usr/local/share/swift \
                     /usr/lib/jvm /opt/hostedtoolcache/CodeQL
+        echo "After:"
         df -h
 
     - name: Configure AWS Credentials
@@ -47,7 +50,7 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Download dataset
+    - name: Download Dataset
       run: |
         aws s3 cp s3://cts-lite-datasets/cts-lite_latest.csv.gz dataset/cts-lite_latest.csv.gz
         gzip -d dataset/cts-lite_latest.csv.gz
@@ -56,14 +59,15 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: "1.25"
+        cache: true
 
-    - name: Build database
+    - name: Build Database
       run: |
         cd dataset && go run ./cmd/build-db/build-db.go cts-lite_latest.csv compounds.db
         rm -v cts-lite_latest.csv
 
     - name: Build the Docker image
-      run: docker build --no-cache . -t cts-lite:latest
+      run: docker build . -t cts-lite:latest
 
     - name: Push to ECR
       env:
@@ -75,7 +79,8 @@ jobs:
         docker push $ECR_REGISTRY/cts-lite:latest
         docker push $ECR_REGISTRY/cts-lite:$IMAGE_TAG
 
-  redeploy_ecs:
+  deploy_to_ecs:
+    if: "!contains(github.event.head_commit.message, 'nodeploy')"
     needs: build_and_push_image
     runs-on: ubuntu-latest
 
