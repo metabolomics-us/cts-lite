@@ -213,7 +213,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 		case "unidentified":
 			result.MatchFound = false
-			result.ErrMsg = "Invalid query type, could not identify"
+			result.ErrMsg = "Invalid query type, could not identify, see documentation"
 
 		default:
 			log.Printf("ERROR: An unexpected error occured when parsing the request. Query type unhandled. Query: '%s'", q)

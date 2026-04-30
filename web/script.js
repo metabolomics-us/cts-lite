@@ -209,7 +209,7 @@ function getPaginationRange(current, total) {
 function displayResults(data, outputElement, offset = 0) {
   data.forEach((result, index) => {
     const errorHtml = result.error_message
-      ? `<div class="error-message">${escapeHtml(result.error_message)}</div>`
+      ? `<div class="error-message">${escapeHtml(result.error_message).replace("see documentation", '<a href="/docs#query-types" target="_blank">see documentation</a>')}</div>`
       : "";
 
     const matchesHtml = (result.matches && result.matches.length > 0)
