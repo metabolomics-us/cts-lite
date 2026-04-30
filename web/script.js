@@ -1,6 +1,7 @@
 let allData = [];
 let currentPage = 1;
 let pageSize = 10;
+let activeController = null;
 
 const CHEVRON_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M2 4.5L7 9.5L12 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -124,17 +125,33 @@ document.addEventListener("DOMContentLoaded", () => {
       url += "&first_block_matches=false";
     }
 
+    if (activeController) {
+      console.log("New request received. Aborting previous request.");
+      activeController.abort();
+    }
+    const controller = new AbortController();
+    activeController = controller;
+    const signal = controller.signal;
+
+    const slowTimer = setTimeout(() => {
+      if (output.textContent === "Matching...") {
+        output.innerHTML += "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.<br><br>Please wait and then retry if the request times out (504)</div>";
+      }
+    }, 1000);
+
     try {
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ queries: query })
+        body: JSON.stringify({ queries: query }),
+        signal,
       });
 
       if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
       allData = await response.json();
       currentPage = 1;
+      clearTimeout(slowTimer);
 
       output.textContent = "";
       downloadButtons.style.display = "flex";
@@ -149,7 +166,12 @@ document.addEventListener("DOMContentLoaded", () => {
       appliedSettingsLabel.style.display = "block";
 
     } catch (err) {
-      output.textContent = `Error: ${err.message}`;
+      clearTimeout(slowTimer);
+      if (err.name !== "AbortError") {
+        output.textContent = `Error: ${err.message}`;
+      }
+    } finally {
+      if (activeController === controller) activeController = null;
     }
   });
 });
