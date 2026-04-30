@@ -82,6 +82,23 @@ body {
   padding-top: 175px; 
 }
 
+.hero {
+  text-align: center;
+  margin: -2rem 0 2rem 0;
+  border-bottom: 1px solid #ddd;
+  width: 100%;
+}
+
+.hero-tagline {
+  font-size: 2rem;
+  font-weight: bold;
+  background: linear-gradient(135deg, #1a3e68 0%, #0e80ab 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 0.6rem 0;
+}
+
 form, #output-container {
   background: #f5f5f5;
   padding: 1.5rem;
