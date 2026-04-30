@@ -101,6 +101,15 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const maxQueryLength = 100000;
+    const queryCount = query.trim().split(/\s+/).filter(Boolean).length;
+    if (queryCount > maxQueryLength) {
+      outputLabel.textContent = "Error";
+      appliedSettingsLabel.style.display = "none";
+      output.textContent = `Query contains ${queryCount.toLocaleString()} identifiers — please limit to ${maxQueryLength.toLocaleString()} per submission`;
+      return;
+    }
+
     output.textContent = "Matching...";
     outputLabel.textContent = "Results";
     appliedSettingsLabel.style.display = "none";
