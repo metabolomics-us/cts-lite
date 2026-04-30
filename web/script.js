@@ -86,6 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const appliedSettingsLabel = document.getElementById("applied-settings-label");
   const downloadButtons = document.getElementById("download-buttons");
   const paginationControls = document.getElementById("pagination-controls");
+  const submitButton = form.querySelector("button[type='submit']");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -129,6 +130,8 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("New request received. Aborting previous request.");
       activeController.abort();
     }
+    submitButton.disabled = true;
+
     const controller = new AbortController();
     activeController = controller;
     const signal = controller.signal;
@@ -172,6 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } finally {
       if (activeController === controller) activeController = null;
+      submitButton.disabled = false;
     }
   });
 });
