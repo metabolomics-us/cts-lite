@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7-labs
 FROM golang:1.25-alpine
 
 WORKDIR /app
