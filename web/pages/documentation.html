@@ -250,6 +250,7 @@ will_fail,unidentified,false,,"Invalid query type, could not identify",,,,,,,,,
 
         function copyHeadingLink(e, id) {
             var url = location.href.split('#')[0] + '#' + id;
+            history.pushState(null, '', '#' + id);
             document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
             var toast = document.getElementById('copied-toast');
             toast.textContent = 'Copied!';
