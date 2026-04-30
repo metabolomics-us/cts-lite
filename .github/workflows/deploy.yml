@@ -63,7 +63,7 @@ jobs:
         rm -v cts-lite_latest.csv
 
     - name: Build the Docker image
-      run: docker build --no-cache . -t cts-lite:latest
+      run: docker build . -t cts-lite:latest
 
     - name: Push to ECR
       env:

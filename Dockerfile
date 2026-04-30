@@ -1,9 +1,13 @@
+# syntax=docker/dockerfile:1.7
 FROM golang:1.25-alpine
 
 WORKDIR /app
-COPY . .
 
-# Build the server
+# Copy the database in its own layer to improve caching when pushing to ECR
+COPY dataset/compounds.db ./dataset/compounds.db
+COPY --exclude=dataset/compounds.db . .
+
+# Build the server binary
 RUN go mod download
 RUN go build -o ctslite ./server
 
