@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"errors"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -245,7 +247,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		err := json.NewEncoder(w).Encode(results)
-		if err != nil {
+		if err != nil && !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
 			log.Printf("Failed to encode JSON response: %v", err)
 		}
 	}
