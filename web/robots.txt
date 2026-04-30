@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /documentation
+Disallow: /pages/documentation.html
+Disallow: /health
+Disallow: /status
+Disallow: /match
+
+Sitemap: https://cts-lite.metabolomics.us/sitemap.xml
