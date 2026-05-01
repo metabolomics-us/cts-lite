@@ -5,7 +5,7 @@ A lightweight Chemical Translation Service using a curated subset of 10.6 millio
 - https://cts-lite.metabolomics.us/
 
 ### API Documentation
-- Please refer to the [documentation page](https://cts-lite.metabolomics.us/pages/documentation.html) for questions regarding use of the API
+- Please refer to the [documentation page](https://cts-lite.metabolomics.us/docs) for questions regarding use of the API
 
 ### Attributions
 - Credit to PubChem (NIH), for the data.

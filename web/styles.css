@@ -12,11 +12,11 @@ p {
   left: 0;
   transform: translateY(-100%);
   transition: transform 0.3s ease;
+  background-color: #1a3e68;
 }
 
 .skip-link:focus {
   transform: translateY(0);
-  background-color: #1a3e68;
   border-radius: 0 0 5px 5px;
   border: 3px solid #f1d787;
   border-top: none;
@@ -80,6 +80,20 @@ body {
   align-items: center;
   box-shadow: 0 0 20px rgba(0,0,0,0.1);
   padding-top: 175px; 
+}
+
+.hero {
+  text-align: center;
+  margin: -2rem 0 2rem 0;
+  border-bottom: 1px solid #ddd;
+  width: 100%;
+}
+
+.hero-tagline {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #1a3e68;
+  margin: 0 0 0.6rem 0;
 }
 
 form, #output-container {
@@ -177,6 +191,19 @@ button:disabled {
   border-radius: 8px;
   padding: 1rem;
   background-color: #fff;
+}
+
+.doc-note {
+  background-color: #fff9e6;
+  border-left: 4px solid #ffc107;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  border-radius: 4px;
+  color: #644d03;
+}
+
+.doc-note strong {
+  color: #644d03;
 }
 
 .query-section h3 {
@@ -677,5 +704,9 @@ button:disabled {
   .download-btn {
     flex: 1;
     min-width: 120px;
+  }
+
+  #applied-settings-label {
+    margin-top: 0.3rem !important;
   }
 }

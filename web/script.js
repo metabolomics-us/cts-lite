@@ -1,6 +1,7 @@
 let allData = [];
 let currentPage = 1;
 let pageSize = 10;
+let activeController = null;
 
 const CHEVRON_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M2 4.5L7 9.5L12 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -82,9 +83,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const input = document.getElementById("query-input");
   const output = document.getElementById("output-text");
   const outputLabel = document.getElementById("output-label");
-  const appliedSettingsLabel = document.getElementById("top-hit-label");
+  const appliedSettingsLabel = document.getElementById("applied-settings-label");
   const downloadButtons = document.getElementById("download-buttons");
   const paginationControls = document.getElementById("pagination-controls");
+  const submitButton = form.querySelector("button[type='submit']");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -98,6 +100,15 @@ document.addEventListener("DOMContentLoaded", () => {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
       output.textContent = "Please enter a query";
+      return;
+    }
+
+    const maxQueryLength = 100000;
+    const queryCount = query.trim().split(/\s+/).filter(Boolean).length;
+    if (queryCount > maxQueryLength) {
+      outputLabel.textContent = "Error";
+      appliedSettingsLabel.style.display = "none";
+      output.textContent = `Query contains ${queryCount.toLocaleString()} identifiers — please limit to ${maxQueryLength.toLocaleString()} per submission`;
       return;
     }
 
@@ -115,17 +126,35 @@ document.addEventListener("DOMContentLoaded", () => {
       url += "&first_block_matches=false";
     }
 
+    if (activeController) {
+      console.log("New request received. Aborting previous request.");
+      activeController.abort();
+    }
+    submitButton.disabled = true;
+
+    const controller = new AbortController();
+    activeController = controller;
+    const signal = controller.signal;
+
+    const slowTimer = setTimeout(() => {
+      if (output.textContent === "Matching...") {
+        output.innerHTML += "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.<br><br>Please wait and then retry if the request times out (504)</div>";
+      }
+    }, 1000);
+
     try {
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ queries: query })
+        body: JSON.stringify({ queries: query }),
+        signal,
       });
 
       if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
       allData = await response.json();
       currentPage = 1;
+      clearTimeout(slowTimer);
 
       output.textContent = "";
       downloadButtons.style.display = "flex";
@@ -140,7 +169,13 @@ document.addEventListener("DOMContentLoaded", () => {
       appliedSettingsLabel.style.display = "block";
 
     } catch (err) {
-      output.textContent = `Error: ${err.message}`;
+      clearTimeout(slowTimer);
+      if (err.name !== "AbortError") {
+        output.textContent = `Error: ${err.message}`;
+      }
+    } finally {
+      if (activeController === controller) activeController = null;
+      submitButton.disabled = false;
     }
   });
 });
@@ -209,7 +244,7 @@ function getPaginationRange(current, total) {
 function displayResults(data, outputElement, offset = 0) {
   data.forEach((result, index) => {
     const errorHtml = result.error_message
-      ? `<div class="error-message">${escapeHtml(result.error_message)}</div>`
+      ? `<div class="error-message">${escapeHtml(result.error_message).replace("see documentation", '<a href="/docs#query-types" target="_blank">see documentation</a>')}</div>`
       : "";
 
     const matchesHtml = (result.matches && result.matches.length > 0)

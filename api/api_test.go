@@ -274,7 +274,7 @@ func TestMatchErrors(t *testing.T) {
 		{
 			name:       "inchikey first block not found",
 			query:      "ZZZZZZZZZZZZZZ-XXXXXXXXXX-Y",
-			wantErrMsg: "No compound(s) found",
+			wantErrMsg: "No compound found",
 		},
 		{
 			name:       "smiles no match",
@@ -299,7 +299,7 @@ func TestMatchErrors(t *testing.T) {
 		{
 			name:       "unidentified query",
 			query:      "12345a",
-			wantErrMsg: "Invalid query type, could not identify",
+			wantErrMsg: "Invalid query type, could not identify, see documentation",
 		},
 	}
 
