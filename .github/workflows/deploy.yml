@@ -67,18 +67,20 @@ jobs:
         touch -t 197001010000 compounds.db  # normalize mtime so ECR can use the cached layer when pushing the image
         rm -v cts-lite_latest.csv
 
-    - name: Build the Docker image
-      run: docker build . -t cts-lite:latest
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
 
-    - name: Push to ECR
+    - name: Build and Push to ECR
       env:
         ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker tag cts-lite:latest $ECR_REGISTRY/cts-lite:latest
-        docker tag cts-lite:latest $ECR_REGISTRY/cts-lite:$IMAGE_TAG
-        docker push $ECR_REGISTRY/cts-lite:latest
-        docker push $ECR_REGISTRY/cts-lite:$IMAGE_TAG
+        docker buildx build . \
+          --tag $ECR_REGISTRY/cts-lite:latest \
+          --tag $ECR_REGISTRY/cts-lite:$IMAGE_TAG \
+          --cache-from type=registry,ref=$ECR_REGISTRY/cts-lite:latest \
+          --cache-to type=inline \
+          --push
 
   deploy_to_ecs:
     if: "!contains(github.event.head_commit.message, 'nodeploy')"
