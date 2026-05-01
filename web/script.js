@@ -140,7 +140,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (output.textContent === "Matching...") {
         output.innerHTML += "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.<br><br>Please wait and then retry if the request times out (504)</div>";
       }
-    }, 10000);
+    }, 5000);
 
     try {
       const response = await fetch(url, {
