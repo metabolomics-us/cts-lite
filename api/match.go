@@ -68,7 +68,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 		}
 		if len(compounds) == 0 {
 			result.MatchFound = false
-			result.ErrMsg = "No compound(s) found"
+			result.ErrMsg = "No compound found"
 			return
 		}
 		result.MatchFound = true
@@ -76,7 +76,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 		result.Matches = compounds
 	} else {
 		result.MatchFound = false
-		result.ErrMsg = "No compound(s) found, first block matches disabled"
+		result.ErrMsg = "No compound found, first block matches disabled"
 		return
 	}
 }

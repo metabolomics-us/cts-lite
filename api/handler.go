@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"errors"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -213,7 +215,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 		case "unidentified":
 			result.MatchFound = false
-			result.ErrMsg = "Invalid query type, could not identify"
+			result.ErrMsg = "Invalid query type, could not identify, see documentation"
 
 		default:
 			log.Printf("ERROR: An unexpected error occured when parsing the request. Query type unhandled. Query: '%s'", q)
@@ -245,7 +247,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		err := json.NewEncoder(w).Encode(results)
-		if err != nil {
+		if err != nil && !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
 			log.Printf("Failed to encode JSON response: %v", err)
 		}
 	}
