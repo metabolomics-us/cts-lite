@@ -112,7 +112,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    output.textContent = "Matching...";
+    output.innerHTML = "<span class='ellipsis-animate'>Matching</span>";
     outputLabel.textContent = "Results";
     appliedSettingsLabel.style.display = "none";
 
@@ -137,7 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const signal = controller.signal;
 
     const slowTimer = setTimeout(() => {
-      if (output.textContent === "Matching...") {
+      if (output.querySelector(".ellipsis-animate")) {
         output.innerHTML += "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.<br><br>Please wait and then retry if the request times out (504)</div>";
       }
     }, 5000);
