@@ -64,6 +64,7 @@ jobs:
     - name: Build Database
       run: |
         cd dataset && go run ./cmd/build-db/build-db.go cts-lite_latest.csv compounds.db
+        touch -t 197001010000 compounds.db  # normalize mtime so ECR can use the cached layer when pushing the image
         rm -v cts-lite_latest.csv
 
     - name: Build the Docker image
