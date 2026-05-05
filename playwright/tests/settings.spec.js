@@ -50,6 +50,32 @@ test('first_block_matches=false sent when toggle is unchecked', async ({ page })
   expect(request.url()).toContain('first_block_matches=false');
 });
 
+test('Top Hit Only info icon opens correct docs section', async ({ page, context }) => {
+  await page.locator('#settings-toggle').click();
+
+  const [docsPage] = await Promise.all([
+    context.waitForEvent('page'),
+    page.locator('a[aria-label="Top Hit Only documentation"]').click(),
+  ]);
+
+  await docsPage.waitForLoadState();
+  expect(docsPage.url()).toContain('#top-hit-only');
+  await expect(docsPage.locator('#top-hit-only')).toBeInViewport();
+});
+
+test('First Block Matches info icon opens correct docs section', async ({ page, context }) => {
+  await page.locator('#settings-toggle').click();
+
+  const [docsPage] = await Promise.all([
+    context.waitForEvent('page'),
+    page.locator('a[aria-label="Match levels documentation"]').click(),
+  ]);
+
+  await docsPage.waitForLoadState();
+  expect(docsPage.url()).toContain('#match-levels');
+  await expect(docsPage.locator('#match-levels')).toBeInViewport();
+});
+
 test('increasing page size collapses pagination', async ({ page }) => {
   // 11 queries exceeds the default page size of 10, triggering pagination
   await page.fill('#query-input', '1 2 3 1 2 3 1 2 3 1 2');
