@@ -70,3 +70,32 @@ test('multi-query shows count for each result', async ({ page }) => {
   await expect(page.locator('.result-item')).toHaveCount(2);
   await expect(page.locator('#output-label')).toContainText('2 / 2');
 });
+
+test('InChIKey match status shows Exact', async ({ page }) => {
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.match-status')).toHaveText('✓ Match Found: Exact');
+});
+
+test('malformed InChIKey shows error message', async ({ page }) => {
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-EE');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.error-message')).toContainText('Malformed InChIKey');
+});
+
+test('unidentified query type shows error message', async ({ page }) => {
+  await page.fill('#query-input', 'junk');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.error-message')).toContainText('could not identify');
+});
+
+test('mixed query renders both match and no-match results', async ({ page }) => {
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.match-status.exact-match')).toHaveCount(1);
+  await expect(page.locator('.match-status.no-match')).toHaveCount(1);
+});

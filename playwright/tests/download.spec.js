@@ -60,6 +60,16 @@ async function submitWithSettings(page, query, uiSetup) {
   await expect(page.locator('.result-item').first()).toBeVisible();
 }
 
+test('download buttons hidden before first query', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#download-buttons')).not.toBeVisible();
+});
+
+test('download buttons appear after successful query', async ({ page }) => {
+  await submitAndWaitForResults(page, 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await expect(page.locator('#download-buttons')).toBeVisible();
+});
+
 test('CSV download contains correct headers', async ({ page }) => {
   await submitAndWaitForResults(page, 'MYFAKEINCHIKEY-ISRIGHTHER-E');
 

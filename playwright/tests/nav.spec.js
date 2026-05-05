@@ -22,3 +22,10 @@ test('logo on docs page navigates back to home', async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
   await expect(page.locator('#query-form')).toBeVisible();
 });
+
+test('docs heading anchor button updates URL hash', async ({ page }) => {
+  await page.goto('/docs');
+  await page.locator('#rest-api .heading-anchor').click({ force: true });
+
+  expect(page.url()).toContain('#rest-api');
+});

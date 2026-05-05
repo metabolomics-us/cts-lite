@@ -76,6 +76,50 @@ test('First Block Matches info icon opens correct docs section', async ({ page, 
   await expect(docsPage.locator('#match-levels')).toBeInViewport();
 });
 
+test('applied settings label hidden before any query', async ({ page }) => {
+  await expect(page.locator('#applied-settings-label')).not.toBeVisible();
+});
+
+test('applied settings label shows default settings after query', async ({ page }) => {
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toBeVisible();
+  await expect(page.locator('#applied-settings-label')).toContainText('Top Hit Only');
+  await expect(page.locator('#applied-settings-label')).toContainText('First Block Matches');
+});
+
+test('applied settings label shows All Hits when top hit only disabled', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="Top hit only"]').click();
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText('All Hits');
+});
+
+test('applied settings label shows Exact Matches Only when first block matches disabled', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="First block matches"]').click();
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText('Exact Matches Only');
+});
+
+test('page size persists across queries', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('#page-size-select').selectOption('20');
+
+  await page.fill('#query-input', '1 2 3 1 2 3 1 2 3 1 2');
+  await page.click('button[type="submit"]');
+  await expect(page.locator('.result-item')).toHaveCount(11);
+
+  await page.click('button[type="submit"]');
+  await expect(page.locator('.result-item')).toHaveCount(11);
+  await expect(page.locator('#pagination-controls')).not.toBeVisible();
+});
+
 test('increasing page size collapses pagination', async ({ page }) => {
   // 11 queries exceeds the default page size of 10, triggering pagination
   await page.fill('#query-input', '1 2 3 1 2 3 1 2 3 1 2');
