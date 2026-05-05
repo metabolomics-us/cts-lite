@@ -106,7 +106,7 @@ func TestBulkInsert(t *testing.T) {
 		t.Fatalf("failed to create table: %v", err)
 	}
 
-	// Strip the header line — bulkInsert expects a reader already past the header
+	// Strip the header line - bulkInsert expects a reader already past the header
 	lines := strings.SplitN(testCSVContent, "\n", 2)
 	reader := csv.NewReader(strings.NewReader(lines[1]))
 

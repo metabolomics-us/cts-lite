@@ -108,7 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
-      output.textContent = `Query contains ${queryCount.toLocaleString()} identifiers — please limit to ${maxQueryLength.toLocaleString()} per submission`;
+      output.textContent = `Query contains ${queryCount.toLocaleString()} identifiers - please limit to ${maxQueryLength.toLocaleString()} per submission`;
       return;
     }
 

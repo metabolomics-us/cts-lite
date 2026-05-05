@@ -53,7 +53,7 @@ func run(csvPath, dbPath string) error {
 	}
 	defer db.Close()
 
-	// Pragmas tuned for write-once bulk insert — no crash recovery needed
+	// Pragmas tuned for write-once bulk insert - no crash recovery needed
 	for _, pragma := range []string{
 		"PRAGMA journal_mode = OFF",
 		"PRAGMA synchronous = OFF",
@@ -66,7 +66,7 @@ func run(csvPath, dbPath string) error {
 		}
 	}
 
-	// Create table without indices first — building indices after all data is
+	// Create table without indices first - building indices after all data is
 	//   inserted is much faster than maintaining them row-by-row
 	if _, err := db.Exec(model.CreateTableSQL); err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
