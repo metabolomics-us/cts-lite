@@ -33,11 +33,17 @@ type SingleResult struct {
 type PubChemIndex struct {
 	db           *sql.DB
 	byPubChemID  *sql.Stmt
+	byPubChemID1 *sql.Stmt
 	byInChIKey   *sql.Stmt
+	byInChIKey1  *sql.Stmt
 	byFirstBlock *sql.Stmt
+	byFirstBlock1 *sql.Stmt
 	byInChI      *sql.Stmt
+	byInChI1     *sql.Stmt
 	bySmiles     *sql.Stmt
+	bySmiles1    *sql.Stmt
 	byFormula    *sql.Stmt
+	byFormula1   *sql.Stmt
 }
 
 const selectCols = `SELECT identifier, inchikey, inchi, smiles, compound_name,
@@ -82,11 +88,17 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		query string
 	}{
 		{&idx.byPubChemID,  selectCols + ` WHERE identifier = ?` + orderByScore},
+		{&idx.byPubChemID1, selectCols + ` WHERE identifier = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byInChIKey,   selectCols + ` WHERE inchikey = ?` + orderByScore},
+		{&idx.byInChIKey1,  selectCols + ` WHERE inchikey = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byFirstBlock, selectCols + ` WHERE first_block = ?` + orderByScore},
+		{&idx.byFirstBlock1, selectCols + ` WHERE first_block = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byInChI,      selectCols + ` WHERE inchi = ?` + orderByScore},
+		{&idx.byInChI1,     selectCols + ` WHERE inchi = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.bySmiles,     selectCols + ` WHERE smiles = ?` + orderByScore},
+		{&idx.bySmiles1,    selectCols + ` WHERE smiles = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byFormula,    selectCols + ` WHERE molecular_formula = ?` + orderByScore},
+		{&idx.byFormula1,   selectCols + ` WHERE molecular_formula = ?` + orderByScore + ` LIMIT 1`},
 	}
 
 	for _, s := range stmts {
@@ -149,27 +161,45 @@ func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) 
 	return compounds, rows.Err()
 }
 
-func (idx *PubChemIndex) QueryByPubChemID(id string) ([]*Compound, error) {
+func (idx *PubChemIndex) QueryByPubChemID(id string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byPubChemID1, id)
+	}
 	return idx.query(idx.byPubChemID, id)
 }
 
-func (idx *PubChemIndex) QueryByInChIKey(key string) ([]*Compound, error) {
+func (idx *PubChemIndex) QueryByInChIKey(key string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byInChIKey1, key)
+	}
 	return idx.query(idx.byInChIKey, key)
 }
 
-func (idx *PubChemIndex) QueryByFirstBlock(block string) ([]*Compound, error) {
+func (idx *PubChemIndex) QueryByFirstBlock(block string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byFirstBlock1, block)
+	}
 	return idx.query(idx.byFirstBlock, block)
 }
 
-func (idx *PubChemIndex) QueryByInChI(inchi string) ([]*Compound, error) {
+func (idx *PubChemIndex) QueryByInChI(inchi string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byInChI1, inchi)
+	}
 	return idx.query(idx.byInChI, inchi)
 }
 
-func (idx *PubChemIndex) QueryBySmiles(smiles string) ([]*Compound, error) {
+func (idx *PubChemIndex) QueryBySmiles(smiles string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.bySmiles1, smiles)
+	}
 	return idx.query(idx.bySmiles, smiles)
 }
 
-func (idx *PubChemIndex) QueryByFormula(formula string) ([]*Compound, error) {
+func (idx *PubChemIndex) QueryByFormula(formula string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byFormula1, formula)
+	}
 	return idx.query(idx.byFormula, formula)
 }
 

@@ -56,7 +56,7 @@ func TestOpenSQLiteIndex(t *testing.T) {
 	}
 	defer idx.Close()
 
-	compounds, err := idx.QueryBySmiles("O")
+	compounds, err := idx.QueryBySmiles("O", false)
 	if err != nil {
 		t.Fatalf("QueryBySmiles returned error: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestLoadCSVToMemory(t *testing.T) {
 	defer idx.Close()
 
 	// Sanity-check: at least one compound is queryable
-	compounds, err := idx.QueryBySmiles("O")
+	compounds, err := idx.QueryBySmiles("O", false)
 	if err != nil {
 		t.Fatalf("QueryBySmiles returned error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestQueryByInChIKey_Hit(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByInChIKey("MYFAKEINCHIKEY-ISRIGHTHER-E")
+	compounds, err := idx.QueryByInChIKey("MYFAKEINCHIKEY-ISRIGHTHER-E", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestQueryByInChIKey_Miss(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByInChIKey("ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z")
+	compounds, err := idx.QueryByInChIKey("ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestQueryByFirstBlock_OrderedByScore(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByFirstBlock("MYFAKEINCHIKEY")
+	compounds, err := idx.QueryByFirstBlock("MYFAKEINCHIKEY", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestQueryByFirstBlock_Miss(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByFirstBlock("DOESNOTEXIST00")
+	compounds, err := idx.QueryByFirstBlock("DOESNOTEXIST00", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,11 +185,27 @@ func TestQueryByFirstBlock_Miss(t *testing.T) {
 	}
 }
 
+func TestQueryByFirstBlock_TopHitOnly(t *testing.T) {
+	idx := loadTestIndex(t)
+	defer idx.Close()
+
+	compounds, err := idx.QueryByFirstBlock("MYFAKEINCHIKEY", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(compounds) != 1 {
+		t.Fatalf("expected 1 compound, got %d", len(compounds))
+	}
+	if compounds[0].CompoundName != "Methane" {
+		t.Errorf("expected Methane, got %s", compounds[0].CompoundName)
+	}
+}
+
 func TestQueryByInChI_Hit(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByInChI("InChI=1S/CH4/h1H4")
+	compounds, err := idx.QueryByInChI("InChI=1S/CH4/h1H4", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -205,7 +221,7 @@ func TestQueryByInChI_Miss(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByInChI("InChI=1S/NOTHING")
+	compounds, err := idx.QueryByInChI("InChI=1S/NOTHING", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -218,7 +234,7 @@ func TestQueryBySmiles_Hit(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryBySmiles("C=O")
+	compounds, err := idx.QueryBySmiles("C=O", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -234,7 +250,7 @@ func TestQueryBySmiles_Miss(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryBySmiles("CC(O)=O")
+	compounds, err := idx.QueryBySmiles("CC(O)=O", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -247,7 +263,7 @@ func TestQueryByFormula_Hit(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByFormula("CH2O")
+	compounds, err := idx.QueryByFormula("CH2O", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -263,7 +279,7 @@ func TestQueryByFormula_Miss(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByFormula("C99H99")
+	compounds, err := idx.QueryByFormula("C99H99", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,11 +298,11 @@ func TestQuery_ClosedDB(t *testing.T) {
 		name string
 		fn   func() ([]*Compound, error)
 	}{
-		{"QueryByInChIKey", func() ([]*Compound, error) { return idx.QueryByInChIKey("MYFAKEINCHIKEY-ISRIGHTHER-E") }},
-		{"QueryByFirstBlock", func() ([]*Compound, error) { return idx.QueryByFirstBlock("MYFAKEINCHIKEY") }},
-		{"QueryByInChI", func() ([]*Compound, error) { return idx.QueryByInChI("InChI=1S/H2O/h1H2") }},
-		{"QueryBySmiles", func() ([]*Compound, error) { return idx.QueryBySmiles("O") }},
-		{"QueryByFormula", func() ([]*Compound, error) { return idx.QueryByFormula("H2O") }},
+		{"QueryByInChIKey", func() ([]*Compound, error) { return idx.QueryByInChIKey("MYFAKEINCHIKEY-ISRIGHTHER-E", false) }},
+		{"QueryByFirstBlock", func() ([]*Compound, error) { return idx.QueryByFirstBlock("MYFAKEINCHIKEY", false) }},
+		{"QueryByInChI", func() ([]*Compound, error) { return idx.QueryByInChI("InChI=1S/H2O/h1H2", false) }},
+		{"QueryBySmiles", func() ([]*Compound, error) { return idx.QueryBySmiles("O", false) }},
+		{"QueryByFormula", func() ([]*Compound, error) { return idx.QueryByFormula("H2O", false) }},
 	}
 
 	for _, q := range queries {
@@ -305,7 +321,7 @@ func TestCompoundFields(t *testing.T) {
 	idx := loadTestIndex(t)
 	defer idx.Close()
 
-	compounds, err := idx.QueryByInChIKey("MYFAKEINCHIKEY-ISRIGHTHER-E")
+	compounds, err := idx.QueryByInChIKey("MYFAKEINCHIKEY-ISRIGHTHER-E", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

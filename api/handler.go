@@ -188,22 +188,22 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 		switch result.QueryType {
 		case "pubchem_id":
-			matchPubChemID(index, q, result)
+			matchPubChemID(index, q, result, topHitOnly)
 
 		case "inchi":
-			matchInchi(index, q, result)
+			matchInchi(index, q, result, topHitOnly)
 
 		case "inchikey":
-			matchInchiKey(index, q, result, allowFirstBlockMatches)
+			matchInchiKey(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "smiles":
-			matchSmiles(index, q, result)
+			matchSmiles(index, q, result, topHitOnly)
 
 		case "formula":
-			matchFormula(index, q, result)
+			matchFormula(index, q, result, topHitOnly)
 
 		case "smiles_or_formula":
-			matchSmilesOrFormula(index, q, result)
+			matchSmilesOrFormula(index, q, result, topHitOnly)
 
 		case "bad_inchi":
 			result.MatchFound = false
@@ -227,10 +227,6 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchCount++
 		}
 
-		// Check for top-hit-only
-		if topHitOnly && result.MatchFound {
-			result.Matches = result.Matches[:1]
-		}
 		results = append(results, result)
 	}
 
@@ -261,4 +257,3 @@ func Status(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 }
-
