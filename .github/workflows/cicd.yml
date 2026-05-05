@@ -2,12 +2,13 @@ name: Deploy
 
 on:
   push:
+    branches: ["main"]
   pull_request:
   workflow_dispatch:
 
 jobs:
   test:
-    if: "github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, 'test')"
+    if: "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
 
     steps:
