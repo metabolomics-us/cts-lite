@@ -168,6 +168,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	queries := strings.Fields(rawQuery)
 
+	if len(queries) > 100000 {
+		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100,000)", len(queries)), http.StatusBadRequest)
+		return
+	}
+
 	results := make([]*model.SingleResult, 0, len(queries))
 	var matchCount int = 0
 	timeStart := time.Now()
