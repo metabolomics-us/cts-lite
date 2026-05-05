@@ -150,7 +150,10 @@ document.addEventListener("DOMContentLoaded", () => {
         signal,
       });
 
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      if (!response.ok) {
+        outputLabel.textContent = "Error";
+        throw new Error(`Server returned ${response.status} - ${await response.text()}`);
+      }
 
       allData = await response.json();
       currentPage = 1;
