@@ -8,7 +8,7 @@ const csvPath = 'dataset/test_datasets/unittest_data.csv';
 module.exports = defineConfig({
   testDir: './tests',
   retries: 1,
-  reporter: process.env.CI ? 'playwright-teamcity-reporter' : 'list',
+  reporter: process.env.GITHUB_ACTIONS ? 'github' : process.env.CI ? 'playwright-teamcity-reporter' : 'list',
   use: {
     baseURL: 'http://localhost:8081',
     channel: 'chrome',
