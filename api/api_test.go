@@ -403,6 +403,15 @@ func TestInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestQueryLimitExceeded(t *testing.T) {
+	queries := strings.TrimRight(strings.Repeat("O ", 100001), " ")
+	res := doMatchRequest(t, `{"queries":"`+queries+`"}`, nil, false)
+
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for over-limit query, got %d", res.StatusCode)
+	}
+}
+
 func TestEmptyQuery(t *testing.T) {
 	res := doMatchRequest(t, `{"queries":""}`, nil, false)
 
