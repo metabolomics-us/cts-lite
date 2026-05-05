@@ -5,8 +5,8 @@ import (
 	"log"
 )
 
-func matchPubChemID(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, err := index.QueryByPubChemID(query)
+func matchPubChemID(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, err := index.QueryByPubChemID(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by PubChem ID: %v", err)
 		result.MatchFound = false
@@ -23,8 +23,8 @@ func matchPubChemID(index *model.PubChemIndex, query string, result *model.Singl
 	result.Matches = compounds
 }
 
-func matchInchi(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, err := index.QueryByInChI(query)
+func matchInchi(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, err := index.QueryByInChI(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by InChI: %v", err)
 		result.MatchFound = false
@@ -41,9 +41,9 @@ func matchInchi(index *model.PubChemIndex, query string, result *model.SingleRes
 	result.Matches = compounds
 }
 
-func matchInchiKey(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool) {
+func matchInchiKey(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
 	// Try full InChIKey match first
-	compounds, err := index.QueryByInChIKey(query)
+	compounds, err := index.QueryByInChIKey(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by InChIKey: %v", err)
 		result.MatchFound = false
@@ -59,7 +59,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 
 	// Fall back to first-block match (first 14 characters of InChIKey)
 	if allowFirstBlockMatches {
-		compounds, err = index.QueryByFirstBlock(query[:14])
+		compounds, err = index.QueryByFirstBlock(query[:14], topHitOnly)
 		if err != nil {
 			log.Printf("Error querying by first block: %v", err)
 			result.MatchFound = false
@@ -81,8 +81,8 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 	}
 }
 
-func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, err := index.QueryBySmiles(query)
+func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, err := index.QueryBySmiles(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by SMILES: %v", err)
 		result.MatchFound = false
@@ -99,8 +99,8 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 	result.Matches = compounds
 }
 
-func matchFormula(index *model.PubChemIndex, query string, result *model.SingleResult) {
-	compounds, err := index.QueryByFormula(query)
+func matchFormula(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, err := index.QueryByFormula(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by formula: %v", err)
 		result.MatchFound = false
@@ -117,9 +117,9 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	result.Matches = compounds
 }
 
-func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult) {
+func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
 	// Try formula first
-	compounds, err := index.QueryByFormula(query)
+	compounds, err := index.QueryByFormula(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by formula: %v", err)
 		result.MatchFound = false
@@ -135,7 +135,7 @@ func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model
 	}
 
 	// Fall back to SMILES
-	compounds, err = index.QueryBySmiles(query)
+	compounds, err = index.QueryBySmiles(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by SMILES: %v", err)
 		result.MatchFound = false

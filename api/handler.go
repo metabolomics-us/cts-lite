@@ -17,18 +17,19 @@ import (
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
 var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
-var smilesGuaranteePattern = regexp.MustCompile(`[=#\/\\:\.@+\-\[\]\(\)]`)
-var formulaGuaranteePattern = regexp.MustCompile(`^[ADEGHKLMRTUVWXYZ]$`) // Characters that cannot be found at the start of smiles
-var smilesOrFormulaPattern = regexp.MustCompile(`^[ABCDEFGHIKLMNOPRSTUVWXYZ]$`) // Characters that can start both smiles and formulas
-var pubchemIDPattern = regexp.MustCompile(`^[0-9]+$`) // Only numbers
+
+func isAllDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
 
 func parseQueryType(q string) string {
 	// Order of cases matters here
 	switch {
-	case pubchemIDPattern.MatchString(q):
-		// log.Println("Query identified as PubChem ID")
-		return "pubchem_id"
-
 	case inchikeyPattern.MatchString(q):
 		// log.Println("Query identified as InChIKey")
 		return "inchikey"
@@ -41,22 +42,26 @@ func parseQueryType(q string) string {
 		// log.Println("Query identified as InChI")
 		return "inchi"
 
-	case strings.HasPrefix(strings.ToLower(q), "inchi="):
+	case len(q) >= 6 && strings.EqualFold(q[:6], "inchi="):
 		// log.Println("Query identified as malformed InChI")
 		return "bad_inchi"
 
 	// See if first char matches any first char of SMILES in the db
-	case smilesGuaranteePattern.MatchString(q):
+	case strings.ContainsAny(q, "=#/\\:.@+-[]()"):
 		// log.Println("Query identified as SMILES")
 		return "smiles"
 
-	case formulaGuaranteePattern.MatchString(q[0:1]):
+	case strings.ContainsRune("ADEGHKLMRTUVWXYZ", rune(q[0])):
 		// log.Println("Query identified as Molecular Formula")
 		return "formula"
 
-	case smilesOrFormulaPattern.MatchString(q[0:1]):
+	case strings.ContainsRune("ABCDEFGHIKLMNOPRSTUVWXYZ", rune(q[0])):
 		// log.Println("Query identified as SMILES or Molecular Formula")
 		return "smiles_or_formula"
+
+	case isAllDigits(q):
+		// log.Println("Query identified as PubChem ID")
+		return "pubchem_id"
 
 	default:
 		// log.Println("Query type could not be identified")
@@ -86,7 +91,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 			row := []string{
 				result.Query,
 				result.QueryType,
-				fmt.Sprintf("%t", result.MatchFound),
+				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
 				"", "", "", "", "", "", "", "", "", // Empty compound fields
@@ -100,7 +105,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				row := []string{
 					result.Query,
 					result.QueryType,
-					fmt.Sprintf("%t", result.MatchFound),
+					strconv.FormatBool(result.MatchFound),
 					result.MatchLevel,
 					result.ErrMsg,
 					match.Identifier,
@@ -161,8 +166,12 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
-	splitter := regexp.MustCompile(`[\s]+`)
-	queries := splitter.Split(rawQuery, -1)
+	queries := strings.Fields(rawQuery)
+
+	if len(queries) > 100000 {
+		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100,000)", len(queries)), http.StatusBadRequest)
+		return
+	}
 
 	results := make([]*model.SingleResult, 0, len(queries))
 	var matchCount int = 0
@@ -188,22 +197,22 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 		switch result.QueryType {
 		case "pubchem_id":
-			matchPubChemID(index, q, result)
+			matchPubChemID(index, q, result, topHitOnly)
 
 		case "inchi":
-			matchInchi(index, q, result)
+			matchInchi(index, q, result, topHitOnly)
 
 		case "inchikey":
-			matchInchiKey(index, q, result, allowFirstBlockMatches)
+			matchInchiKey(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "smiles":
-			matchSmiles(index, q, result)
+			matchSmiles(index, q, result, topHitOnly)
 
 		case "formula":
-			matchFormula(index, q, result)
+			matchFormula(index, q, result, topHitOnly)
 
 		case "smiles_or_formula":
-			matchSmilesOrFormula(index, q, result)
+			matchSmilesOrFormula(index, q, result, topHitOnly)
 
 		case "bad_inchi":
 			result.MatchFound = false
@@ -227,10 +236,6 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchCount++
 		}
 
-		// Check for top-hit-only
-		if topHitOnly && result.MatchFound {
-			result.Matches = result.Matches[:1]
-		}
 		results = append(results, result)
 	}
 
@@ -261,4 +266,3 @@ func Status(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 }
-

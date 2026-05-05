@@ -108,11 +108,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
-      output.textContent = `Query contains ${queryCount.toLocaleString()} identifiers — please limit to ${maxQueryLength.toLocaleString()} per submission`;
+      output.textContent = `Query contains ${queryCount.toLocaleString()} identifiers - please limit to ${maxQueryLength.toLocaleString()} per submission`;
       return;
     }
 
-    output.textContent = "Matching...";
+    output.innerHTML = "<span class='ellipsis-animate'>Matching</span>";
     outputLabel.textContent = "Results";
     appliedSettingsLabel.style.display = "none";
 
@@ -137,10 +137,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const signal = controller.signal;
 
     const slowTimer = setTimeout(() => {
-      if (output.textContent === "Matching...") {
+      if (output.querySelector(".ellipsis-animate")) {
         output.innerHTML += "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.<br><br>Please wait and then retry if the request times out (504)</div>";
       }
-    }, 10000);
+    }, 5000);
 
     try {
       const response = await fetch(url, {
@@ -150,7 +150,10 @@ document.addEventListener("DOMContentLoaded", () => {
         signal,
       });
 
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      if (!response.ok) {
+        outputLabel.textContent = "Error";
+        throw new Error(`Server returned ${response.status} - ${await response.text()}`);
+      }
 
       allData = await response.json();
       currentPage = 1;

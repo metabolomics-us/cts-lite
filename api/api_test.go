@@ -260,6 +260,38 @@ func TestMultiQuery(t *testing.T) {
 	assertCompound(t, fakeMethaneCompound(), results[1].Matches[0])
 }
 
+func TestMultiQueryOrderPreserved(t *testing.T) {
+	// 10 queries across all supported query types in a deliberate non-alphabetical
+	// order. Goroutines may complete in any order, but results must match input order.
+	const payload = `{"queries":"1 C=O InChI=1S/CH4/h1H4 MYFAKEINCHIKEY-ISRIGHTHER-E 2 O FAKEFORMALDEHY-FAKEFRMALD-E InChI=1S/H2O/h1H2 3 C"}`
+	res := doMatchRequest(t, payload, nil, false)
+	results := parseMatchResults(t, res)
+
+	if len(results) != 10 {
+		t.Fatalf("expected 10 results, got %d", len(results))
+	}
+
+	want := []*model.Compound{
+		fakeWaterCompound(),       // "1"                            pubchem_id
+		fakeFormaldehyde(),        // "C=O"                          smiles
+		fakeMethaneCompound(),     // "InChI=1S/CH4/h1H4"            inchi
+		fakeWaterCompound(),       // "MYFAKEINCHIKEY-ISRIGHTHER-E"  inchikey
+		fakeMethaneCompound(),     // "2"                            pubchem_id
+		fakeWaterCompound(),       // "O"                            smiles
+		fakeFormaldehyde(),        // "FAKEFORMALDEHY-FAKEFRMALD-E"  inchikey
+		fakeWaterCompound(),       // "InChI=1S/H2O/h1H2"           inchi
+		fakeFormaldehyde(),        // "3"                            pubchem_id
+		fakeMethaneCompound(),     // "C"                            smiles_or_formula
+	}
+	for i, w := range want {
+		if !results[i].MatchFound {
+			t.Errorf("results[%d]: expected match for query %q, got none", i, results[i].Query)
+			continue
+		}
+		assertCompound(t, w, results[i].Matches[0])
+	}
+}
+
 func TestMatchErrors(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -294,6 +326,11 @@ func TestMatchErrors(t *testing.T) {
 		{
 			name:       "bad inchi",
 			query:      "inchi=1S/H2O",
+			wantErrMsg: "Malformed InChI, see documentation",
+		},
+		{
+			name:       "bad inchi mixed case",
+			query:      "Inchi=1S/H2O",
 			wantErrMsg: "Malformed InChI, see documentation",
 		},
 		{
@@ -363,6 +400,15 @@ func TestInvalidJSON(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Result().StatusCode)
+	}
+}
+
+func TestQueryLimitExceeded(t *testing.T) {
+	queries := strings.TrimRight(strings.Repeat("O ", 100001), " ")
+	res := doMatchRequest(t, `{"queries":"`+queries+`"}`, nil, false)
+
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for over-limit query, got %d", res.StatusCode)
 	}
 }
 
