@@ -50,6 +50,9 @@ func main() {
 	})
 
 	dbPath := "dataset/compounds.db"
+	if envPath := os.Getenv("DB_PATH"); envPath != "" {
+		dbPath = envPath
+	}
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		log.Fatalf("Database file %s does not exist", dbPath)
 	}
@@ -68,8 +71,12 @@ func main() {
 		api.Match(index, w, r)
 	}))
 
-	fmt.Println("Server launching on port 8080")
-	err = http.ListenAndServe(":8080", nil)
+	port := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		port = ":" + p
+	}
+	fmt.Printf("Server launching on port %s\n", port[1:])
+	err = http.ListenAndServe(port, nil)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 		return

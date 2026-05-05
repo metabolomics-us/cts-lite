@@ -1,0 +1,14 @@
+{
+  "name": "cts-lite-playwright",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "playwright-teamcity-reporter": "^1.0.5"
+  }
+}
