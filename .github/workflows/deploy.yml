@@ -2,11 +2,12 @@ name: Deploy
 
 on:
   push:
-    branches: [ "main" ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
   test:
+    if: "github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, 'test')"
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +27,7 @@ jobs:
         cd playwright && npm ci && npm test
 
   build_and_push_image:
-    if: "!contains(github.event.head_commit.message, 'nobuild')"
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'nobuild')"
     needs: test
     runs-on: ubuntu-latest
 
@@ -87,7 +88,7 @@ jobs:
           --push
 
   deploy_to_ecs:
-    if: "!contains(github.event.head_commit.message, 'nodeploy')"
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'nodeploy')"
     needs: build_and_push_image
     runs-on: ubuntu-latest
 
