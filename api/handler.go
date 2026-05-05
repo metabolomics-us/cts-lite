@@ -41,7 +41,7 @@ func parseQueryType(q string) string {
 		// log.Println("Query identified as InChI")
 		return "inchi"
 
-	case strings.HasPrefix(strings.ToLower(q), "inchi="):
+	case len(q) >= 6 && strings.EqualFold(q[:6], "inchi="):
 		// log.Println("Query identified as malformed InChI")
 		return "bad_inchi"
 
