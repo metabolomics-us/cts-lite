@@ -21,6 +21,10 @@ jobs:
     - name: Run Go Tests
       run: go test ./... -v
 
+    - name: Run E2E Tests
+      run: |
+        cd playwright && npm ci && npm test
+
   build_and_push_image:
     if: "!contains(github.event.head_commit.message, 'nobuild')"
     needs: test
