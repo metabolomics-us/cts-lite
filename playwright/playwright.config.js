@@ -18,6 +18,6 @@ module.exports = defineConfig({
     port: 8081,
     cwd: repoRoot,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 600_000,
   },
 });
