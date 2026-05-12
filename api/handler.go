@@ -70,7 +70,7 @@ func parseQueryType(q string) string {
 }
 
 // writeResultsAsCSV converts the results to CSV format and writes to the response writer
-func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) error {
+func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, classyfireEnabled bool) error {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
@@ -80,8 +80,21 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
 		"molecular_formula", "exact_mass", "literature_count", "patent_count",
 	}
+	if classyfireEnabled {
+		header = append(header,
+			"classyfire_kingdom", "classyfire_superclass", "classyfire_class",
+			"classyfire_subclass", "classyfire_direct_parent", "classyfire_description",
+		)
+	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	cfFields := func(cf *model.ClassyFireInfo) []string {
+		if cf == nil {
+			return []string{"", "", "", "", "", ""}
+		}
+		return []string{cf.Kingdom, cf.Superclass, cf.Class, cf.Subclass, cf.DirectParent, cf.Description}
 	}
 
 	// Write data rows
@@ -95,6 +108,9 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				result.MatchLevel,
 				result.ErrMsg,
 				"", "", "", "", "", "", "", "", "", // Empty compound fields
+			}
+			if classyfireEnabled {
+				row = append(row, cfFields(nil)...)
 			}
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
@@ -117,6 +133,9 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					strconv.FormatFloat(match.ExactMass, 'f', -1, 64),
 					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
+				}
+				if classyfireEnabled {
+					row = append(row, cfFields(match.ClassyFire)...)
 				}
 				if err := writer.Write(row); err != nil {
 					return fmt.Errorf("failed to write CSV row: %w", err)
@@ -164,6 +183,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Check for top-hit parameter
 	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
 	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
+	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	queries := strings.Fields(rawQuery)
@@ -241,11 +261,16 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("%d matches found from %d queries in %f seconds\n", matchCount, len(queries), time.Since(timeStart).Seconds())
 
+	// Enrich matched compounds with ClassyFire chemical classifications if requested
+	if classyfireEnabled {
+		enrichWithClassyFire(results)
+	}
+
 	// Check for header text/csv and respond accordingly
 	if (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv") {
 		// Respond with CSV
 		w.Header().Set("Content-Type", "text/csv")
-		err := writeResultsAsCSV(w, results)
+		err := writeResultsAsCSV(w, results, classyfireEnabled)
 		if err != nil {
 			log.Printf("Failed to write CSV response: %v", err)
 		}

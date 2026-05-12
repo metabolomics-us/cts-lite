@@ -8,16 +8,27 @@ import (
 	_ "modernc.org/sqlite" // SQLite driver
 )
 
+type ClassyFireInfo struct {
+	Error        string `json:"error,omitempty"`
+	Kingdom      string `json:"kingdom,omitempty"`
+	Superclass   string `json:"superclass,omitempty"`
+	Class        string `json:"class,omitempty"`
+	Subclass     string `json:"subclass,omitempty"`
+	DirectParent string `json:"direct_parent,omitempty"`
+	Description  string `json:"description,omitempty"`
+}
+
 type Compound struct {
-	Identifier       string  `json:"identifier"`
-	InChIKey         string  `json:"inchikey"`
-	InChI            string  `json:"inchi"`
-	Smiles           string  `json:"smiles"`
-	CompoundName     string  `json:"compound_name"`
-	MolecularFormula string  `json:"molecular_formula"`
-	ExactMass        float64 `json:"exact_mass"`
-	LiteratureCount  float32 `json:"literature_count"`
-	PatentCount      float32 `json:"patent_count"`
+	Identifier       string          `json:"identifier"`
+	InChIKey         string          `json:"inchikey"`
+	InChI            string          `json:"inchi"`
+	Smiles           string          `json:"smiles"`
+	CompoundName     string          `json:"compound_name"`
+	MolecularFormula string          `json:"molecular_formula"`
+	ExactMass        float64         `json:"exact_mass"`
+	LiteratureCount  float32         `json:"literature_count"`
+	PatentCount      float32         `json:"patent_count"`
+	ClassyFire       *ClassyFireInfo `json:"classyfire,omitempty"`
 }
 
 type SingleResult struct {

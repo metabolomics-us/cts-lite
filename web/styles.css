@@ -345,6 +345,21 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+.classyfire-heading {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #dde1e6;
+}
+
+.classyfire-heading label {
+  font-weight: bold;
+  color: #1a3e68;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: unset;
+}
+
 .result-separator {
   border: none;
   height: 2px;

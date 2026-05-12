@@ -4,6 +4,7 @@ import (
 	"ctslite/model"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -626,6 +627,149 @@ func TestMatchInchIKeyFirstBlockErrorPath(t *testing.T) {
 	}
 	if results[0].ErrMsg != "Internal server error" {
 		t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
+	}
+}
+
+func TestClassyFireDisabledByDefault(t *testing.T) {
+	// classyFireFetcher must never be called when classyfire param is absent.
+	called := false
+	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+		called = true
+		return fakeClassyFireInfo(), nil
+	})
+
+	res := doMatchRequest(t, `{"queries":"O"}`, nil, false)
+	parseMatchResults(t, res)
+
+	if called {
+		t.Error("expected ClassyFire fetcher not to be called when classyfire param is absent")
+	}
+}
+
+func TestClassyFireEnabledAttachesClassification(t *testing.T) {
+	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+		return fakeClassyFireInfo(), nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	results := parseMatchResults(t, w.Result())
+	if len(results) != 1 || len(results[0].Matches) != 1 {
+		t.Fatalf("expected 1 result with 1 match")
+	}
+	cf := results[0].Matches[0].ClassyFire
+	if cf == nil {
+		t.Fatal("expected ClassyFire info, got nil")
+	}
+	if cf.Kingdom != "Organic compounds" {
+		t.Errorf("Kingdom: want %q, got %q", "Organic compounds", cf.Kingdom)
+	}
+}
+
+func TestClassyFireNoMatchDoesNotCallFetcher(t *testing.T) {
+	called := false
+	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+		called = true
+		return fakeClassyFireInfo(), nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"InChI=1S/NOTHING"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	parseMatchResults(t, w.Result())
+	if called {
+		t.Error("expected ClassyFire fetcher not to be called for unmatched query")
+	}
+}
+
+func TestClassyFireFetchErrorDoesNotFailRequest(t *testing.T) {
+	// Even if ClassyFire is unavailable, the match result must still be returned.
+	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+		return nil, errors.New("simulated network error")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 even on ClassyFire error, got %d", res.StatusCode)
+	}
+	results := parseMatchResults(t, res)
+	if !results[0].MatchFound {
+		t.Error("expected compound match regardless of ClassyFire failure")
+	}
+	if results[0].Matches[0].ClassyFire != nil {
+		t.Error("expected nil ClassyFire after fetch error")
+	}
+}
+
+func TestClassyFireCSVHeader(t *testing.T) {
+	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+		return fakeClassyFireInfo(), nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/csv")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	records, err := csv.NewReader(res.Body).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse CSV: %v", err)
+	}
+	if len(records) < 2 {
+		t.Fatalf("expected header + data row, got %d rows", len(records))
+	}
+
+	// ClassyFire columns must be appended to the standard header
+	wantSuffix := []string{
+		"classyfire_kingdom", "classyfire_superclass", "classyfire_class",
+		"classyfire_subclass", "classyfire_direct_parent", "classyfire_description",
+	}
+	header := records[0]
+	if len(header) != 20 {
+		t.Fatalf("expected 20 CSV columns with classyfire enabled, got %d", len(header))
+	}
+	for i, want := range wantSuffix {
+		got := header[14+i]
+		if got != want {
+			t.Errorf("header[%d]: want %q, got %q", 14+i, want, got)
+		}
+	}
+
+	// Data row must contain ClassyFire values
+	row := records[1]
+	if row[14] != "Organic compounds" {
+		t.Errorf("classyfire_kingdom: want %q, got %q", "Organic compounds", row[14])
+	}
+}
+
+func TestClassyFireCSVNoExtraColumnsWhenDisabled(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/match", strings.NewReader(`{"queries":"O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/csv")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	records, err := csv.NewReader(w.Result().Body).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse CSV: %v", err)
+	}
+	if len(records[0]) != 14 {
+		t.Errorf("expected 14 columns without classyfire, got %d", len(records[0]))
 	}
 }
 

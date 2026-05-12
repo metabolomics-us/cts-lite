@@ -94,6 +94,13 @@
                     <code>"cts-lite.metabolomics.us/match<strong>?first_block_matches=false"</strong></code>
                 </div>
 
+                <p style="margin-bottom: -10px">
+                Enable ClassyFire chemical classification:
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true"</strong></code>
+                </div>
+
                 <h4 class="doc-subheading">Response Formats</h4>
                 <p>Example query: <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>
@@ -198,6 +205,49 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                 </p>
                 <p>
                     All other query types can only be <code class="inline-code">Exact</code> matches.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="classyfire">Chemical Classification (ClassyFire)<button class="heading-anchor" onclick="copyHeadingLink(event,'classyfire')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                    CTS-Lite can optionally enrich matched compounds with chemical taxonomy classifications from
+                    <a href="https://cfb.fiehnlab.ucdavis.edu/" target="_blank">ClassyFire</a>, developed by the
+                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a> and hosted by the
+                    UC Davis Fiehn Lab. ClassyFire provides automated, comprehensive chemical classification based on
+                    molecular structure.
+                </p>
+                <p>
+                    ClassyFire enrichment is <strong>disabled by default</strong> due to the additional network latency
+                    required per matched compound. Enable it from the settings panel (cog icon), or via the API parameter above.
+                </p>
+                <p>
+                    When enabled, each matched compound is enriched with the following ClassyFire fields:
+                </p>
+                <ul class="doc-list">
+                    <li><strong>Kingdom</strong> — top-level chemical domain (e.g., <code class="inline-code">Organic compounds</code>)</li>
+                    <li><strong>Superclass</strong> — e.g., <code class="inline-code">Organoheterocyclic compounds</code></li>
+                    <li><strong>Class</strong> — e.g., <code class="inline-code">Imidazopyrimidines</code></li>
+                    <li><strong>Subclass</strong> — e.g., <code class="inline-code">Purines and purine derivatives</code></li>
+                    <li><strong>Direct Parent</strong> — most specific class (e.g., <code class="inline-code">Xanthines</code>)</li>
+                    <li><strong>Description</strong> — text description of the compound's chemical class</li>
+                </ul>
+                <p>
+                    ClassyFire lookups are performed concurrently for all unique matched compounds. If a compound is not
+                    found in ClassyFire's database, or if the ClassyFire service is unavailable, the remaining compound
+                    fields are still returned without classification data.
+                </p>
+                <div class="doc-note">
+                    <strong>Note:</strong> ClassyFire classification adds network latency proportional to the number of
+                    unique matched compounds in your query. For large batches, expect additional processing time.
+                </div>
+                <p>
+                    When ClassyFire is enabled, the JSON response includes a <code class="inline-code">classyfire</code>
+                    object on each matched compound. The CSV output appends six additional columns:
+                    <code class="inline-code">classyfire_kingdom</code>, <code class="inline-code">classyfire_superclass</code>,
+                    <code class="inline-code">classyfire_class</code>, <code class="inline-code">classyfire_subclass</code>,
+                    <code class="inline-code">classyfire_direct_parent</code>, and
+                    <code class="inline-code">classyfire_description</code>.
                 </p>
             </section>
 

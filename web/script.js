@@ -39,11 +39,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
-    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
+    const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
+    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count";
+    if (hasClassyfire) {
+      csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description";
+    }
+    csv += "\n";
     allData.forEach(result => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
-          csv += [
+          const cf = match.classyfire || {};
+          const row = [
             csvField(result.query),
             csvField(result.query_type),
             csvField(result.found_match),
@@ -58,14 +64,23 @@ document.addEventListener("DOMContentLoaded", () => {
             csvField(match.exact_mass),
             csvField(match.literature_count),
             csvField(match.patent_count)
-          ].join(",") + "\n";
+          ];
+          if (hasClassyfire) {
+            row.push(csvField(cf.kingdom), csvField(cf.superclass), csvField(cf.class),
+                     csvField(cf.subclass), csvField(cf.direct_parent), csvField(cf.description));
+          }
+          csv += row.join(",") + "\n";
         });
       } else {
-        csv += [
+        const row = [
           csvField(result.query), csvField(result.query_type), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
           csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
-        ].join(",") + "\n";
+        ];
+        if (hasClassyfire) {
+          row.push(csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""));
+        }
+        csv += row.join(",") + "\n";
       }
     });
     triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(csv), `ctsl_${timestamp()}.csv`);
@@ -118,12 +133,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const topHitOnly = document.getElementById("top-hit-only").checked;
     const firstBlockMatches = document.getElementById("first-block-matches").checked;
+    const classyfireEnabled = document.getElementById("classyfire-enabled").checked;
     let url = "/match?";
     if (!topHitOnly) {
       url += "&top_hit_only=false";
     }
     if (!firstBlockMatches) {
       url += "&first_block_matches=false";
+    }
+    if (classyfireEnabled) {
+      url += "&classyfire=true";
     }
 
     if (activeController) {
@@ -167,8 +186,9 @@ document.addEventListener("DOMContentLoaded", () => {
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
       const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
+      const classyfireText = classyfireEnabled ? ", ClassyFire" : "";
       appliedSettingsLabel.title = "applied settings";
-      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}`;
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}`;
       appliedSettingsLabel.style.display = "block";
 
     } catch (err) {
@@ -269,6 +289,18 @@ function displayResults(data, outputElement, offset = 0) {
               <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
               <div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>
               <div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>
+              ${match.classyfire ? `
+              <div class="match-field classyfire-heading"><label>Chemical Classification (ClassyFire)</label></div>
+              ${match.classyfire.error ? `<div class="match-field"><span class="monospace small-text">Classification lookup failed (${escapeHtml(match.classyfire.error)})</span></div>`
+              : (match.classyfire.kingdom || match.classyfire.superclass || match.classyfire.class || match.classyfire.subclass || match.classyfire.direct_parent || match.classyfire.description) ? `
+              ${match.classyfire.kingdom ? `<div class="match-field"><label>Kingdom:</label><span class="monospace">${escapeHtml(match.classyfire.kingdom)}</span></div>` : ""}
+              ${match.classyfire.superclass ? `<div class="match-field"><label>Superclass:</label><span class="monospace">${escapeHtml(match.classyfire.superclass)}</span></div>` : ""}
+              ${match.classyfire.class ? `<div class="match-field"><label>Class:</label><span class="monospace">${escapeHtml(match.classyfire.class)}</span></div>` : ""}
+              ${match.classyfire.subclass ? `<div class="match-field"><label>Subclass:</label><span class="monospace">${escapeHtml(match.classyfire.subclass)}</span></div>` : ""}
+              ${match.classyfire.direct_parent ? `<div class="match-field"><label>Direct Parent:</label><span class="monospace">${escapeHtml(match.classyfire.direct_parent)}</span></div>` : ""}
+              ${match.classyfire.description ? `<div class="match-field"><label>Description:</label><span class="small-text">${escapeHtml(match.classyfire.description)}</span></div>` : ""}
+              ` : `<div class="match-field"><span class="monospace small-text">No classification found</span></div>`}
+              ` : ""}
             </div>
           </div>`).join("")}
         </div>`
