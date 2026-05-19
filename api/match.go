@@ -110,6 +110,9 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 	inchikey, err := smilesToInChIKey(query)
 	if err != nil {
 		log.Printf("RDKit InChIKey conversion failed for %q: %v", query, err)
+		result.ErrMsg = "RDKit conversion failed"
+		result.MatchFound = false
+		return
 	}
 	if inchikey != "" {
 		matchInchiKey(index, inchikey, result, allowFirstBlockMatches, topHitOnly)
