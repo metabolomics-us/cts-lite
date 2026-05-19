@@ -274,6 +274,13 @@ function displayResults(data, outputElement, offset = 0) {
         </div>`
       : "";
 
+    const isTranslated = result.query_type === "translated_smiles" && result.translated_query;
+    const transId = `trans-${offset + index}`;
+
+    const queryTypeBubble = isTranslated
+      ? `<div class="query-type-expandable-wrapper" title="Translated with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true">${CHEVRON_SVG}</span></button><div id="${transId}" class="query-type-translation" hidden>to InChIKey:<br>${escapeHtml(result.translated_query)}</div></div>`
+      : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
+
     const resultDiv = document.createElement("div");
     resultDiv.className = "result-item";
     resultDiv.innerHTML = `
@@ -283,7 +290,7 @@ function displayResults(data, outputElement, offset = 0) {
           <button type="button" class="collapse-btn" aria-label="Toggle result">${CHEVRON_SVG}</button>
         </div>
         <div class="query-details">
-          <span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>
+          ${queryTypeBubble}
           <span class="match-status ${getMatchStatusClass(result)}">${getMatchStatusText(result)}</span>
         </div>
       </div>
@@ -296,6 +303,15 @@ function displayResults(data, outputElement, offset = 0) {
     resultDiv.querySelector(".collapse-btn").addEventListener("click", () => {
       resultDiv.classList.toggle("collapsed");
     });
+
+    const expandBtn = resultDiv.querySelector(".query-type-expandable-btn");
+    if (expandBtn) {
+      expandBtn.addEventListener("click", () => {
+        const expanded = expandBtn.getAttribute("aria-expanded") === "true";
+        expandBtn.setAttribute("aria-expanded", String(!expanded));
+        document.getElementById(expandBtn.getAttribute("aria-controls")).hidden = expanded;
+      });
+    }
 
     outputElement.appendChild(resultDiv);
 
@@ -335,16 +351,17 @@ function getMatchStatusClass(result) {
 
 function formatQueryType(queryType) {
   switch (queryType.toLowerCase()) {
-    case "pubchem_id":      return "PubChem CID";
-    case "inchikey":        return "InChIKey";
-    case "smiles":          return "SMILES";
-    case "inchi":           return "InChI";
-    case "formula":         return "Molecular Formula";
+    case "pubchem_id":        return "PubChem CID";
+    case "inchikey":          return "InChIKey";
+    case "smiles":            return "SMILES";
+    case "translated_smiles": return "Translated SMILES";
+    case "inchi":             return "InChI";
+    case "formula":           return "Molecular Formula";
     case "smiles_or_formula": return "SMILES/Mol. Formula";
-    case "bad_inchi":       return "Malformed InChI";
-    case "bad_inchikey":    return "Malformed InChIKey";
-    case "unidentified":    return "Unidentified";
-    default:                return queryType;
+    case "bad_inchi":         return "Malformed InChI";
+    case "bad_inchikey":      return "Malformed InChIKey";
+    case "unidentified":      return "Unidentified";
+    default:                  return queryType;
   }
 }
 
