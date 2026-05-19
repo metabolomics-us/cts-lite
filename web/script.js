@@ -39,13 +39,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
-    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
+    let csv = "query,query_type,translated_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
     allData.forEach(result => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
           csv += [
             csvField(result.query),
             csvField(result.query_type),
+            csvField(result.translated_query),
             csvField(result.found_match),
             csvField(result.match_level),
             csvField(result.error_message),
