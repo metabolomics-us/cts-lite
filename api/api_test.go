@@ -716,8 +716,6 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 		mockSmilesConverter(t, func(string) (string, error) {
 			return "MYFAKEINCHIKEY-NOTNOTNOTN-O", nil
 		})
-		// Use top_hit_only=true (allHits=false) to get a single deterministic result
-		// regardless of how many rows the shared in-memory DB has accumulated.
 		res := doMatchRequest(t, `{"queries":"[C@@H](O)(N)C"}`, nil, false)
 		results := parseMatchResults(t, res)
 
