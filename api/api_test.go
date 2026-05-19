@@ -465,13 +465,13 @@ func TestCSVNoMatchResponse(t *testing.T) {
 	}
 
 	row := records[1]
-	if row[2] != "false" {
-		t.Errorf("expected found_match=false, got %s", row[2])
+	if row[3] != "false" {
+		t.Errorf("expected found_match=false, got %s", row[3])
 	}
 	// All compound-specific fields should be empty
-	for i, field := range row[5:] {
+	for i, field := range row[6:] {
 		if field != "" {
-			t.Errorf("expected empty compound field at index %d, got %q", i+5, field)
+			t.Errorf("expected empty compound field at index %d, got %q", i+6, field)
 		}
 	}
 }
@@ -496,7 +496,7 @@ func TestCSVFormatResponse(t *testing.T) {
 
 	// Check header
 	expectedHeader := []string{
-		"query", "query_type", "found_match", "match_level", "error_message",
+		"query", "query_type", "translated_query", "found_match", "match_level", "error_message",
 		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
 		"molecular_formula", "exact_mass", "literature_count", "patent_count",
 	}
@@ -506,7 +506,7 @@ func TestCSVFormatResponse(t *testing.T) {
 
 	// Check data row
 	expectedData := []string{
-		"O", "smiles", "true", "Exact SMILES", "",
+		"O", "smiles", "", "true", "Exact SMILES", "",
 		"1", "MYFAKEINCHIKEY-ISRIGHTHER-E", "InChI=1S/H2O/h1H2", "O", "Water", "H2O", "100", "10", "2",
 	}
 	if diff := cmp.Diff(expectedData, records[1]); diff != "" {
@@ -682,5 +682,105 @@ func TestMatchErrorPaths(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mockSmilesConverter(t *testing.T, fn func(string) (string, error)) {
+	t.Helper()
+	orig := smilesToInChIKey
+	smilesToInChIKey = fn
+	t.Cleanup(func() { smilesToInChIKey = orig })
+}
+
+func TestSmilesViaInChIKeyFallback(t *testing.T) {
+	t.Run("exact InChIKey match", func(t *testing.T) {
+		mockSmilesConverter(t, func(string) (string, error) {
+			return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
+		})
+		res := doMatchRequest(t, `{"queries":"[C@@H](O)(N)C"}`, nil, false)
+		results := parseMatchResults(t, res)
+
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if !results[0].MatchFound {
+			t.Fatal("expected match via SMILES InChIKey fallback")
+		}
+		if results[0].QueryType != "translated_smiles" {
+			t.Errorf("expected query_type 'translated_smiles', got %q", results[0].QueryType)
+		}
+		if results[0].MatchLevel != "Exact InChIKey" {
+			t.Errorf("expected match_level 'Exact InChIKey', got %q", results[0].MatchLevel)
+		}
+		if results[0].TranslatedQuery != "MYFAKEINCHIKEY-ISRIGHTHER-E" {
+			t.Errorf("expected translated_query 'MYFAKEINCHIKEY-ISRIGHTHER-E', got %q", results[0].TranslatedQuery)
+		}
+		assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
+	})
+
+	t.Run("first block match", func(t *testing.T) {
+		mockSmilesConverter(t, func(string) (string, error) {
+			return "MYFAKEINCHIKEY-NOTNOTNOTN-O", nil
+		})
+		// Use top_hit_only=true (allHits=false) to get a single deterministic result
+		// regardless of how many rows the shared in-memory DB has accumulated.
+		res := doMatchRequest(t, `{"queries":"[C@@H](O)(N)C"}`, nil, false)
+		results := parseMatchResults(t, res)
+
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if !results[0].MatchFound {
+			t.Fatal("expected first block match via SMILES fallback")
+		}
+		if results[0].QueryType != "translated_smiles" {
+			t.Errorf("expected query_type 'translated_smiles', got %q", results[0].QueryType)
+		}
+		if results[0].MatchLevel != "First Block" {
+			t.Errorf("expected match_level 'First Block', got %q", results[0].MatchLevel)
+		}
+		if results[0].TranslatedQuery != "MYFAKEINCHIKEY-NOTNOTNOTN-O" {
+			t.Errorf("expected translated_query 'MYFAKEINCHIKEY-NOTNOTNOTN-O', got %q", results[0].TranslatedQuery)
+		}
+		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
+	})
+
+	t.Run("no match when converter returns empty", func(t *testing.T) {
+		mockSmilesConverter(t, func(string) (string, error) {
+			return "", nil
+		})
+		res := doMatchRequest(t, `{"queries":"CC(O)=O"}`, nil, false)
+		results := parseMatchResults(t, res)
+
+		if results[0].MatchFound {
+			t.Error("expected no match when converter returns empty")
+		}
+		if results[0].ErrMsg != "No compound found" {
+			t.Errorf("expected 'No compound found', got %q", results[0].ErrMsg)
+		}
+	})
+}
+
+func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
+	// "Cc1ccccc1" starts with C (not in formula-guarantee set) → smiles_or_formula,
+	// misses both formula and SMILES lookups, then falls through to RDKit.
+	mockSmilesConverter(t, func(string) (string, error) {
+		return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
+	})
+	res := doMatchRequest(t, `{"queries":"Cc1ccccc1"}`, nil, false)
+	results := parseMatchResults(t, res)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].MatchFound {
+		t.Fatal("expected match via smiles_or_formula InChIKey fallback")
+	}
+	if results[0].QueryType != "translated_smiles" {
+		t.Errorf("expected query_type 'translated_smiles', got %q", results[0].QueryType)
+	}
+	if results[0].TranslatedQuery != "MYFAKEINCHIKEY-ISRIGHTHER-E" {
+		t.Errorf("expected translated_query 'MYFAKEINCHIKEY-ISRIGHTHER-E', got %q", results[0].TranslatedQuery)
+	}
+	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
 }
 

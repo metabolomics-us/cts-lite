@@ -2,8 +2,13 @@ package api
 
 import (
 	"ctslite/model"
+	"ctslite/rdkit"
 	"log"
 )
+
+var smilesToInChIKey = func(smiles string) (string, error) {
+	return rdkit.SmilesToInChIKey(smiles)
+}
 
 func matchPubChemID(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
 	compounds, err := index.QueryByPubChemID(query, topHitOnly)
@@ -81,7 +86,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 	}
 }
 
-func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
 	compounds, err := index.QueryBySmiles(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by SMILES: %v", err)
@@ -89,14 +94,34 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.ErrMsg = "Internal server error"
 		return
 	}
-	if len(compounds) == 0 {
+	if len(compounds) > 0 {
+		result.MatchFound = true
+		result.MatchLevel = "Exact SMILES"
+		result.Matches = compounds
+		return
+	}
+	// Check for overly long SMILES, to avoid passing them to RDKit. 4096 is invalid anyway
+	if len(query) > 4096 {
 		result.MatchFound = false
 		result.ErrMsg = "No compound found"
 		return
 	}
-	result.MatchFound = true
-	result.MatchLevel = "Exact SMILES"
-	result.Matches = compounds
+
+	inchikey, err := smilesToInChIKey(query)
+	if err != nil {
+		log.Printf("RDKit InChIKey conversion failed for %q: %v", query, err)
+	}
+	if inchikey != "" {
+		matchInchiKey(index, inchikey, result, allowFirstBlockMatches, topHitOnly)
+		if result.MatchFound {
+			result.QueryType = "translated_smiles"
+			result.TranslatedQuery = inchikey
+			return
+		}
+	}
+
+	result.MatchFound = false
+	result.ErrMsg = "No compound found"
 }
 
 func matchFormula(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
@@ -117,38 +142,21 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	result.Matches = compounds
 }
 
-func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
-	// Try formula first
-	compounds, err := index.QueryByFormula(query, topHitOnly)
-	if err != nil {
-		log.Printf("Error querying by formula: %v", err)
-		result.MatchFound = false
-		result.ErrMsg = "Internal server error"
+func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
+	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
+	if result.MatchFound {
+		if result.QueryType != "translated_smiles" {
+			result.QueryType = "smiles"
+		}
 		return
 	}
-	if len(compounds) > 0 {
-		result.QueryType = "formula"
-		result.MatchFound = true
-		result.MatchLevel = "Exact Formula"
-		result.Matches = compounds
+	if result.ErrMsg == "Internal server error" {
 		return
 	}
 
-	// Fall back to SMILES
-	compounds, err = index.QueryBySmiles(query, topHitOnly)
-	if err != nil {
-		log.Printf("Error querying by SMILES: %v", err)
-		result.MatchFound = false
-		result.ErrMsg = "Internal server error"
-		return
+	result.ErrMsg = ""
+	matchFormula(index, query, result, topHitOnly)
+	if result.MatchFound {
+		result.QueryType = "formula"
 	}
-	if len(compounds) == 0 {
-		result.MatchFound = false
-		result.ErrMsg = "No compound found"
-		return
-	}
-	result.QueryType = "smiles"
-	result.MatchFound = true
-	result.MatchLevel = "Exact SMILES"
-	result.Matches = compounds
 }

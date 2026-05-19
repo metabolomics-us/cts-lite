@@ -76,7 +76,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 
 	// Write CSV header
 	header := []string{
-		"query", "query_type", "found_match", "match_level", "error_message",
+		"query", "query_type", "translated_query", "found_match", "match_level", "error_message",
 		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
 		"molecular_formula", "exact_mass", "literature_count", "patent_count",
 	}
@@ -91,6 +91,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 			row := []string{
 				result.Query,
 				result.QueryType,
+				result.TranslatedQuery,
 				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
@@ -105,6 +106,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				row := []string{
 					result.Query,
 					result.QueryType,
+					result.TranslatedQuery,
 					strconv.FormatBool(result.MatchFound),
 					result.MatchLevel,
 					result.ErrMsg,
@@ -206,13 +208,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchInchiKey(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "smiles":
-			matchSmiles(index, q, result, topHitOnly)
+			matchSmiles(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "formula":
 			matchFormula(index, q, result, topHitOnly)
 
 		case "smiles_or_formula":
-			matchSmilesOrFormula(index, q, result, topHitOnly)
+			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "bad_inchi":
 			result.MatchFound = false
