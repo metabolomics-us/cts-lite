@@ -83,7 +83,7 @@ test('CSV download contains correct headers', async ({ page }) => {
   const header = content.split('\n')[0];
 
   expect(header).toBe(
-    'query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count'
+    'query,query_type,translated_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count'
   );
 });
 
