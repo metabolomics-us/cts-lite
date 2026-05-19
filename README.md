@@ -12,8 +12,9 @@ A lightweight Chemical Translation Service using a curated subset of <strong>10.
 ### API Usage
 - Please refer to the [documentation page](https://cts-lite.metabolomics.us/docs) for information regarding the API
 
-### Attributions
-- Credit to PubChem (NIH), for the data.
+### Credits
+- **PubChem** — compound data sourced from the [PubChem database](https://pubchem.ncbi.nlm.nih.gov/)
+- **RDKit** — library used for SMILES to InChIKey translation. [rdkit.org](https://www.rdkit.org/)
 
 <br>
 
