@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       } else {
         csv += [
-          csvField(result.query), csvField(result.query_type), csvField(result.found_match),
+          csvField(result.query), csvField(result.query_type), csvField(result.translated_query), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
           csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
         ].join(",") + "\n";
