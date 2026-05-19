@@ -18,6 +18,12 @@ import (
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
 var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
 
+var CSVHeader = []string{
+	"query", "query_type", "translated_query", "found_match", "match_level", "error_message",
+	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
+	"molecular_formula", "exact_mass", "literature_count", "patent_count",
+}
+
 func isAllDigits(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] < '0' || s[i] > '9' {
@@ -75,12 +81,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	defer writer.Flush()
 
 	// Write CSV header
-	header := []string{
-		"query", "query_type", "translated_query", "found_match", "match_level", "error_message",
-		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-		"molecular_formula", "exact_mass", "literature_count", "patent_count",
-	}
-	if err := writer.Write(header); err != nil {
+	if err := writer.Write(CSVHeader); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 

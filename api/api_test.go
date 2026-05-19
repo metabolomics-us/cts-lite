@@ -495,12 +495,7 @@ func TestCSVFormatResponse(t *testing.T) {
 	}
 
 	// Check header
-	expectedHeader := []string{
-		"query", "query_type", "translated_query", "found_match", "match_level", "error_message",
-		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-		"molecular_formula", "exact_mass", "literature_count", "patent_count",
-	}
-	if diff := cmp.Diff(expectedHeader, records[0]); diff != "" {
+	if diff := cmp.Diff(CSVHeader, records[0]); diff != "" {
 		t.Errorf("CSV header mismatch (-want +got):\n%s", diff)
 	}
 
