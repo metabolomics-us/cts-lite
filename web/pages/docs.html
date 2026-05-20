@@ -84,14 +84,21 @@
                 Disable top hit only:
                 </p>
                 <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?top_hit_only=false"</strong></code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?top_hit_only=false</strong>"</code>
                 </div>
 
                 <p style="margin-bottom: -10px">
                 Disable first block matches:
                 </p>
                 <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?first_block_matches=false"</strong></code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?first_block_matches=false</strong>"</code>
+                </div>
+
+                <p style="margin-bottom: -10px">
+                Disable RDKit conversion:
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?rdkit_conversion=false</strong>"</code>
                 </div>
 
                 <h4 class="doc-subheading">Response Formats</h4>
@@ -132,9 +139,9 @@
 
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px;">CSV</p>
                 <div class="code-block">
-                    <pre><code>query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count
-XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042
-will_fail,unidentified,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,
+                    <pre><code>query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count
+XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042
+will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,
                     </code></pre>
                 </div>
             </section>
@@ -156,6 +163,9 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                         <code class="inline-code">= # - / \ : . @ + [ ] ( )</code> 
                     </li>
                     <li>
+                        <strong>Converted SMILES</strong> are SMILES queries that failed to match, but were then matched using their converted InChIKey. The SMILES are converted to InChIKeys using <a href="https://github.com/rdkit/rdkit">RDKit</a>.
+                    </li>
+                    <li>
                         <strong>PubChem CIDs</strong> are identified as queries which only contain numbers
                     </li>
                     <li>
@@ -163,7 +173,7 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                         <code class="inline-code">ADEGHKLMRTUVWXYZ</code>
                     </li>
                     <li>
-                        <strong>SMILES/Mol. Formula</strong> some queries, like <code class="inline-code">C</code>, are ambiguous and can be either SMILES or Molecular Formulas. In these cases, the query first tries to match against Molecular Formula, and then SMILES.
+                        <strong>SMILES/Mol. Formula</strong> some queries, like <code class="inline-code">C</code>, are ambiguous and can be either SMILES or Molecular Formulas. In these cases, the query first tries to match against SMILES, and then Molecular Formula.
                     </li>
                 </ul>
 
@@ -188,13 +198,13 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
             <section class="doc-section">
                 <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                    Given the setting for first block matches is enabled (it is by default), InChIKey queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
+                    Given the setting for first block matches is enabled (default), "InChIKey" and "Converted SMILES" queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
                 </p>
                 <p>
                     For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
                 </p>
                 <p>
-                    Disable first block matches through the API by adding the <code class="inline-code">first_block_matches=false</code> parameter.
+                    To disable first block matching, use the settings cog in the web UI or add <code class="inline-code">first_block_matches=false</code> to the API request.
                 </p>
                 <p>
                     All other query types can only be <code class="inline-code">Exact</code> matches.
@@ -210,6 +220,19 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                 <p>
                 For each query, the top hit is determined by ranking the hits on a weighted relevance score:<br>
                 <code class="inline-code">(0.7 * literature_count) + (0.3 * patent_count)</code>.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                By default, CTS-Lite will attempt to convert <strong>failed</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>. It will then retry the lookup against the database using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Converted SMILES</code>.
+                </p>
+                <p>
+                Because SMILES are non-canonical, the same compound can have many SMILES representations, but PubChem only stores one of them. Converting to InChIKey ensures the lookup is format-independent.
+                </p>
+                <p>
+                    Disable RDKit conversion by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">rdkit_conversion=false</code> parameter to the API request.
                 </p>
             </section>
 

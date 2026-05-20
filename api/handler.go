@@ -18,6 +18,12 @@ import (
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
 var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
 
+var CSVHeader = []string{
+	"query", "query_type", "converted_query", "found_match", "match_level", "error_message",
+	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
+	"molecular_formula", "exact_mass", "literature_count", "patent_count",
+}
+
 func isAllDigits(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] < '0' || s[i] > '9' {
@@ -75,12 +81,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 	defer writer.Flush()
 
 	// Write CSV header
-	header := []string{
-		"query", "query_type", "found_match", "match_level", "error_message",
-		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-		"molecular_formula", "exact_mass", "literature_count", "patent_count",
-	}
-	if err := writer.Write(header); err != nil {
+	if err := writer.Write(CSVHeader); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 
@@ -91,6 +92,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 			row := []string{
 				result.Query,
 				result.QueryType,
+				result.ConvertedQuery,
 				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
@@ -105,6 +107,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				row := []string{
 					result.Query,
 					result.QueryType,
+					result.ConvertedQuery,
 					strconv.FormatBool(result.MatchFound),
 					result.MatchLevel,
 					result.ErrMsg,
@@ -164,6 +167,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Check for top-hit parameter
 	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
 	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
+	var allowRdkitConversion bool = r.URL.Query().Get("rdkit_conversion") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	queries := strings.Fields(rawQuery)
@@ -206,13 +210,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchInchiKey(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "smiles":
-			matchSmiles(index, q, result, topHitOnly)
+			matchSmiles(index, q, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 
 		case "formula":
 			matchFormula(index, q, result, topHitOnly)
 
 		case "smiles_or_formula":
-			matchSmilesOrFormula(index, q, result, topHitOnly)
+			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 
 		case "bad_inchi":
 			result.MatchFound = false
