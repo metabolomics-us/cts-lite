@@ -238,6 +238,7 @@ button:disabled {
   padding: 0.3rem 0.6rem;
   border-radius: 15px;
   border: 1px solid #b3d9ff;
+  color: #333;
 }
 
 .match-status {
