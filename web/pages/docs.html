@@ -216,6 +216,16 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                 </p>
             </section>
 
+            <section class="doc-section">
+                <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                By default, CTS-Lite will attempt to convert <strong>unmatched</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>, and then retry the lookup against the database, using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Translated SMILES</code>.
+                </p>
+                <p>
+                    This can be disabled by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">rdkit_conversion=false</code> parameter to the API request.
+                </p>
+            </section>
+
             <div id="copied-toast" class="copied-toast" role="status"></div>
         </main>
     </div>
