@@ -23,7 +23,7 @@ type Compound struct {
 type SingleResult struct {
 	Query               string      `json:"query"`
 	QueryType           string      `json:"query_type"`
-	TranslatedQuery     string      `json:"translated_query,omitempty"`
+	ConvertedQuery      string      `json:"converted_query,omitempty"`
 	MatchFound          bool        `json:"found_match"`
 	MatchLevel          string      `json:"match_level"`
 	Matches             []*Compound `json:"matches"`

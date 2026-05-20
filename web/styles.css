@@ -319,7 +319,7 @@ button:disabled {
   transform: rotate(180deg);
 }
 
-.query-type-translation {
+.query-type-conversion {
   padding: 0.25rem 0.6rem 0.35rem;
   border-top: 1px solid #b3d9ff;
   color: #333;

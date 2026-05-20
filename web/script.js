@@ -39,14 +39,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
-    let csv = "query,query_type,translated_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
+    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
     allData.forEach(result => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
           csv += [
             csvField(result.query),
             csvField(result.query_type),
-            csvField(result.translated_query),
+            csvField(result.converted_query),
             csvField(result.found_match),
             csvField(result.match_level),
             csvField(result.error_message),
@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       } else {
         csv += [
-          csvField(result.query), csvField(result.query_type), csvField(result.translated_query), csvField(result.found_match),
+          csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
           csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
         ].join(",") + "\n";
@@ -275,11 +275,11 @@ function displayResults(data, outputElement, offset = 0) {
         </div>`
       : "";
 
-    const isTranslated = result.query_type === "translated_smiles" && result.translated_query;
+    const isConverted = result.query_type === "converted_smiles" && result.converted_query;
     const transId = `trans-${offset + index}`;
 
-    const queryTypeBubble = isTranslated
-      ? `<div class="query-type-expandable-wrapper" title="Translated with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true">${CHEVRON_SVG}</span></button><div id="${transId}" class="query-type-translation" hidden>to InChIKey:<br>${escapeHtml(result.translated_query)}</div></div>`
+    const queryTypeBubble = isConverted
+      ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true">${CHEVRON_SVG}</span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
       : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
 
     const resultDiv = document.createElement("div");
@@ -355,7 +355,7 @@ function formatQueryType(queryType) {
     case "pubchem_id":        return "PubChem CID";
     case "inchikey":          return "InChIKey";
     case "smiles":            return "SMILES";
-    case "translated_smiles": return "Translated SMILES";
+    case "converted_smiles":  return "Converted SMILES";
     case "inchi":             return "InChI";
     case "formula":           return "Molecular Formula";
     case "smiles_or_formula": return "SMILES/Mol. Formula";

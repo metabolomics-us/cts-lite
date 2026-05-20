@@ -117,8 +117,8 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 	if inchikey != "" {
 		matchInchiKey(index, inchikey, result, allowFirstBlockMatches, topHitOnly)
 		if result.MatchFound {
-			result.QueryType = "translated_smiles"
-			result.TranslatedQuery = inchikey
+			result.QueryType = "converted_smiles"
+			result.ConvertedQuery = inchikey
 			return
 		}
 	}
@@ -148,7 +148,7 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
 	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
 	if result.MatchFound {
-		if result.QueryType != "translated_smiles" {
+		if result.QueryType != "converted_smiles" {
 			result.QueryType = "smiles"
 		}
 		return

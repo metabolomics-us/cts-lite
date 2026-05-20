@@ -19,7 +19,7 @@ var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
 var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
 
 var CSVHeader = []string{
-	"query", "query_type", "translated_query", "found_match", "match_level", "error_message",
+	"query", "query_type", "converted_query", "found_match", "match_level", "error_message",
 	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
 	"molecular_formula", "exact_mass", "literature_count", "patent_count",
 }
@@ -92,7 +92,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 			row := []string{
 				result.Query,
 				result.QueryType,
-				result.TranslatedQuery,
+				result.ConvertedQuery,
 				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
@@ -107,7 +107,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				row := []string{
 					result.Query,
 					result.QueryType,
-					result.TranslatedQuery,
+					result.ConvertedQuery,
 					strconv.FormatBool(result.MatchFound),
 					result.MatchLevel,
 					result.ErrMsg,

@@ -700,14 +700,14 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 		if !results[0].MatchFound {
 			t.Fatal("expected match via SMILES InChIKey fallback")
 		}
-		if results[0].QueryType != "translated_smiles" {
-			t.Errorf("expected query_type 'translated_smiles', got %q", results[0].QueryType)
+		if results[0].QueryType != "converted_smiles" {
+			t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
 		}
 		if results[0].MatchLevel != "Exact InChIKey" {
 			t.Errorf("expected match_level 'Exact InChIKey', got %q", results[0].MatchLevel)
 		}
-		if results[0].TranslatedQuery != "MYFAKEINCHIKEY-ISRIGHTHER-E" {
-			t.Errorf("expected translated_query 'MYFAKEINCHIKEY-ISRIGHTHER-E', got %q", results[0].TranslatedQuery)
+		if results[0].ConvertedQuery != "MYFAKEINCHIKEY-ISRIGHTHER-E" {
+			t.Errorf("expected converted_query 'MYFAKEINCHIKEY-ISRIGHTHER-E', got %q", results[0].ConvertedQuery)
 		}
 		assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
 	})
@@ -725,14 +725,14 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 		if !results[0].MatchFound {
 			t.Fatal("expected first block match via SMILES fallback")
 		}
-		if results[0].QueryType != "translated_smiles" {
-			t.Errorf("expected query_type 'translated_smiles', got %q", results[0].QueryType)
+		if results[0].QueryType != "converted_smiles" {
+			t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
 		}
 		if results[0].MatchLevel != "First Block" {
 			t.Errorf("expected match_level 'First Block', got %q", results[0].MatchLevel)
 		}
-		if results[0].TranslatedQuery != "MYFAKEINCHIKEY-NOTNOTNOTN-O" {
-			t.Errorf("expected translated_query 'MYFAKEINCHIKEY-NOTNOTNOTN-O', got %q", results[0].TranslatedQuery)
+		if results[0].ConvertedQuery != "MYFAKEINCHIKEY-NOTNOTNOTN-O" {
+			t.Errorf("expected converted_query 'MYFAKEINCHIKEY-NOTNOTNOTN-O', got %q", results[0].ConvertedQuery)
 		}
 		assertCompound(t, fakeMethaneCompound(), results[0].Matches[0])
 	})
@@ -768,11 +768,11 @@ func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
 	if !results[0].MatchFound {
 		t.Fatal("expected match via smiles_or_formula InChIKey fallback")
 	}
-	if results[0].QueryType != "translated_smiles" {
-		t.Errorf("expected query_type 'translated_smiles', got %q", results[0].QueryType)
+	if results[0].QueryType != "converted_smiles" {
+		t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
 	}
-	if results[0].TranslatedQuery != "MYFAKEINCHIKEY-ISRIGHTHER-E" {
-		t.Errorf("expected translated_query 'MYFAKEINCHIKEY-ISRIGHTHER-E', got %q", results[0].TranslatedQuery)
+	if results[0].ConvertedQuery != "MYFAKEINCHIKEY-ISRIGHTHER-E" {
+		t.Errorf("expected converted_query 'MYFAKEINCHIKEY-ISRIGHTHER-E', got %q", results[0].ConvertedQuery)
 	}
 	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
 }

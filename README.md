@@ -14,7 +14,7 @@ A lightweight Chemical Translation Service using a curated subset of <strong>10.
 
 ### Credits
 - **PubChem** — compound data sourced from the [PubChem database](https://pubchem.ncbi.nlm.nih.gov/)
-- **RDKit** — library used for SMILES to InChIKey translation. [rdkit.org](https://www.rdkit.org/)
+- **RDKit** — library used for SMILES to InChIKey conversion. [rdkit.org](https://www.rdkit.org/)
 
 <br>
 
