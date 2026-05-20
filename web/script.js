@@ -119,12 +119,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const topHitOnly = document.getElementById("top-hit-only").checked;
     const firstBlockMatches = document.getElementById("first-block-matches").checked;
+    const rdkitConversion = document.getElementById("rdkit-conversion").checked;
     let url = "/match?";
     if (!topHitOnly) {
       url += "&top_hit_only=false";
     }
     if (!firstBlockMatches) {
       url += "&first_block_matches=false";
+    }
+    if (!rdkitConversion) {
+      url += "&rdkit_conversion=false";
     }
 
     if (activeController) {
@@ -168,8 +172,9 @@ document.addEventListener("DOMContentLoaded", () => {
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
       const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
+      const rdkitText = rdkitConversion ? "RDKit Conversion" : "No RDKit Conversion";
       appliedSettingsLabel.title = "applied settings";
-      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}`;
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}, ${rdkitText}`;
       appliedSettingsLabel.style.display = "block";
 
     } catch (err) {
