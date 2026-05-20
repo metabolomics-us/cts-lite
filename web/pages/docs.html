@@ -84,14 +84,21 @@
                 Disable top hit only:
                 </p>
                 <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?top_hit_only=false"</strong></code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?top_hit_only=false</strong>"</code>
                 </div>
 
                 <p style="margin-bottom: -10px">
                 Disable first block matches:
                 </p>
                 <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?first_block_matches=false"</strong></code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?first_block_matches=false</strong>"</code>
+                </div>
+
+                <p style="margin-bottom: -10px">
+                Disable RDKit conversion:
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?rdkit_conversion=false</strong>"</code>
                 </div>
 
                 <h4 class="doc-subheading">Response Formats</h4>
@@ -219,10 +226,13 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
             <section class="doc-section">
                 <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                By default, CTS-Lite will attempt to convert <strong>unmatched</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>, and then retry the lookup against the database using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Converted SMILES</code>.
+                By default, CTS-Lite will attempt to convert <strong>failed</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>. It will then retry the lookup against the database using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Converted SMILES</code>.
                 </p>
                 <p>
-                    This can be disabled by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">rdkit_conversion=false</code> parameter to the API request.
+                Because SMILES are non-canonical, the same compound can have many SMILES representations, but PubChem only stores one of them. Converting to InChIKey ensures the lookup is format-independent.
+                </p>
+                <p>
+                    Disable RDKit conversion by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">rdkit_conversion=false</code> parameter to the API request.
                 </p>
             </section>
 
