@@ -35,7 +35,9 @@ A lightweight Chemical Translation Service using a curated subset of <strong>10.
     - `cd dataset && go run cmd/build-db/build-db.go cts-lite.csv compounds.db`
 
 ### Dataset Creation
-- Simply run the `create_csv_dataset.sh` script found under `cmd/`
+- To create the csv dataset, simply run the `create_csv_dataset.sh` script found under `cmd/`
 - To update the dataset used by production, make sure you elect to push to S3 at the end of the script
     - Then, the next time the app is deployed via GitHub Actions (push/merge to main), the latest dataset will be downloaded from S3 and the database will be rebuilt
+- To create a local instance of compounds.db (SQLite database used by the app), run the build-db module like so:
+    - `cd dataset && go run cmd/build-db/build-db.go cts-lite.csv compounds.db`
 
