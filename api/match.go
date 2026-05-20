@@ -86,7 +86,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 	}
 }
 
-func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
+func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool, allowRdkitConversion bool) {
 	compounds, err := index.QueryBySmiles(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by SMILES: %v", err)
@@ -100,6 +100,13 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.Matches = compounds
 		return
 	}
+
+	if !allowRdkitConversion {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+
 	// Check for overly long SMILES, to avoid passing them to RDKit. 4096 is invalid anyway
 	if len(query) > 4096 {
 		result.MatchFound = false
@@ -145,8 +152,8 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	result.Matches = compounds
 }
 
-func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
-	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
+func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool, allowRdkitConversion bool) {
+	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 	if result.MatchFound {
 		if result.QueryType != "converted_smiles" {
 			result.QueryType = "smiles"

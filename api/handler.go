@@ -167,6 +167,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Check for top-hit parameter
 	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
 	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
+	var allowRdkitConversion bool = r.URL.Query().Get("rdkit_conversion") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	queries := strings.Fields(rawQuery)
@@ -209,13 +210,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchInchiKey(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "smiles":
-			matchSmiles(index, q, result, allowFirstBlockMatches, topHitOnly)
+			matchSmiles(index, q, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 
 		case "formula":
 			matchFormula(index, q, result, topHitOnly)
 
 		case "smiles_or_formula":
-			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly)
+			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 
 		case "bad_inchi":
 			result.MatchFound = false

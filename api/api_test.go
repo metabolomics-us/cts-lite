@@ -753,6 +753,27 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 	})
 }
 
+func TestRdkitConversionDisabled(t *testing.T) {
+	mockSmilesConverter(t, func(string) (string, error) {
+		return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
+	})
+	req := httptest.NewRequest(http.MethodPost, "/match?rdkit_conversion=false", strings.NewReader(`{"queries":"[C@@H](O)(N)C"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+	results := parseMatchResults(t, w.Result())
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].MatchFound {
+		t.Error("expected no match when rdkit_conversion=false")
+	}
+	if results[0].ErrMsg != "No compound found" {
+		t.Errorf("expected 'No compound found', got %q", results[0].ErrMsg)
+	}
+}
+
 func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
 	// "Cc1ccccc1" starts with C (not in formula-guarantee set) → smiles_or_formula,
 	// misses both formula and SMILES lookups, then falls through to RDKit.
