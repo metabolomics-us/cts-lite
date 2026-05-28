@@ -195,7 +195,7 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
             <section class="doc-section">
                 <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                    By default, CTS-Lite will return only the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
+                    By default, CTS-Lite will return only the top hit per query. This setting can be toggled in the settings panel, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
                 </p>
 
                 <p>
@@ -207,13 +207,13 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
             <section class="doc-section">
                 <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                    Given the setting for first block matches is enabled (it is by default), InChIKey queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
+                    First block matches are enabled by default. This means InChIKey queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
                 </p>
                 <p>
                     For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
                 </p>
                 <p>
-                    Disable first block matches through the API by adding the <code class="inline-code">first_block_matches=false</code> parameter.
+                    Disable first block matches through the settings panel, or via the API by adding the <code class="inline-code">first_block_matches=false</code> parameter.
                 </p>
                 <p>
                     All other query types can only be <code class="inline-code">Exact</code> matches.
@@ -228,18 +228,18 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                     <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>.
                 </p>
                 <p>
-                    ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API parameter found under <a href="#rest-api">REST API</a>.
+                ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API with the <code class="inline-code">classyfire=true</code> parameter.
                 </p>
                 <p>
                     When enabled, each matched compound receives the following ClassyFire fields:
                 </p>
                 <ul class="doc-list">
-                    <li><strong>Kingdom</strong> — top-level chemical domain (e.g., <code class="inline-code">Organic compounds</code>)</li>
-                    <li><strong>Superclass</strong> — e.g., <code class="inline-code">Organoheterocyclic compounds</code></li>
-                    <li><strong>Class</strong> — e.g., <code class="inline-code">Imidazopyrimidines</code></li>
-                    <li><strong>Subclass</strong> — e.g., <code class="inline-code">Purines and purine derivatives</code></li>
-                    <li><strong>Direct Parent</strong> — most specific class (e.g., <code class="inline-code">Xanthines</code>)</li>
-                    <li><strong>Description</strong> — text description of the compound's chemical class</li>
+                    <li><strong>Kingdom</strong>&emsp;(organic vs inorganic, e.g., <code class="inline-code">Organic compounds</code>)</li>
+                    <li><strong>Superclass</strong>&emsp;(general structural identifiers, e.g., <code class="inline-code">Organometallic compounds)</code></li>
+                    <li><strong>Class</strong>&emsp;(specific structural features, e.g., <code class="inline-code">Imidazopyrimidines)</code></li>
+                    <li><strong>Subclass</strong>&emsp;(even more specific features, e.g., <code class="inline-code">Purines and purine derivatives)</code></li>
+                    <li><strong>Direct Parent</strong>&emsp;(most specific class (e.g., <code class="inline-code">Xanthines</code>)</li>
+                    <li><strong>Description</strong>&emsp;(text description of the compound's chemical class)</li>
                 </ul>
                 <p>
                     If a compound is not found by ClassyFire, or if the ClassyFire service is unavailable, the classification fields are left empty.
