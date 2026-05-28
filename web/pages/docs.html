@@ -212,17 +212,14 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                 <h3 class="doc-heading" id="classyfire">Chemical Classification (ClassyFire)<button class="heading-anchor" onclick="copyHeadingLink(event,'classyfire')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     CTS-Lite can optionally enrich matched compounds with chemical taxonomy classifications from
-                    <a href="https://cfb.fiehnlab.ucdavis.edu/" target="_blank">ClassyFire</a>, developed by the
-                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a> and hosted by the
-                    UC Davis Fiehn Lab. ClassyFire provides automated, comprehensive chemical classification based on
-                    molecular structure.
+                    <a href="https://cfb.metabolomics.us/" target="_blank">ClassyFire</a>, developed by the
+                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>.
                 </p>
                 <p>
-                    ClassyFire enrichment is <strong>disabled by default</strong> due to the additional network latency
-                    required per matched compound. Enable it from the settings panel (cog icon), or via the API parameter above.
+                    ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API parameter found under <a href="#rest-api">REST API</a>.
                 </p>
                 <p>
-                    When enabled, each matched compound is enriched with the following ClassyFire fields:
+                    When enabled, each matched compound receives the following ClassyFire fields:
                 </p>
                 <ul class="doc-list">
                     <li><strong>Kingdom</strong> — top-level chemical domain (e.g., <code class="inline-code">Organic compounds</code>)</li>
@@ -233,13 +230,10 @@ will_fail,unidentified,false,,"Invalid query type, could not identify, see docum
                     <li><strong>Description</strong> — text description of the compound's chemical class</li>
                 </ul>
                 <p>
-                    ClassyFire lookups are performed concurrently for all unique matched compounds. If a compound is not
-                    found in ClassyFire's database, or if the ClassyFire service is unavailable, the remaining compound
-                    fields are still returned without classification data.
+                    If a compound is not found by ClassyFire, or if the ClassyFire service is unavailable, the classification fields are left empty.
                 </p>
                 <div class="doc-note">
-                    <strong>Note:</strong> ClassyFire classification adds network latency proportional to the number of
-                    unique matched compounds in your query. For large batches, expect additional processing time.
+                    <strong>Note:</strong> ClassyFire classification adds network latency proportional to the number of unique matched compounds in your query. For large batches, expect additional processing time.
                 </div>
                 <p>
                     When ClassyFire is enabled, the JSON response includes a <code class="inline-code">classyfire</code>
