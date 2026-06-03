@@ -83,9 +83,10 @@ func main() {
 	http.HandleFunc("/status", corsMiddleware(api.Status))
 
 	// Endpoint for matching against database
-	http.HandleFunc("/match", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	matchHandler := corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		api.Match(index, w, r)
-	}))
+	})
+	http.Handle("/match", otelhttp.NewHandler(matchHandler, "match"))
 
 	port := ":8080"
 	if p := os.Getenv("PORT"); p != "" {

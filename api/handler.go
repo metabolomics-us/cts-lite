@@ -243,7 +243,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		results = append(results, result)
 	}
 
+	duration := time.Since(timeStart)
 	log.Printf("%d matches found from %d queries in %f seconds\n", matchCount, len(queries), time.Since(timeStart).Seconds())
+	recordMatchTelemetry(r, results, matchCount, duration, matchOptions{
+		topHitOnly:             topHitOnly,
+		allowFirstBlockMatches: allowFirstBlockMatches,
+		allowRdkitConversion:   allowRdkitConversion,
+	})
 
 	// Check for header text/csv and respond accordingly
 	if (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv") {
