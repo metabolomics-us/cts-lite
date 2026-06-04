@@ -4,6 +4,7 @@ import (
 	"context"
 	"ctslite/api"
 	"ctslite/model"
+	"ctslite/telemetry"
 	"fmt"
 	"log"
 	"net/http"
@@ -38,7 +39,7 @@ func serveDoc(w http.ResponseWriter, r *http.Request) {
 func main() {
 	// Initialize OpenTelemetry (traces, metrics, logs)
 	// Observability must never block startup, so on error we log and continue
-	otelShutdown, err := setupTelemetry(context.Background())
+	otelShutdown, err := telemetry.Setup(context.Background())
 	if err != nil {
 		log.Printf("OpenTelemetry setup failed, continuing without telemetry: %v", err)
 	}

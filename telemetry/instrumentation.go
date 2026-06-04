@@ -1,4 +1,4 @@
-package api
+package telemetry
 
 import (
 	"ctslite/model"
@@ -13,17 +13,17 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-const scopeName = "ctslite/api"
+const scopeName = "ctslite/telemetry"
 
 // maxLoggedMisses caps how many missed entries are attached to each /match
 // summary log, to bound log volume regardless of request size.
 const maxLoggedMisses = 5
 
-// matchOptions carries the per-request /match flags into telemetry.
-type matchOptions struct {
-	topHitOnly             bool
-	allowFirstBlockMatches bool
-	allowRdkitConversion   bool
+// MatchOptions carries the per-request /match flags into telemetry.
+type MatchOptions struct {
+	TopHitOnly             bool
+	AllowFirstBlockMatches bool
+	AllowRdkitConversion   bool
 }
 
 var (
@@ -39,8 +39,8 @@ var (
 
 // initInstruments lazily creates the metric instruments and logger from the
 // global providers. It runs on first use rather than at package init because
-// the global OTel providers are only registered once main() calls
-// setupTelemetry; creating instruments earlier would bind them to no-op providers.
+// the global OTel providers are only registered once main() calls Setup;
+// creating instruments earlier would bind them to no-op providers.
 func initInstruments() {
 	instrumentsOnce.Do(func() {
 		meter := otel.Meter(scopeName)
@@ -62,10 +62,10 @@ func initInstruments() {
 	})
 }
 
-// recordMatchTelemetry records /match metrics and emits a single OTel summary
+// RecordMatch records /match metrics and emits a single OTel summary
 // log record (with at most maxLoggedMisses missed entries). It is purely
 // additive to the existing stdout logging and never touches the response.
-func recordMatchTelemetry(r *http.Request, results []*model.SingleResult, matchCount int, duration time.Duration, opts matchOptions) {
+func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int, duration time.Duration, opts MatchOptions) {
 	initInstruments()
 
 	ctx := r.Context()
@@ -128,9 +128,9 @@ func recordMatchTelemetry(r *http.Request, results []*model.SingleResult, matchC
 		log.Float64("hit_percent", hitPercent),
 		log.Float64("duration_ms", durationMs),
 		log.String("client_type", clientType),
-		log.Bool("top_hit_only", opts.topHitOnly),
-		log.Bool("first_block_matches", opts.allowFirstBlockMatches),
-		log.Bool("rdkit_conversion", opts.allowRdkitConversion),
+		log.Bool("top_hit_only", opts.TopHitOnly),
+		log.Bool("first_block_matches", opts.AllowFirstBlockMatches),
+		log.Bool("rdkit_conversion", opts.AllowRdkitConversion),
 		log.Slice("misses", misses...),
 	)
 	if missCount > maxLoggedMisses {

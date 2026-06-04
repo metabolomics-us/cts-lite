@@ -1,4 +1,4 @@
-package main
+package telemetry
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// setupTelemetry wires up the global OpenTelemetry trace, metric, and log
+// Setup wires up the global OpenTelemetry trace, metric, and log
 // providers using OTLP/HTTP exporters. Endpoint, headers, service name, and
 // resource attributes are all read from the standard OTEL_* environment
 // variables by the exporters and the SDK, so there is nothing to configure in
@@ -25,7 +25,7 @@ import (
 // It returns a shutdown function that flushes and closes every provider. The
 // caller should always call it (errors are joined), even when setup partially
 // failed: providers that were created are still registered globally.
-func setupTelemetry(ctx context.Context) (shutdown func(context.Context) error, err error) {
+func Setup(ctx context.Context) (shutdown func(context.Context) error, err error) {
 	var shutdownFuncs []func(context.Context) error
 
 	shutdown = func(ctx context.Context) error {
