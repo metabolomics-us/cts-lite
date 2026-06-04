@@ -1,6 +1,6 @@
 # OpenTelemetry to Grafana Cloud
 
-The task definition for CTS-Lite and the collector sidecar starts with revision 6. The task definition is simply named `cts-lite`. See `task_definition.json`.
+The task definition for CTS-Lite and the collector sidecar starts with revision 7. The task definition is simply named `cts-lite`. See `task_definition.json`.
 
 Traces, metrics, and logs are emitted over OTLP/HTTP to an OpenTelemetry Collector 
 running as a **non-essential sidecar** in the same ECS task on AWS.
