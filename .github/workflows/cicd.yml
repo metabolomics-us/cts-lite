@@ -8,7 +8,6 @@ on:
 
 jobs:
   test:
-    if: "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
 
     steps:
@@ -27,9 +26,38 @@ jobs:
       run: |
         cd playwright && npm ci && npm test
 
+  otel_compare_configs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Ensure config.yaml and config.json match
+      run: |
+        set -euo pipefail
+        yq -p=yaml -o=json -P 'sort_keys(..)' telemetry/collector/config.yaml > /tmp/from-yaml.json
+        yq -p=json -o=json -P 'sort_keys(..)' telemetry/collector/config.json > /tmp/from-json.json
+        diff /tmp/from-yaml.json /tmp/from-json.json
+        echo "✓ config.yaml and config.json match"
+
+  otel_validate_config:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Validate collector config
+      run: |
+        docker run --rm \
+          -e OTELCOL_CONFIG="$(cat telemetry/collector/config.yaml)" \
+          -e GRAFANA_CLOUD_OTLP_ENDPOINT=http://dummy \
+          -e GRAFANA_CLOUD_OTLP_AUTH_HEADER=dummy \
+          otel/opentelemetry-collector-contrib:0.153.0 \
+          validate --config=env:OTELCOL_CONFIG \
+          && echo "✓ collector config valid"
+
   build_and_push_image:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'nobuild')"
-    needs: test
+    needs: [test, otel_compare_configs, otel_validate_config]
     runs-on: ubuntu-latest
 
     steps:
