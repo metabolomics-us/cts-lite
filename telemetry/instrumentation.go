@@ -27,14 +27,15 @@ type MatchOptions struct {
 }
 
 var (
-	instrumentsOnce sync.Once
-	matchRequests   metric.Int64Counter
-	matchQueries    metric.Int64Counter
-	matchMatches    metric.Int64Counter
-	matchQueryTypes metric.Int64Counter
-	matchHitPercent metric.Float64Histogram
-	matchDuration   metric.Float64Histogram
-	matchLogger     log.Logger
+	instrumentsOnce    sync.Once
+	matchRequests      metric.Int64Counter
+	matchQueries       metric.Int64Counter
+	matchMatches       metric.Int64Counter
+	matchQueryTypes    metric.Int64Counter
+	matchHitPercent    metric.Float64Histogram
+	matchDuration      metric.Float64Histogram
+	matchQueriesPerReq metric.Int64Histogram
+	matchLogger        log.Logger
 )
 
 // initInstruments lazily creates the metric instruments and logger from the
@@ -58,6 +59,9 @@ func initInstruments() {
 		matchDuration, _ = meter.Float64Histogram("match_duration_ms",
 			metric.WithDescription("Duration of /match query matching"),
 			metric.WithUnit("ms"))
+		matchQueriesPerReq, _ = meter.Int64Histogram("match_queries_per_request",
+			metric.WithDescription("Distribution of the number of queries per /match request"),
+			metric.WithExplicitBucketBoundaries(1, 5, 50, 250, 1000, 5000, 25000, 100000))
 		matchLogger = logglobal.GetLoggerProvider().Logger(scopeName)
 	})
 }
@@ -91,6 +95,7 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 	matchMatches.Add(ctx, int64(matchCount), clientSet)
 	matchHitPercent.Record(ctx, hitPercent, clientSet)
 	matchDuration.Record(ctx, durationMs, clientSet)
+	matchQueriesPerReq.Record(ctx, int64(queryCount), clientSet)
 
 	// Collect the query type distribution and the first few misses in one pass.
 	// The query type counter carries a "matched" attribute so the missed-query
