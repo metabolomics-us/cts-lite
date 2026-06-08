@@ -2,6 +2,7 @@ package api
 
 import (
 	"ctslite/model"
+	"ctslite/telemetry"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -243,7 +244,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		results = append(results, result)
 	}
 
+	duration := time.Since(timeStart)
 	log.Printf("%d matches found from %d queries in %f seconds\n", matchCount, len(queries), time.Since(timeStart).Seconds())
+	telemetry.RecordMatch(r, results, matchCount, duration, telemetry.MatchOptions{
+		TopHitOnly:             topHitOnly,
+		AllowFirstBlockMatches: allowFirstBlockMatches,
+		AllowRdkitConversion:   allowRdkitConversion,
+	})
 
 	// Check for header text/csv and respond accordingly
 	if (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv") {
