@@ -413,6 +413,19 @@ func TestQueryLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestClassyFireQueryLimitExceeded(t *testing.T) {
+	// ClassyFire enabled limits queries to 100 entries/identifiers
+	queries := strings.TrimRight(strings.Repeat("O ", 101), " ")
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"`+queries+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for >100 entries with ClassyFire enabled, got %d", w.Result().StatusCode)
+	}
+}
+
 func TestEmptyQuery(t *testing.T) {
 	res := doMatchRequest(t, `{"queries":""}`, nil, false)
 
@@ -631,11 +644,10 @@ func TestMatchInchIKeyFirstBlockErrorPath(t *testing.T) {
 }
 
 func TestClassyFireDisabledByDefault(t *testing.T) {
-	// classyFireFetcher must never be called when classyfire param is absent.
 	called := false
-	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
 		called = true
-		return fakeClassyFireInfo(), nil
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
 	})
 
 	res := doMatchRequest(t, `{"queries":"O"}`, nil, false)
@@ -647,8 +659,8 @@ func TestClassyFireDisabledByDefault(t *testing.T) {
 }
 
 func TestClassyFireEnabledAttachesClassification(t *testing.T) {
-	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
-		return fakeClassyFireInfo(), nil
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"O"}`))
@@ -671,9 +683,9 @@ func TestClassyFireEnabledAttachesClassification(t *testing.T) {
 
 func TestClassyFireNoMatchDoesNotCallFetcher(t *testing.T) {
 	called := false
-	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
 		called = true
-		return fakeClassyFireInfo(), nil
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"InChI=1S/NOTHING"}`))
@@ -689,8 +701,8 @@ func TestClassyFireNoMatchDoesNotCallFetcher(t *testing.T) {
 
 func TestClassyFireFetchErrorDoesNotFailRequest(t *testing.T) {
 	// Even if ClassyFire is unavailable, the match result must still be returned.
-	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
-		return nil, errors.New("simulated network error")
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{mode: cfbRetryLimited, errMsg: "ClassyFire service unreachable"}, errors.New("simulated network error")
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"O"}`))
@@ -706,14 +718,127 @@ func TestClassyFireFetchErrorDoesNotFailRequest(t *testing.T) {
 	if !results[0].MatchFound {
 		t.Error("expected compound match regardless of ClassyFire failure")
 	}
-	if results[0].Matches[0].ClassyFire != nil {
-		t.Error("expected nil ClassyFire after fetch error")
+	// The failure must be surfaced via the Error field, not dropped.
+	cf := results[0].Matches[0].ClassyFire
+	if cf == nil || cf.Error == "" {
+		t.Errorf("expected ClassyFire error surfaced after fetch failure, got %+v", cf)
+	}
+}
+
+func TestClassyFireClassifiesUniqueInChIKeysOnce(t *testing.T) {
+	calls := 0
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		calls++ // non-stream enrichment runs sequentially, so a plain counter is safe
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	queries := strings.TrimRight(strings.Repeat("O ", 10), " ") // 10x water
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"`+queries+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	results := parseMatchResults(t, w.Result())
+	if len(results) != 10 {
+		t.Fatalf("expected 10 results, got %d", len(results))
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 ClassyFire lookup for 10 identical InChIKeys, got %d", calls)
+	}
+	// Every occurrence should still receive the shared classification.
+	for i, r := range results {
+		if len(r.Matches) == 0 || r.Matches[0].ClassyFire == nil {
+			t.Errorf("result[%d]: expected ClassyFire info attached", i)
+		}
+	}
+}
+
+func TestMatchStreamingClassyFire(t *testing.T) {
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", strings.NewReader(`{"queries":"O"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	if ct := res.Header.Get("Content-Type"); ct != "application/x-ndjson" {
+		t.Errorf("expected NDJSON content type, got %q", ct)
+	}
+
+	type streamMsg struct {
+		Type     string                `json:"type"`
+		Results  []*model.SingleResult `json:"results"`
+		Unique   int                   `json:"unique"`
+		InChIKey string                `json:"inchikey"`
+		Info     *model.ClassyFireInfo `json:"info"`
+	}
+
+	body, _ := io.ReadAll(res.Body)
+	var msgs []streamMsg
+	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+		if line == "" {
+			continue
+		}
+		var m streamMsg
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		msgs = append(msgs, m)
+	}
+
+	if len(msgs) < 3 {
+		t.Fatalf("expected at least matches+classyfire+done lines, got %d", len(msgs))
+	}
+	if msgs[0].Type != "matches" {
+		t.Errorf("first line: want type=matches, got %q", msgs[0].Type)
+	}
+	if msgs[0].Unique != 1 {
+		t.Errorf("matches line: want unique=1, got %d", msgs[0].Unique)
+	}
+	if len(msgs[0].Results) != 1 || len(msgs[0].Results[0].Matches) != 1 {
+		t.Fatalf("matches line should carry the single match")
+	}
+	if msgs[len(msgs)-1].Type != "done" {
+		t.Errorf("last line: want type=done, got %q", msgs[len(msgs)-1].Type)
+	}
+
+	var sawClassyfire bool
+	for _, m := range msgs {
+		if m.Type == "classyfire" {
+			sawClassyfire = true
+			if m.Info == nil || m.Info.Kingdom != "Organic compounds" {
+				t.Errorf("classyfire line missing expected info: %+v", m.Info)
+			}
+		}
+	}
+	if !sawClassyfire {
+		t.Error("expected at least one classyfire line in the stream")
+	}
+}
+
+func TestMatchStreamingRespectsClassyFireLimit(t *testing.T) {
+	// The 100-entry cap is validated before streaming begins, so it still
+	// returns a 400 (not a 200 stream) even with stream=true.
+	queries := strings.TrimRight(strings.Repeat("O ", 101), " ")
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", strings.NewReader(`{"queries":"`+queries+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for >100 entries even when streaming, got %d", w.Result().StatusCode)
 	}
 }
 
 func TestClassyFireCSVHeader(t *testing.T) {
-	mockClassyFire(t, func(inchikey string) (*model.ClassyFireInfo, error) {
-		return fakeClassyFireInfo(), nil
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"O"}`))
@@ -738,10 +863,11 @@ func TestClassyFireCSVHeader(t *testing.T) {
 	wantSuffix := []string{
 		"classyfire_kingdom", "classyfire_superclass", "classyfire_class",
 		"classyfire_subclass", "classyfire_direct_parent", "classyfire_description",
+		"classyfire_error",
 	}
 	header := records[0]
-	if len(header) != 20 {
-		t.Fatalf("expected 20 CSV columns with classyfire enabled, got %d", len(header))
+	if len(header) != 21 {
+		t.Fatalf("expected 21 CSV columns with classyfire enabled, got %d", len(header))
 	}
 	for i, want := range wantSuffix {
 		got := header[14+i]
@@ -773,7 +899,7 @@ func TestClassyFireCSVNoExtraColumnsWhenDisabled(t *testing.T) {
 	}
 }
 
-// TestMatchErrorPaths verifies that all matchXxx functions return an internal
+// TestMatchErrorPaths verifies that all match functions return an internal
 // error message (rather than panicking) when the underlying database is closed.
 // Each sub-test uses a fresh index so closing it does not affect other tests.
 func TestMatchErrorPaths(t *testing.T) {
@@ -783,13 +909,13 @@ func TestMatchErrorPaths(t *testing.T) {
 	}{
 		{"inchi", `{"queries":"InChI=1S/H2O/h1H2"}`},
 		{"inchikey_exact", `{"queries":"MYFAKEINCHIKEY-ISRIGHTHER-E"}`},
-		// Full InChIKey miss → falls through to first-block lookup
+		// Full InChIKey miss -> falls through to first-block lookup
 		{"inchikey_firstblock", `{"queries":"MYFAKEINCHIKEY-NOTNOTNOTN-O"}`},
-		// C=O contains '=' so smilesGuaranteePattern matches → type smiles → matchSmiles
+		// C=O contains '=' so smilesGuaranteePattern matches -> type smiles -> matchSmiles
 		{"smiles_direct", `{"queries":"C=O"}`},
 		{"formula", `{"queries":"H2O"}`},
 		{"smiles_or_formula", `{"queries":"CH4"}`},
-		// Numeric query → type pubchem_id → matchPubChemID
+		// Numeric query -> type pubchem_id -> matchPubChemID
 		{"pubchem_id", `{"queries":"1"}`},
 	}
 
