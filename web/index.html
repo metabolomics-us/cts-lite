@@ -63,7 +63,7 @@
                                 </label>
                             </div>
                             <div class="settings-row" style="margin-top: 0.75rem;">
-                                <span>ClassyFire Classes <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/info-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>ClassyFire <img src="assets/beta-icon.svg" alt="Beta feature" width="42" height="19" style="vertical-align:middle;margin:0.25rem;opacity:0.7;"> <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/info-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="ClassyFire chemical classes">
                                     <input type="checkbox" id="classyfire-enabled">
                                     <span class="toggle-track"></span>
@@ -83,6 +83,12 @@
                 </div>
             </form>
             <div id="output-container">
+                <!-- ClassyFire progress bar and queue  -->
+                <div id="cf-progress" hidden>
+                    <div class="cf-progress-track"><div class="cf-progress-fill"></div></div>
+                    <span class="cf-progress-label"></span>
+                    <span id="cf-queue" class="cf-queue" hidden></span>
+                </div>
                 <div class="results-header">
                     <label for="output-text" id="output-label">Results</label>
                     <div id="download-buttons">
@@ -92,6 +98,8 @@
                         <button class="download-btn" id="download-json" type="button">
                             JSON <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
                         </button>
+                        <!-- Spinner next to download buttons if ClassyFire is still running -->
+                        <span class="download-spinner" aria-hidden="true"></span>
                     </div>
                 </div>
                 <label id="applied-settings-label" style="display: none; margin: -0.4rem 0 0.5rem 0; font-size: 0.85rem; color: #444444;"></label>
