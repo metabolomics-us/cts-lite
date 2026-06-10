@@ -14,6 +14,8 @@ A lightweight Chemical Translation Service using a curated subset of <strong>10.
 
 ### Attributions
 - Credit to PubChem (NIH), for the data.
+- Credit to the [Wishart Research Group](https://www.wishartlab.com/), for ClassyFire.
+
 
 <br>
 
