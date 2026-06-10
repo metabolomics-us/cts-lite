@@ -259,7 +259,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		results = append(results, result)
 	}
 
-	log.Printf("%d matches found from %d queries in %f seconds\n", matchCount, len(queries), time.Since(timeStart).Seconds())
+	log.Printf("%d matches found from %d queries in %s\n", matchCount, len(queries), time.Since(timeStart).Round(time.Millisecond))
 
 	// Enrich matched compounds with ClassyFire chemical classifications if requested
 	if classyfireEnabled {
