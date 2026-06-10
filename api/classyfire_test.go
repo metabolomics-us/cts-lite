@@ -5,7 +5,9 @@ import (
 	"context"
 	"ctslite/model"
 	"errors"
+	"io"
 	"log"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -571,6 +573,266 @@ func TestStreamClassyFireInterleavesConcurrentBatches(t *testing.T) {
 	}
 	if firstB > lastA {
 		t.Errorf("batch B was starved until A finished (order=%v)", order)
+	}
+}
+
+// --- defaultClassyFireFetcher HTTP-layer tests ---
+// These exercise the real fetcher by swapping cfbHTTPClient for a mock
+
+// mockRoundTripper lets a test serve canned HTTP responses to defaultClassyFireFetcher
+type mockRoundTripper struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (m mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return m.fn(r) }
+
+// withMockTransport swaps cfbHTTPClient for one backed by fn, restoring it after the test
+func withMockTransport(t *testing.T, fn func(*http.Request) (*http.Response, error)) {
+	t.Helper()
+	orig := cfbHTTPClient
+	cfbHTTPClient = &http.Client{Transport: mockRoundTripper{fn}}
+	t.Cleanup(func() { cfbHTTPClient = orig })
+}
+
+// cfbResp builds a canned *http.Response for the mock transport
+func cfbResp(status int, body string, headers map[string]string) *http.Response {
+	h := make(http.Header)
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     h,
+	}
+}
+
+// freshKey returns a unique key and clears any cached entry
+func freshKey(t *testing.T, key string) string {
+	t.Helper()
+	cfbCache.Delete(key)
+	t.Cleanup(func() { cfbCache.Delete(key) })
+	return key
+}
+
+// A full 200 response should map every taxonomy field and get cached
+func TestDefaultFetcherParsesFullTaxonomy(t *testing.T) {
+	key := freshKey(t, "FULLTAXON0001-AAAAAAAAAA-N")
+	body := `{
+		"kingdom":{"name":"Organic compounds"},
+		"superclass":{"name":"Organoheterocyclic compounds"},
+		"class":{"name":"Imidazopyrimidines"},
+		"subclass":{"name":"Purines and purine derivatives"},
+		"direct_parent":{"name":"Xanthines"},
+		"description":"A xanthine alkaloid."
+	}`
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusOK, body, map[string]string{"X-Cache": "HIT"}), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.mode != cfbTerminal {
+		t.Errorf("mode: want cfbTerminal, got %v", res.mode)
+	}
+	if !res.cacheHit {
+		t.Error("expected cacheHit=true from X-Cache: HIT header")
+	}
+	if res.info == nil {
+		t.Fatal("expected info, got nil")
+	}
+	if res.info.Error != "" {
+		t.Errorf("unexpected error field: %q", res.info.Error)
+	}
+	if res.info.Kingdom != "Organic compounds" {
+		t.Errorf("Kingdom: want %q, got %q", "Organic compounds", res.info.Kingdom)
+	}
+	if res.info.DirectParent != "Xanthines" {
+		t.Errorf("DirectParent: want %q, got %q", "Xanthines", res.info.DirectParent)
+	}
+	if res.info.Description != "A xanthine alkaloid." {
+		t.Errorf("Description: want %q, got %q", "A xanthine alkaloid.", res.info.Description)
+	}
+	// A successful fetch must populate the in-process cache
+	if cached, ok := cfbCacheLookup(key); !ok || cached.Kingdom != "Organic compounds" {
+		t.Errorf("expected classification cached, got %+v (ok=%v)", cached, ok)
+	}
+}
+
+// A body with a description but no taxonomy means the compound is unclassified
+func TestDefaultFetcherDescriptionOnlyIsUnclassified(t *testing.T) {
+	key := freshKey(t, "DESCONLY00001-AAAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		// Body parses but carries no taxonomy nodes.
+		return cfbResp(http.StatusOK, `{"description":"only a description"}`, nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.info == nil || res.info.Error != "No classification available" {
+		t.Errorf("expected 'No classification available', got %+v", res.info)
+	}
+}
+
+// An empty JSON object means the compound is unclassified
+func TestDefaultFetcherEmptyBodyIsUnclassified(t *testing.T) {
+	key := freshKey(t, "EMPTYBODY0001-AAAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusOK, `{}`, nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.info == nil || res.info.Error != "No classification available" {
+		t.Errorf("expected 'No classification available' for empty body, got %+v", res.info)
+	}
+}
+
+// A 404 is a terminal "not found" answer and should be cached
+func TestDefaultFetcherNotFound(t *testing.T) {
+	key := freshKey(t, "NOTFOUND00001-AAAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusNotFound, "", nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.mode != cfbTerminal {
+		t.Errorf("404 should be terminal, got mode %v", res.mode)
+	}
+	if res.info == nil || res.info.Error != "Not found in ClassyFire" {
+		t.Errorf("expected 'Not found in ClassyFire', got %+v", res.info)
+	}
+	// 404 is a terminal answer and must be cached so we don't re-query.
+	if _, ok := cfbCacheLookup(key); !ok {
+		t.Error("expected 404 result to be cached")
+	}
+}
+
+// A 429 is flagged as rate-limited and must not be cached
+func TestDefaultFetcherRateLimited(t *testing.T) {
+	key := freshKey(t, "RATELIMIT0001-AAAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusTooManyRequests, "", nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err == nil {
+		t.Error("expected error for HTTP 429")
+	}
+	if res.mode != cfbRetryRateLimited {
+		t.Errorf("mode: want cfbRetryRateLimited, got %v", res.mode)
+	}
+	if !strings.Contains(res.errMsg, "429") {
+		t.Errorf("errMsg should mention 429, got %q", res.errMsg)
+	}
+	// A 429 is transient and must not be cached.
+	if _, ok := cfbCacheLookup(key); ok {
+		t.Error("429 must not be cached")
+	}
+}
+
+// A 5xx is flagged as a transient (retry-limited) failure
+func TestDefaultFetcherServerError(t *testing.T) {
+	key := freshKey(t, "SERVERERR0001-AAAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusServiceUnavailable, "", nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err == nil {
+		t.Error("expected error for HTTP 503")
+	}
+	if res.mode != cfbRetryLimited {
+		t.Errorf("mode: want cfbRetryLimited, got %v", res.mode)
+	}
+	if !strings.Contains(res.errMsg, "503") {
+		t.Errorf("errMsg should mention 503, got %q", res.errMsg)
+	}
+}
+
+// An unparseable 200 body is treated as a transient failure
+func TestDefaultFetcherMalformedJSON(t *testing.T) {
+	key := freshKey(t, "MALFORMED00001-AAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusOK, "this is not json", nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err == nil {
+		t.Error("expected error for malformed JSON")
+	}
+	if res.mode != cfbRetryLimited {
+		t.Errorf("mode: want cfbRetryLimited, got %v", res.mode)
+	}
+	if res.errMsg != "ClassyFire response unreadable" {
+		t.Errorf("errMsg: want %q, got %q", "ClassyFire response unreadable", res.errMsg)
+	}
+}
+
+// A network/transport failure is reported as service-unreachable
+func TestDefaultFetcherTransportError(t *testing.T) {
+	key := freshKey(t, "TRANSPORT00001-AAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err == nil {
+		t.Error("expected error when transport fails")
+	}
+	if res.mode != cfbRetryLimited {
+		t.Errorf("mode: want cfbRetryLimited, got %v", res.mode)
+	}
+	if res.errMsg != "ClassyFire service unreachable" {
+		t.Errorf("errMsg: want %q, got %q", "ClassyFire service unreachable", res.errMsg)
+	}
+}
+
+// A cached key is served from memory without any HTTP call
+func TestDefaultFetcherServesInProcessCacheWithoutHTTP(t *testing.T) {
+	key := "CACHEDKEY00001-AAAAAAAAA-N"
+	cfbCache.Store(key, cfbCacheEntry{info: fakeClassyFireInfo(), expires: time.Now().Add(time.Hour)})
+	t.Cleanup(func() { cfbCache.Delete(key) })
+
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		t.Fatalf("transport must not be called for a cached key")
+		return nil, nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.cacheHit {
+		t.Error("expected cacheHit=true for in-process cache")
+	}
+	if res.info == nil || res.info.Kingdom != "Organic compounds" {
+		t.Errorf("expected cached classification, got %+v", res.info)
+	}
+}
+
+// Guard against a regression where a node with an empty name still counts as a classification
+func TestDefaultFetcherEmptyNamedNodesAreUnclassified(t *testing.T) {
+	key := freshKey(t, "EMPTYNODE00001-AAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusOK, `{"kingdom":{"name":""},"description":""}`, nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.info == nil || res.info.Error != "No classification available" {
+		t.Errorf("expected unclassified for empty node names, got %+v", res.info)
 	}
 }
 

@@ -954,3 +954,126 @@ func TestMatchErrorPaths(t *testing.T) {
 	}
 }
 
+// A normal request (ClassyFire off) must not emit a classyfire field in the JSON
+func TestMatchResponseOmitsClassyFireWhenDisabled(t *testing.T) {
+	res := doMatchRequest(t, `{"queries":"O"}`, nil, false)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	body, _ := io.ReadAll(res.Body)
+	if strings.Contains(string(body), "classyfire") {
+		t.Errorf("expected no classyfire key when disabled, got body: %s", body)
+	}
+}
+
+// A no-match query with ClassyFire enabled has no classyfire object (nothing to classify)
+func TestClassyFireEnabledNonMatchHasNoClassyFireObject(t *testing.T) {
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	res := w.Result()
+	body, _ := io.ReadAll(res.Body)
+	if strings.Contains(string(body), "classyfire") {
+		t.Errorf("expected no classyfire object for a no-match, got body: %s", body)
+	}
+}
+
+// A no-match CSV row with ClassyFire enabled still carries the 7 empty classyfire columns
+func TestClassyFireCSVNoMatchRowHasEmptyColumns(t *testing.T) {
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/csv")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	records, err := csv.NewReader(w.Result().Body).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse CSV: %v", err)
+	}
+	if len(records) < 2 {
+		t.Fatalf("expected header + no-match row, got %d rows", len(records))
+	}
+	row := records[1]
+	if len(row) != 21 {
+		t.Fatalf("expected 21 columns on the no-match row, got %d", len(row))
+	}
+	if row[2] != "false" {
+		t.Errorf("expected found_match=false, got %q", row[2])
+	}
+	for i := 14; i < 21; i++ {
+		if row[i] != "" {
+			t.Errorf("classyfire column %d should be empty on a no-match, got %q", i, row[i])
+		}
+	}
+}
+
+// Streaming caps a query at the top 3 hits: extras carry the cap note and only 3 are classified
+func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	matches := make([]*model.Compound, 5)
+	for i := range matches {
+		matches[i] = &model.Compound{InChIKey: string(rune('A'+i)) + "YYVLZVUVIJVGH-UHFFFAOYSA-N"}
+	}
+	results := []*model.SingleResult{{MatchFound: true, Matches: matches}}
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
+	w := httptest.NewRecorder()
+	streamMatchResults(w, req, results)
+
+	type streamMsg struct {
+		Type    string                `json:"type"`
+		Results []*model.SingleResult `json:"results"`
+		Unique  int                   `json:"unique"`
+	}
+	var msgs []streamMsg
+	var classyfireLines int
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var m streamMsg
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		if m.Type == "classyfire" {
+			classyfireLines++
+		}
+		msgs = append(msgs, m)
+	}
+
+	if msgs[0].Type != "matches" {
+		t.Fatalf("first line: want matches, got %q", msgs[0].Type)
+	}
+	if msgs[0].Unique != cfbMaxMatchesPerQuery {
+		t.Errorf("unique: want %d, got %d", cfbMaxMatchesPerQuery, msgs[0].Unique)
+	}
+	if classyfireLines != cfbMaxMatchesPerQuery {
+		t.Errorf("expected %d classyfire lines, got %d", cfbMaxMatchesPerQuery, classyfireLines)
+	}
+	if msgs[len(msgs)-1].Type != "done" {
+		t.Errorf("last line: want done, got %q", msgs[len(msgs)-1].Type)
+	}
+
+	// Matches beyond the top 3 must carry the capped note in the initial matches line
+	streamed := msgs[0].Results[0].Matches
+	for i := cfbMaxMatchesPerQuery; i < len(streamed); i++ {
+		cf := streamed[i].ClassyFire
+		if cf == nil || cf.Error != cfbCappedNote {
+			t.Errorf("match[%d]: expected capped note, got %+v", i, cf)
+		}
+	}
+}
+
