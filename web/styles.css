@@ -283,6 +283,19 @@ button:disabled {
   color: #644d03;
 }
 
+.doc-note-blue {
+  background-color: #f2f5fa;
+  border-left: 4px solid #384e73;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  border-radius: 4px;
+  color: #384e73;
+}
+
+.doc-note-blue strong {
+  color: #384e73;
+}
+
 .query-section h3 {
   margin: 0 0 0.5rem 0;
   color: #1a3e68;
