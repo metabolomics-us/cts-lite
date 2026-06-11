@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ctslite/model"
+	"ctslite/telemetry"
 )
 
 const cfbBaseURL = "https://cfb.metabolomics.us/entities"
@@ -299,6 +300,10 @@ func streamClassyFire(ctx context.Context, keys []string, onResult func(key stri
 	start := time.Now()
 	br := &cfbBreaker{}
 	var completed, misses, failures int
+	// Deferred so outcomes are still counted when the client cancels mid-request
+	defer func() {
+		telemetry.RecordClassyFireOutcomes(ctx, completed, misses, failures)
+	}()
 	for i, key := range keys {
 		if ctx.Err() != nil {
 			log.Printf("ClassyFire request cancelled by client; stopping after %d of %d compounds", i, len(keys))

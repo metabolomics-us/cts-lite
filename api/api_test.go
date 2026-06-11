@@ -36,7 +36,7 @@ func fakeWaterCompound() *model.Compound {
 		Smiles:           "O",
 		CompoundName:     "Water",
 		MolecularFormula: "H2O",
-		ExactMass: 100,
+		ExactMass:        100,
 		LiteratureCount:  10,
 		PatentCount:      2,
 	}
@@ -51,7 +51,7 @@ func fakeFormaldehyde() *model.Compound {
 		Smiles:           "C=O",
 		CompoundName:     "Formaldehyde",
 		MolecularFormula: "CH2O",
-		ExactMass: 30,
+		ExactMass:        30,
 		LiteratureCount:  5,
 		PatentCount:      1,
 	}
@@ -66,7 +66,7 @@ func fakeMethaneCompound() *model.Compound {
 		Smiles:           "C",
 		CompoundName:     "Methane",
 		MolecularFormula: "CH4",
-		ExactMass: 99,
+		ExactMass:        99,
 		LiteratureCount:  18,
 		PatentCount:      7,
 	}
@@ -273,16 +273,16 @@ func TestMultiQueryOrderPreserved(t *testing.T) {
 	}
 
 	want := []*model.Compound{
-		fakeWaterCompound(),       // "1"                            pubchem_id
-		fakeFormaldehyde(),        // "C=O"                          smiles
-		fakeMethaneCompound(),     // "InChI=1S/CH4/h1H4"            inchi
-		fakeWaterCompound(),       // "MYFAKEINCHIKEY-ISRIGHTHER-E"  inchikey
-		fakeMethaneCompound(),     // "2"                            pubchem_id
-		fakeWaterCompound(),       // "O"                            smiles
-		fakeFormaldehyde(),        // "FAKEFORMALDEHY-FAKEFRMALD-E"  inchikey
-		fakeWaterCompound(),       // "InChI=1S/H2O/h1H2"           inchi
-		fakeFormaldehyde(),        // "3"                            pubchem_id
-		fakeMethaneCompound(),     // "C"                            smiles_or_formula
+		fakeWaterCompound(),   // "1"                            pubchem_id
+		fakeFormaldehyde(),    // "C=O"                          smiles
+		fakeMethaneCompound(), // "InChI=1S/CH4/h1H4"            inchi
+		fakeWaterCompound(),   // "MYFAKEINCHIKEY-ISRIGHTHER-E"  inchikey
+		fakeMethaneCompound(), // "2"                            pubchem_id
+		fakeWaterCompound(),   // "O"                            smiles
+		fakeFormaldehyde(),    // "FAKEFORMALDEHY-FAKEFRMALD-E"  inchikey
+		fakeWaterCompound(),   // "InChI=1S/H2O/h1H2"           inchi
+		fakeFormaldehyde(),    // "3"                            pubchem_id
+		fakeMethaneCompound(), // "C"                            smiles_or_formula
 	}
 	for i, w := range want {
 		if !results[i].MatchFound {
@@ -549,10 +549,10 @@ func TestCSVCommaInQuery(t *testing.T) {
 
 func TestMatchPubChemID(t *testing.T) {
 	tests := []struct {
-		name        string
-		query       string
-		wantFound   bool
-		wantErrMsg  string
+		name         string
+		query        string
+		wantFound    bool
+		wantErrMsg   string
 		wantCompound *model.Compound
 	}{
 		{
@@ -861,20 +861,20 @@ func TestClassyFireCSVHeader(t *testing.T) {
 		"classyfire_error",
 	}
 	header := records[0]
-	if len(header) != 21 {
-		t.Fatalf("expected 21 CSV columns with classyfire enabled, got %d", len(header))
+	if len(header) != 22 {
+		t.Fatalf("expected 22 CSV columns with classyfire enabled, got %d", len(header))
 	}
 	for i, want := range wantSuffix {
-		got := header[14+i]
+		got := header[15+i]
 		if got != want {
-			t.Errorf("header[%d]: want %q, got %q", 14+i, want, got)
+			t.Errorf("header[%d]: want %q, got %q", 15+i, want, got)
 		}
 	}
 
 	// Data row must contain ClassyFire values
 	row := records[1]
-	if row[14] != "Organic compounds" {
-		t.Errorf("classyfire_kingdom: want %q, got %q", "Organic compounds", row[14])
+	if row[15] != "Organic compounds" {
+		t.Errorf("classyfire_kingdom: want %q, got %q", "Organic compounds", row[15])
 	}
 }
 
@@ -889,8 +889,8 @@ func TestClassyFireCSVNoExtraColumnsWhenDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse CSV: %v", err)
 	}
-	if len(records[0]) != 14 {
-		t.Errorf("expected 14 columns without classyfire, got %d", len(records[0]))
+	if len(records[0]) != 15 {
+		t.Errorf("expected 15 columns without classyfire, got %d", len(records[0]))
 	}
 }
 
@@ -999,13 +999,13 @@ func TestClassyFireCSVNoMatchRowHasEmptyColumns(t *testing.T) {
 		t.Fatalf("expected header + no-match row, got %d rows", len(records))
 	}
 	row := records[1]
-	if len(row) != 21 {
-		t.Fatalf("expected 21 columns on the no-match row, got %d", len(row))
+	if len(row) != 22 {
+		t.Fatalf("expected 22 columns on the no-match row, got %d", len(row))
 	}
-	if row[2] != "false" {
-		t.Errorf("expected found_match=false, got %q", row[2])
+	if row[3] != "false" {
+		t.Errorf("expected found_match=false, got %q", row[3])
 	}
-	for i := 14; i < 21; i++ {
+	for i := 15; i < 22; i++ {
 		if row[i] != "" {
 			t.Errorf("classyfire column %d should be empty on a no-match, got %q", i, row[i])
 		}
@@ -1190,4 +1190,3 @@ func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
 	}
 	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
 }
-
