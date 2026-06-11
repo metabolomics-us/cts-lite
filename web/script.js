@@ -37,9 +37,10 @@ function hideCfProgress() {
 // Show how many requests are sharing the ClassyFire queue
 function updateCfQueue(depth) {
   const el = document.getElementById("cf-queue");
+  const others = depth - 1;
   if (!el) return;
-  if (depth > 1) {
-    el.textContent = `There are ${depth} requests in the queue`;
+  if (others >= 1) {
+    el.textContent = `Your request may take longer: ClassyFire is taking turns with ${others} other ${others === 1 ? "request" : "requests"}`;
     el.hidden = false;
   } else {
     el.hidden = true;
