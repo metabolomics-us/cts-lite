@@ -206,7 +206,7 @@ button:disabled {
   display: block;
   margin-top: 0.25rem;
   font-size: 0.85rem;
-  color: #444444;
+  /* color: #444444; */
 }
 
 .cf-queue[hidden] {
