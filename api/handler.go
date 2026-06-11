@@ -2,6 +2,7 @@ package api
 
 import (
 	"ctslite/model"
+	"ctslite/telemetry"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,6 +19,12 @@ import (
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
 var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
+
+var CSVHeader = []string{
+	"query", "query_type", "converted_query", "found_match", "match_level", "error_message",
+	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
+	"molecular_formula", "exact_mass", "literature_count", "patent_count",
+}
 
 func isAllDigits(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -75,13 +83,10 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 	defer writer.Flush()
 
 	// Write CSV header
-	header := []string{
-		"query", "query_type", "found_match", "match_level", "error_message",
-		"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-		"molecular_formula", "exact_mass", "literature_count", "patent_count",
-	}
+	header := CSVHeader
 	if classyfireEnabled {
-		header = append(header,
+		// Clip forces append to copy rather than mutate the shared CSVHeader
+		header = append(slices.Clip(header),
 			"classyfire_kingdom", "classyfire_superclass", "classyfire_class",
 			"classyfire_subclass", "classyfire_direct_parent", "classyfire_description",
 			"classyfire_error",
@@ -105,6 +110,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 			row := []string{
 				result.Query,
 				result.QueryType,
+				result.ConvertedQuery,
 				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
@@ -122,6 +128,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 				row := []string{
 					result.Query,
 					result.QueryType,
+					result.ConvertedQuery,
 					strconv.FormatBool(result.MatchFound),
 					result.MatchLevel,
 					result.ErrMsg,
@@ -186,6 +193,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
 	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
 	var stream bool = r.URL.Query().Get("stream") == "true"
+	var allowRdkitConversion bool = r.URL.Query().Get("rdkit_conversion") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
 	queries := strings.Fields(rawQuery)
@@ -234,13 +242,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			matchInchiKey(index, q, result, allowFirstBlockMatches, topHitOnly)
 
 		case "smiles":
-			matchSmiles(index, q, result, topHitOnly)
+			matchSmiles(index, q, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 
 		case "formula":
 			matchFormula(index, q, result, topHitOnly)
 
 		case "smiles_or_formula":
-			matchSmilesOrFormula(index, q, result, topHitOnly)
+			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
 
 		case "bad_inchi":
 			result.MatchFound = false
@@ -267,7 +275,14 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		results = append(results, result)
 	}
 
+	duration := time.Since(timeStart)
 	log.Printf("%d matches found from %d queries in %s\n", matchCount, len(queries), time.Since(timeStart).Round(time.Millisecond))
+	telemetry.RecordMatch(r, results, matchCount, duration, telemetry.MatchOptions{
+		TopHitOnly:             topHitOnly,
+		AllowFirstBlockMatches: allowFirstBlockMatches,
+		AllowRdkitConversion:   allowRdkitConversion,
+		ClassyFireEnabled:      classyfireEnabled,
+	})
 
 	csvRequested := (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv")
 

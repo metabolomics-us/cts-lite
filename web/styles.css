@@ -309,6 +309,7 @@ button:disabled {
 .query-details {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 1rem;
   margin-bottom: 1rem;
   font-size: 0.9rem;
@@ -319,6 +320,7 @@ button:disabled {
   padding: 0.3rem 0.6rem;
   border-radius: 15px;
   border: 1px solid #b3d9ff;
+  color: #333;
 }
 
 .match-status {
@@ -342,6 +344,68 @@ button:disabled {
   background-color: #fff3cd;
   color: #594503;
   border: 1px solid #ffeaa7;
+}
+
+.query-type-expandable-wrapper {
+  display: inline-flex;
+  flex-direction: column;
+  background-color: #e6f3ff;
+  border-radius: 15px;
+  border: 1px solid #b3d9ff;
+}
+
+.query-type-expandable-wrapper:has(:focus-visible) {
+  outline: 2px solid #7aabde;
+  outline-offset: 2px;
+}
+
+.query-type-expandable-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  color: #333;
+  border: none;
+  padding: 0.3rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: normal;
+  cursor: pointer;
+  margin-top: 0;
+  min-height: unset;
+  min-width: unset;
+  white-space: nowrap;
+}
+
+.query-type-expandable-btn:hover {
+  background-color: #d0e9ff;
+}
+
+.query-type-expandable-btn:focus:not(:hover) {
+  outline: none;
+  background-color: transparent;
+}
+
+.query-type-expandable-btn:focus {
+  outline: none;
+}
+
+.query-type-chevron {
+  display: flex;
+  align-items: center;
+  color: #555;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.query-type-expandable-btn[aria-expanded="true"] .query-type-chevron {
+  transform: rotate(180deg);
+}
+
+.query-type-conversion {
+  padding: 0.25rem 0.6rem 0.35rem;
+  border-top: 1px solid #b3d9ff;
+  color: #333;
 }
 
 .match-level.exact {

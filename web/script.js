@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
     const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
-    let csv = "query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count";
+    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count";
     if (hasClassyfire) {
       csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error";
     }
@@ -114,6 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const row = [
             csvField(result.query),
             csvField(result.query_type),
+            csvField(result.converted_query),
             csvField(result.found_match),
             csvField(result.match_level),
             csvField(result.error_message),
@@ -135,7 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       } else {
         const row = [
-          csvField(result.query), csvField(result.query_type), csvField(result.found_match),
+          csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
           csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
         ];
@@ -206,6 +207,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const topHitOnly = document.getElementById("top-hit-only").checked;
     const firstBlockMatches = document.getElementById("first-block-matches").checked;
     const classyfireEnabled = document.getElementById("classyfire-enabled").checked;
+    const rdkitConversion = document.getElementById("rdkit-conversion").checked;
     classyfireRequested = classyfireEnabled; // snapshot for displayResults (survives later toggling from the settings panel)
     let url = "/match?";
     if (!topHitOnly) {
@@ -213,6 +215,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (!firstBlockMatches) {
       url += "&first_block_matches=false";
+    }
+    if (!rdkitConversion) {
+      url += "&rdkit_conversion=false";
     }
     if (classyfireEnabled) {
       url += "&classyfire=true&stream=true";
@@ -242,16 +247,17 @@ document.addEventListener("DOMContentLoaded", () => {
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
       const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
+      const rdkitText = rdkitConversion ? "RDKit Conversion" : "No RDKit Conversion";
       const classyfireText = classyfireEnabled ? ", ClassyFire" : "";
       appliedSettingsLabel.title = "applied settings";
-      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}`;
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}, ${rdkitText}${classyfireText}`;
       appliedSettingsLabel.style.display = "block";
     };
 
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CTSL-Client": "frontend" },
         body: JSON.stringify({ queries: query }),
         signal,
       });
@@ -440,6 +446,13 @@ function displayResults(data, outputElement, offset = 0) {
         </div>`
       : "";
 
+    const isConverted = result.query_type === "converted_smiles" && result.converted_query;
+    const transId = `trans-${offset + index}`;
+
+    const queryTypeBubble = isConverted
+      ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
+      : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
+
     const resultDiv = document.createElement("div");
     resultDiv.className = "result-item";
     resultDiv.innerHTML = `
@@ -449,7 +462,7 @@ function displayResults(data, outputElement, offset = 0) {
           <button type="button" class="collapse-btn" aria-label="Toggle result"><img src="assets/chevron-icon.svg" alt=""></button>
         </div>
         <div class="query-details">
-          <span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>
+          ${queryTypeBubble}
           <span class="match-status ${getMatchStatusClass(result)}">${getMatchStatusText(result)}</span>
         </div>
       </div>
@@ -462,6 +475,15 @@ function displayResults(data, outputElement, offset = 0) {
     resultDiv.querySelector(".collapse-btn").addEventListener("click", () => {
       resultDiv.classList.toggle("collapsed");
     });
+
+    const expandBtn = resultDiv.querySelector(".query-type-expandable-btn");
+    if (expandBtn) {
+      expandBtn.addEventListener("click", () => {
+        const expanded = expandBtn.getAttribute("aria-expanded") === "true";
+        expandBtn.setAttribute("aria-expanded", String(!expanded));
+        document.getElementById(expandBtn.getAttribute("aria-controls")).hidden = expanded;
+      });
+    }
 
     outputElement.appendChild(resultDiv);
 
@@ -501,16 +523,17 @@ function getMatchStatusClass(result) {
 
 function formatQueryType(queryType) {
   switch (queryType.toLowerCase()) {
-    case "pubchem_id":      return "PubChem CID";
-    case "inchikey":        return "InChIKey";
-    case "smiles":          return "SMILES";
-    case "inchi":           return "InChI";
-    case "formula":         return "Molecular Formula";
+    case "pubchem_id":        return "PubChem CID";
+    case "inchikey":          return "InChIKey";
+    case "smiles":            return "SMILES";
+    case "converted_smiles":  return "Converted SMILES";
+    case "inchi":             return "InChI";
+    case "formula":           return "Molecular Formula";
     case "smiles_or_formula": return "SMILES/Mol. Formula";
-    case "bad_inchi":       return "Malformed InChI";
-    case "bad_inchikey":    return "Malformed InChIKey";
-    case "unidentified":    return "Unidentified";
-    default:                return queryType;
+    case "bad_inchi":         return "Malformed InChI";
+    case "bad_inchikey":      return "Malformed InChIKey";
+    case "unidentified":      return "Unidentified";
+    default:                  return queryType;
   }
 }
 

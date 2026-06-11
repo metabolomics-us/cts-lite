@@ -83,7 +83,7 @@ test('CSV download contains correct headers', async ({ page }) => {
   const header = content.split('\n')[0];
 
   expect(header).toBe(
-    'query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count'
+    'query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count'
   );
 });
 
@@ -119,9 +119,39 @@ test('CSV download has empty compound fields for no-match', async ({ page }) => 
   const lines = fs.readFileSync(filePath, 'utf-8').trim().split('\n');
 
   expect(lines).toHaveLength(2);
+  const headerCols = lines[0].split(',').length;
+  const dataCols = lines[1].split(',').length;
+  expect(dataCols).toBe(headerCols);
   expect(lines[1]).toContain('false');
   // pubchem_cid and compound fields are empty — row ends with many commas
   expect(lines[1]).toMatch(/false,[^,]*,[^,]*,,,,,,,,,$/);
+});
+
+// Mix of matches and no-matches — exercises the no-match CSV branch in script.js
+// against the server's CSV output. The bug this catches: the no-match branch was
+// missing the converted_query column, producing 14 fields vs the 15-field header.
+const QUERY_WITH_NOMATCH = [
+  'MYFAKEINCHIKEY-ISRIGHTHER-E',  // inchikey → match
+  'ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z',  // inchikey → no match
+  'C=O',                           // smiles   → match
+].join(' ');
+
+test('CSV download matches API response including no-match rows', async ({ page }) => {
+  const apiResponse = await page.request.post('/match?format=csv', {
+    data: { queries: QUERY_WITH_NOMATCH },
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const apiCsv = await apiResponse.text();
+
+  await submitAndWaitForResults(page, QUERY_WITH_NOMATCH);
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('#download-csv').click(),
+  ]);
+  const csv = fs.readFileSync(await download.path(), 'utf-8');
+
+  expect(csv).toBe(apiCsv);
 });
 
 test('JSON download matches API response structure', async ({ page }) => {

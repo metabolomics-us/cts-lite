@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"ctslite/api"
 	"ctslite/model"
+	"ctslite/telemetry"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // corsMiddleware adds CORS headers to HTTP responses
@@ -15,7 +19,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// Set CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, X-CTSL-Client")
 
 		// Handle preflight OPTIONS request
 		if r.Method == "OPTIONS" {
@@ -33,6 +37,19 @@ func serveDoc(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Initialize OpenTelemetry (traces, metrics, logs)
+	// Observability must never block startup, so on error we log and continue
+	otelShutdown, err := telemetry.Setup(context.Background())
+	if err != nil {
+		log.Printf("OpenTelemetry setup failed, continuing without telemetry: %v", err)
+	}
+	// Gracefully shutdown OpenTelemetry on exit
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			log.Printf("OpenTelemetry shutdown error: %v", err)
+		}
+	}()
+
 	// Serve the frontend
 	fs := http.FileServer(http.Dir("./web"))
 	http.Handle("/", fs)
@@ -67,9 +84,10 @@ func main() {
 	http.HandleFunc("/status", corsMiddleware(api.Status))
 
 	// Endpoint for matching against database
-	http.HandleFunc("/match", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	matchHandler := corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		api.Match(index, w, r)
-	}))
+	})
+	http.Handle("/match", otelhttp.NewHandler(matchHandler, "match"))
 
 	port := ":8080"
 	if p := os.Getenv("PORT"); p != "" {

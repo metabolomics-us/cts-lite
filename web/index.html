@@ -7,12 +7,12 @@
     <meta name="description" content="Easily translate chemical identifiers via the web or REST API. From InChIKey to SMILES to Molecular Formula to InChI to PubChem ID | UC Davis Fiehn Lab">
     <link rel="canonical" href="https://cts-lite.metabolomics.us">
     <meta name="theme-color" content="#1a3e68">
-    <meta property="og:title" content="CTS-Lite">
+    <meta property="og:title" content="CTS-Lite | Chemical Translation Service">
     <meta property="og:description" content="Translate chemical identifiers at lite-speed">
     <meta property="og:url" content="https://cts-lite.metabolomics.us">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://cts-lite.metabolomics.us/assets/index-preview.png">
-    <title>CTS-Lite</title>
+    <title>CTS-Lite | Chemical Translation Service</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/jpg" href="assets/cts-lite.jpg"/>
 </head>
@@ -49,16 +49,23 @@
                         </button>
                         <div class="settings-panel" id="settings-panel">
                             <div class="settings-row">
-                                <span>Top Hit Only <a href="/docs#top-hit-only" target="_blank" aria-label="Top Hit Only documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/info-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>Top Hit Only <a href="/docs#top-hit-only" target="_blank" aria-label="Top Hit Only documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="Top hit only">
                                     <input type="checkbox" checked id="top-hit-only">
                                     <span class="toggle-track"></span>
                                 </label>
                             </div>
                             <div class="settings-row" style="margin-top: 0.75rem;">
-                                <span>First Block Matches <a href="/docs#match-levels" target="_blank" aria-label="Match levels documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/info-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>First Block Matches <a href="/docs#match-levels" target="_blank" aria-label="Match levels documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="First block matches">
                                     <input type="checkbox" checked id="first-block-matches">
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" style="margin-top: 0.75rem;">
+                                <span>RDKit Conversion <a href="/docs#rdkit-conversion" target="_blank" aria-label="RDKit conversion documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <label class="toggle-label" aria-label="RDKit conversion">
+                                    <input type="checkbox" checked id="rdkit-conversion">
                                     <span class="toggle-track"></span>
                                 </label>
                             </div>
@@ -70,7 +77,7 @@
                                 </label>
                             </div>
                             <div class="settings-row" style="margin-top: 0.75rem;">
-                                <span>Results Per Page</span>
+                                <span>Results per Page</span>
                                 <select id="page-size-select" aria-label="Results per page">
                                     <option value="10" selected>10</option>
                                     <option value="20">20</option>
@@ -102,7 +109,7 @@
                         <span class="download-spinner" aria-hidden="true"></span>
                     </div>
                 </div>
-                <label id="applied-settings-label" style="display: none; margin: -0.4rem 0 0.5rem 0; font-size: 0.85rem; color: #444444;"></label>
+                <label id="applied-settings-label" style="display: none; margin: 0rem 0 0.5rem 0; font-size: 0.85rem; color: #444444;"></label>
                 <hr>
                 <div id="output-text"></div>
                 <div id="pagination-controls">
