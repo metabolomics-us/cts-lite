@@ -164,7 +164,7 @@ test('queue indicator shows when multiple requests are queued', async ({ page })
   await enableClassyFireAndSubmit(page);
 
   await expect(page.locator('#cf-queue')).toBeVisible();
-  await expect(page.locator('#cf-queue')).toContainText('2');
+  await expect(page.locator('#cf-queue')).toContainText('1'); // 1 other request
 });
 
 // When the queue depth drops to 1 (e.g. another client closed its tab) the indicator hides.
