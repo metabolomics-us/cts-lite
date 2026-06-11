@@ -181,6 +181,55 @@ test('queue indicator hides when the queue drops to one', async ({ page }) => {
   await expect(page.locator('#cf-queue')).not.toBeVisible();
 });
 
+// Mirrors the real two-tab scenario from the request-B page: B opens while request
+// A is still classifying (queue depth 2) so the multi-request warning shows, then A finishes
+// mid-stream (a later line reports depth 1) and the warning must clear even though
+// B keeps classifying. Fed line-by-line so the test controls when each line lands,
+// the way real streamed timing would
+test('queue warning clears when the other request finishes mid-stream', async ({ page }) => {
+  // Replace fetch for /match with a hand-fed NDJSON stream so the test decides when
+  // each line arrives and can observe the warning between lines
+  await page.addInitScript(() => {
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (!url.includes('/match')) return realFetch(input, init);
+      const stream = new ReadableStream({
+        start(controller) {
+          const enc = new TextEncoder();
+          window.__push = (obj) => controller.enqueue(enc.encode(JSON.stringify(obj) + '\n'));
+          window.__close = () => controller.close();
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } }));
+    };
+  });
+
+  const KEY_A = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N';
+  const KEY_B = 'AAAAAAAAAAAAAA-AAAAAAAAAA-A';
+  const matches = [match({ inchikey: KEY_A }), match({ inchikey: KEY_B })];
+
+  await enableClassyFireAndSubmit(page, `${KEY_A} ${KEY_B}`);
+  await page.waitForFunction(() => typeof window.__push === 'function');
+
+  const push = (obj) => page.evaluate((o) => window.__push(o), obj);
+
+  // Request B opens while request A is still in the queue
+  await push({ type: 'matches', results: [result(matches)], unique: 2, queue: 2 });
+  await expect(page.locator('#cf-queue')).toBeVisible();
+  await expect(page.locator('#cf-queue')).toContainText('1'); // 1 other request
+
+  // B classifies its first key, request A is still present so the warning stays
+  await push({ type: 'classyfire', inchikey: KEY_A, info: CF, queue: 2 });
+  await expect(page.locator('#cf-queue')).toBeVisible();
+
+  // Request A finishes: the next line B receives reports the lower depth, warning clears
+  await push({ type: 'classyfire', inchikey: KEY_B, info: CF, queue: 1 });
+  await expect(page.locator('#cf-queue')).not.toBeVisible();
+
+  await page.evaluate(() => window.__close());
+});
+
 // The applied-settings label reflects that ClassyFire was enabled for the request
 test('applied settings label notes ClassyFire', async ({ page }) => {
   await mockMatch(page, nd(
