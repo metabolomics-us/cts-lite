@@ -29,6 +29,10 @@ A lightweight Chemical Translation Service using a curated subset of <strong>10.
 - Playwright
 - Locust (load testing)
 
+### Testing
+- Run unit tests with `go test ./...`
+- Run E2E playwright tests with `cd playwright && npm test`
+
 ### Docker
 - CTS-Lite is containerized with Docker
 - The GitHub Actions workflow will automatically build and deploy the complete application image upon any push or merge to the main branch
