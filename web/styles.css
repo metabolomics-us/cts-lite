@@ -711,12 +711,12 @@ button:disabled {
   outline-color: #a0b8d3;
 }
 
-.collapse-btn svg {
+.collapse-btn img {
   transition: transform 0.2s;
   display: block;
 }
 
-.result-item.collapsed .collapse-btn svg {
+.result-item.collapsed .collapse-btn img {
   transform: rotate(-90deg);
 }
 

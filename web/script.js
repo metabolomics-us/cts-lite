@@ -4,10 +4,6 @@ let pageSize = 10;
 let activeController = null;
 let classyfireRequested = false; // did this request use ClassyFire? classyfireEnabled tracks current checkbox state
 
-const CHEVRON_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M2 4.5L7 9.5L12 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
-
 // Disable download buttons while ClassyFire is running
 function setDownloadsLoading(loading) {
   const buttons = document.getElementById("download-buttons");
@@ -450,7 +446,7 @@ function displayResults(data, outputElement, offset = 0) {
       <div class="query-section">
         <div class="query-header">
           <h3>Query ${offset + index + 1}: ${escapeHtml(result.query)}</h3>
-          <button type="button" class="collapse-btn" aria-label="Toggle result">${CHEVRON_SVG}</button>
+          <button type="button" class="collapse-btn" aria-label="Toggle result"><img src="assets/chevron-icon.svg" alt=""></button>
         </div>
         <div class="query-details">
           <span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>
