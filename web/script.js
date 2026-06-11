@@ -2,10 +2,72 @@ let allData = [];
 let currentPage = 1;
 let pageSize = 10;
 let activeController = null;
+let classyfireRequested = false; // did this request use ClassyFire? classyfireEnabled tracks current checkbox state
 
-const CHEVRON_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M2 4.5L7 9.5L12 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
+// Disable download buttons while ClassyFire is running
+function setDownloadsLoading(loading) {
+  const buttons = document.getElementById("download-buttons");
+  if (!buttons) return;
+  buttons.classList.toggle("loading", loading);
+  buttons.querySelectorAll(".download-btn").forEach(b => { b.disabled = loading; });
+}
+
+// Update the ClassyFire progress bar
+function showCfProgress(done, total) {
+  const wrap = document.getElementById("cf-progress");
+  if (!wrap) return;
+  if (total <= 0) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  const pct = Math.round((done / total) * 100);
+  wrap.querySelector(".cf-progress-fill").style.width = pct + "%";
+  wrap.querySelector(".cf-progress-label").textContent =
+    `Classifying with ClassyFire… ${done} / ${total}`;
+}
+
+// Hide the ClassyFire progress bar (i.e. when classification is done)
+function hideCfProgress() {
+  const wrap = document.getElementById("cf-progress");
+  if (wrap) wrap.hidden = true;
+}
+
+// Show how many requests are sharing the ClassyFire queue
+function updateCfQueue(depth) {
+  const el = document.getElementById("cf-queue");
+  const others = depth - 1;
+  if (!el) return;
+  if (others >= 1) {
+    el.textContent = `Your request may take longer: ClassyFire is taking turns with ${others} other ${others === 1 ? "request" : "requests"}`;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
+}
+
+// Read NDJSON stream, dispatching each message by type
+async function consumeMatchStream(response, { onMatches, onClassyfire, onDone }) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const dispatch = (line) => {
+    const text = line.trim();
+    if (!text) return;
+    const msg = JSON.parse(text);
+    if (msg.type === "matches") onMatches(msg);
+    else if (msg.type === "classyfire") onClassyfire(msg);
+    else if (msg.type === "done") onDone();
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      dispatch(buffer.slice(0, nl));
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  dispatch(buffer); // flush any trailing line without a newline
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   // Settings panel
@@ -39,11 +101,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
-    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count\n";
+    const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
+    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count";
+    if (hasClassyfire) {
+      csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error";
+    }
+    csv += "\n";
     allData.forEach(result => {
       if (result.matches && result.matches.length > 0) {
         result.matches.forEach(match => {
-          csv += [
+          const cf = match.classyfire || {};
+          const row = [
             csvField(result.query),
             csvField(result.query_type),
             csvField(result.converted_query),
@@ -59,14 +127,23 @@ document.addEventListener("DOMContentLoaded", () => {
             csvField(match.exact_mass),
             csvField(match.literature_count),
             csvField(match.patent_count)
-          ].join(",") + "\n";
+          ];
+          if (hasClassyfire) {
+            row.push(csvField(cf.kingdom), csvField(cf.superclass), csvField(cf.class),
+                     csvField(cf.subclass), csvField(cf.direct_parent), csvField(cf.description), csvField(cf.error));
+          }
+          csv += row.join(",") + "\n";
         });
       } else {
-        csv += [
+        const row = [
           csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
           csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
-        ].join(",") + "\n";
+        ];
+        if (hasClassyfire) {
+          row.push(csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""));
+        }
+        csv += row.join(",") + "\n";
       }
     });
     triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(csv), `ctsl_${timestamp()}.csv`);
@@ -95,6 +172,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const query = input.value.trim();
     document.getElementById("output-container").classList.add("visible");
     downloadButtons.style.display = "none";
+    setDownloadsLoading(false);
+    hideCfProgress();
     paginationControls.style.display = "none";
 
     if (!query) {
@@ -113,13 +192,23 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // ClassyFire is rate limited, max 100 queries
+    if (document.getElementById("classyfire-enabled").checked && queryCount > 100) {
+      outputLabel.textContent = "Error";
+      appliedSettingsLabel.style.display = "none";
+      output.innerHTML = `ClassyFire is enabled - please <strong>limit to 100 identifiers</strong> per submission (currently ${queryCount.toLocaleString()}).<br><br>Non-ClassyFire submissions may contain up to 100,000 identifiers.`;
+      return;
+    }
+
     output.innerHTML = "<span class='ellipsis-animate'>Matching</span>";
     outputLabel.textContent = "Results";
     appliedSettingsLabel.style.display = "none";
 
     const topHitOnly = document.getElementById("top-hit-only").checked;
     const firstBlockMatches = document.getElementById("first-block-matches").checked;
+    const classyfireEnabled = document.getElementById("classyfire-enabled").checked;
     const rdkitConversion = document.getElementById("rdkit-conversion").checked;
+    classyfireRequested = classyfireEnabled; // snapshot for displayResults (survives later toggling from the settings panel)
     let url = "/match?";
     if (!topHitOnly) {
       url += "&top_hit_only=false";
@@ -129,6 +218,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (!rdkitConversion) {
       url += "&rdkit_conversion=false";
+    }
+    if (classyfireEnabled) {
+      url += "&classyfire=true&stream=true";
     }
 
     if (activeController) {
@@ -143,9 +235,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const slowTimer = setTimeout(() => {
       if (output.querySelector(".ellipsis-animate")) {
-        output.innerHTML += "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.<br><br>Please wait and then retry if the request times out (504)</div>";
+        const slowNote = classyfireEnabled
+          ? "<div class='doc-note'>You have <strong>ClassyFire</strong> classification enabled, which increases latency significantly. You can expect ~3s per query.</div>"
+          : "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.</div>";
+        output.innerHTML += slowNote;
       }
     }, 5000);
+
+    const finalizeHeader = () => {
+      const numMatches = countNumMatches(allData);
+      outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
+      const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
+      const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
+      const rdkitText = rdkitConversion ? "RDKit Conversion" : "No RDKit Conversion";
+      const classyfireText = classyfireEnabled ? ", ClassyFire" : "";
+      appliedSettingsLabel.title = "applied settings";
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}, ${rdkitText}${classyfireText}`;
+      appliedSettingsLabel.style.display = "block";
+    };
 
     try {
       const response = await fetch(url, {
@@ -160,25 +267,71 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(`Server returned ${response.status} - ${await response.text()}`);
       }
 
-      allData = await response.json();
-      currentPage = 1;
-      clearTimeout(slowTimer);
+      if (classyfireEnabled) {
+        clearTimeout(slowTimer);
 
-      output.textContent = "";
-      downloadButtons.style.display = "flex";
-      renderPage();
+        let inchikeyIndex = new Map(); // inchikey -> [match, ...] for O(1) live updates
+        let totalUnique = 0;
+        let classified = 0;
+        let rafScheduled = false;
+        const scheduleRender = () => {
+          if (rafScheduled) return;
+          rafScheduled = true;
+          requestAnimationFrame(() => { rafScheduled = false; renderPage(); });
+        };
 
-      const numMatches = countNumMatches(allData);
-      outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
-      const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
-      const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
-      const rdkitText = rdkitConversion ? "RDKit Conversion" : "No RDKit Conversion";
-      appliedSettingsLabel.title = "applied settings";
-      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}, ${rdkitText}`;
-      appliedSettingsLabel.style.display = "block";
+        await consumeMatchStream(response, {
+          onMatches: (msg) => {
+            allData = msg.results || [];
+            totalUnique = msg.unique || 0;
+            classified = 0;
+            currentPage = 1;
+            inchikeyIndex = new Map();
+            allData.forEach(r => (r.matches || []).forEach(m => {
+              // Matches beyond the top three cap already carry a note; don't queue
+              // them for live updates or a streamed line would overwrite it
+              if (m.classyfire) return;
+              if (!inchikeyIndex.has(m.inchikey)) inchikeyIndex.set(m.inchikey, []);
+              inchikeyIndex.get(m.inchikey).push(m);
+            }));
+            output.textContent = "";
+            downloadButtons.style.display = "flex";
+            setDownloadsLoading(true);
+            renderPage();
+            finalizeHeader();
+            if (totalUnique > 0) showCfProgress(0, totalUnique);
+            updateCfQueue(msg.queue || 0);
+          },
+          onClassyfire: (msg) => {
+            const matches = inchikeyIndex.get(msg.inchikey);
+            if (matches) matches.forEach(m => { m.classyfire = msg.info; });
+            classified++;
+            showCfProgress(classified, totalUnique);
+            updateCfQueue(msg.queue || 0);
+            scheduleRender();
+          },
+          onDone: () => {
+            renderPage();
+            hideCfProgress();
+            setDownloadsLoading(false);
+          },
+        });
+      } else {
+        // Non-streaming path, a single JSON array
+        allData = await response.json();
+        currentPage = 1;
+        clearTimeout(slowTimer);
+
+        output.textContent = "";
+        downloadButtons.style.display = "flex";
+        renderPage();
+        finalizeHeader();
+      }
 
     } catch (err) {
       clearTimeout(slowTimer);
+      hideCfProgress();
+      setDownloadsLoading(false);
       if (err.name !== "AbortError") {
         output.textContent = `Error: ${err.message}`;
       }
@@ -275,6 +428,19 @@ function displayResults(data, outputElement, offset = 0) {
               <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
               <div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>
               <div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>
+              ${classyfireRequested ? `
+              <div class="match-field classyfire-heading"><label>Chemical Classification</label></div>
+              ${!match.classyfire ? `<div class="match-field cf-queued"><span>Queued</span><span class="inline-spinner" aria-hidden="true"></span></div>`
+              : match.classyfire.error ? `<div class="match-field"><label>${match.classyfire.error.startsWith("Only the top") ? "Skipped:" : "Error:"}</label><span class="monospace small-text">${escapeHtml(match.classyfire.error)}</span></div>`
+              : (match.classyfire.kingdom || match.classyfire.superclass || match.classyfire.class || match.classyfire.subclass || match.classyfire.direct_parent || match.classyfire.description) ? `
+              ${match.classyfire.kingdom ? `<div class="match-field"><label>Kingdom:</label><span class="monospace">${escapeHtml(match.classyfire.kingdom)}</span></div>` : ""}
+              ${match.classyfire.superclass ? `<div class="match-field"><label>Superclass:</label><span class="monospace">${escapeHtml(match.classyfire.superclass)}</span></div>` : ""}
+              ${match.classyfire.class ? `<div class="match-field"><label>Class:</label><span class="monospace">${escapeHtml(match.classyfire.class)}</span></div>` : ""}
+              ${match.classyfire.subclass ? `<div class="match-field"><label>Subclass:</label><span class="monospace">${escapeHtml(match.classyfire.subclass)}</span></div>` : ""}
+              ${match.classyfire.direct_parent ? `<div class="match-field"><label>Direct Parent:</label><span class="monospace">${escapeHtml(match.classyfire.direct_parent)}</span></div>` : ""}
+              ${match.classyfire.description ? `<div class="match-field"><label>Description:</label><span class="small-text" style="word-break: normal; overflow-wrap: anywhere;">${escapeHtml(match.classyfire.description)}</span></div>` : ""}
+              ` : `<div class="match-field"><span class="monospace small-text">No classification found</span></div>`}
+              ` : ""}
             </div>
           </div>`).join("")}
         </div>`
@@ -284,7 +450,7 @@ function displayResults(data, outputElement, offset = 0) {
     const transId = `trans-${offset + index}`;
 
     const queryTypeBubble = isConverted
-      ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true">${CHEVRON_SVG}</span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
+      ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
       : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
 
     const resultDiv = document.createElement("div");
@@ -293,7 +459,7 @@ function displayResults(data, outputElement, offset = 0) {
       <div class="query-section">
         <div class="query-header">
           <h3>Query ${offset + index + 1}: ${escapeHtml(result.query)}</h3>
-          <button type="button" class="collapse-btn" aria-label="Toggle result">${CHEVRON_SVG}</button>
+          <button type="button" class="collapse-btn" aria-label="Toggle result"><img src="assets/chevron-icon.svg" alt=""></button>
         </div>
         <div class="query-details">
           ${queryTypeBubble}

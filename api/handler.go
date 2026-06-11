@@ -5,12 +5,13 @@ import (
 	"ctslite/telemetry"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
-	"errors"
 	"strings"
 	"syscall"
 	"time"
@@ -77,13 +78,29 @@ func parseQueryType(q string) string {
 }
 
 // writeResultsAsCSV converts the results to CSV format and writes to the response writer
-func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) error {
+func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, classyfireEnabled bool) error {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
 	// Write CSV header
-	if err := writer.Write(CSVHeader); err != nil {
+	header := CSVHeader
+	if classyfireEnabled {
+		// Clip forces append to copy rather than mutate the shared CSVHeader
+		header = append(slices.Clip(header),
+			"classyfire_kingdom", "classyfire_superclass", "classyfire_class",
+			"classyfire_subclass", "classyfire_direct_parent", "classyfire_description",
+			"classyfire_error",
+		)
+	}
+	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	cfFields := func(cf *model.ClassyFireInfo) []string {
+		if cf == nil {
+			return []string{"", "", "", "", "", "", ""}
+		}
+		return []string{cf.Kingdom, cf.Superclass, cf.Class, cf.Subclass, cf.DirectParent, cf.Description, cf.Error}
 	}
 
 	// Write data rows
@@ -98,6 +115,9 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 				result.MatchLevel,
 				result.ErrMsg,
 				"", "", "", "", "", "", "", "", "", // Empty compound fields
+			}
+			if classyfireEnabled {
+				row = append(row, cfFields(nil)...)
 			}
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
@@ -121,6 +141,9 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult) err
 					strconv.FormatFloat(match.ExactMass, 'f', -1, 64),
 					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
+				}
+				if classyfireEnabled {
+					row = append(row, cfFields(match.ClassyFire)...)
 				}
 				if err := writer.Write(row); err != nil {
 					return fmt.Errorf("failed to write CSV row: %w", err)
@@ -165,9 +188,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for top-hit parameter
+	// Check for request parameters
 	var topHitOnly bool = r.URL.Query().Get("top_hit_only") != "false"
 	var allowFirstBlockMatches bool = r.URL.Query().Get("first_block_matches") != "false"
+	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
+	var stream bool = r.URL.Query().Get("stream") == "true"
 	var allowRdkitConversion bool = r.URL.Query().Get("rdkit_conversion") != "false"
 
 	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
@@ -175,6 +200,12 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 	if len(queries) > 100000 {
 		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100,000)", len(queries)), http.StatusBadRequest)
+		return
+	}
+
+	// Enforce ClassyFire query limit
+	if classyfireEnabled && len(queries) > 100 {
+		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100 when ClassyFire is enabled)", len(queries)), http.StatusBadRequest)
 		return
 	}
 
@@ -245,18 +276,30 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	}
 
 	duration := time.Since(timeStart)
-	log.Printf("%d matches found from %d queries in %f seconds\n", matchCount, len(queries), time.Since(timeStart).Seconds())
+	log.Printf("%d matches found from %d queries in %s\n", matchCount, len(queries), time.Since(timeStart).Round(time.Millisecond))
 	telemetry.RecordMatch(r, results, matchCount, duration, telemetry.MatchOptions{
 		TopHitOnly:             topHitOnly,
 		AllowFirstBlockMatches: allowFirstBlockMatches,
 		AllowRdkitConversion:   allowRdkitConversion,
+		ClassyFireEnabled:      classyfireEnabled,
 	})
 
-	// Check for header text/csv and respond accordingly
-	if (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv") {
-		// Respond with CSV
+	csvRequested := (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv")
+
+	// Emit matches immediately, and classifications as they come. Not possible for CSV
+	if stream && classyfireEnabled && !csvRequested {
+		streamMatchResults(w, r, results)
+		return
+	}
+
+	// Non-streaming, write full response once ClassyFire is done
+	if classyfireEnabled {
+		enrichWithClassyFire(r.Context(), results)
+	}
+
+	if csvRequested {
 		w.Header().Set("Content-Type", "text/csv")
-		err := writeResultsAsCSV(w, results)
+		err := writeResultsAsCSV(w, results, classyfireEnabled)
 		if err != nil {
 			log.Printf("Failed to write CSV response: %v", err)
 		}
@@ -268,6 +311,54 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+}
+
+// streamMatchResults writes the response as NDJSON
+func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model.SingleResult) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		enrichWithClassyFire(r.Context(), results)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(results); err != nil &&
+			!errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
+			log.Printf("Failed to encode JSON response: %v", err)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	enc := json.NewEncoder(w)
+	writeLine := func(v any) bool {
+		if err := enc.Encode(v); err != nil {
+			if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
+				log.Printf("Failed to write stream message: %v", err)
+			}
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+
+	keys := classifiableKeys(results)
+
+	// Count toward the shared-gate queue depth
+	if len(keys) > 0 {
+		cfbEnterQueue()
+		defer cfbLeaveQueue()
+	}
+
+	if !writeLine(map[string]any{"type": "matches", "results": results, "unique": len(keys), "queue": cfbQueueDepth()}) {
+		return
+	}
+
+	streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
+		writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
+	})
+
+	writeLine(map[string]any{"type": "done"})
 }
 
 func Status(w http.ResponseWriter, _ *http.Request) {

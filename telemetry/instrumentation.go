@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"ctslite/model"
 	"net/http"
 	"sync"
@@ -24,18 +25,20 @@ type MatchOptions struct {
 	TopHitOnly             bool
 	AllowFirstBlockMatches bool
 	AllowRdkitConversion   bool
+	ClassyFireEnabled      bool
 }
 
 var (
-	instrumentsOnce    sync.Once
-	matchRequests      metric.Int64Counter
-	matchQueries       metric.Int64Counter
-	matchMatches       metric.Int64Counter
-	matchQueryTypes    metric.Int64Counter
-	matchHitPercent    metric.Float64Histogram
-	matchDuration      metric.Float64Histogram
-	matchQueriesPerReq metric.Int64Histogram
-	matchLogger        log.Logger
+	instrumentsOnce           sync.Once
+	matchRequests             metric.Int64Counter
+	matchQueries              metric.Int64Counter
+	matchMatches              metric.Int64Counter
+	matchQueryTypes           metric.Int64Counter
+	matchHitPercent           metric.Float64Histogram
+	matchDuration             metric.Float64Histogram
+	matchQueriesPerReq        metric.Int64Histogram
+	classyfireClassifications metric.Int64Counter
+	matchLogger               log.Logger
 )
 
 // initInstruments lazily creates the metric instruments and logger from the
@@ -62,6 +65,8 @@ func initInstruments() {
 		matchQueriesPerReq, _ = meter.Int64Histogram("match_queries_per_request",
 			metric.WithDescription("Distribution of the number of queries per /match request"),
 			metric.WithExplicitBucketBoundaries(1, 5, 50, 250, 1000, 5000, 25000, 100000))
+		classyfireClassifications, _ = meter.Int64Counter("classyfire_classifications_total",
+			metric.WithDescription("Terminal outcomes of individual ClassyFire classifications, split by status"))
 		matchLogger = logglobal.GetLoggerProvider().Logger(scopeName)
 	})
 }
@@ -79,7 +84,12 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 		clientType = "frontend"
 	}
 	clientAttr := attribute.String("client_type", clientType)
-	clientSet := metric.WithAttributes(clientAttr)
+
+	// Attributes attached to every per-request data point. classyfire_enabled
+	// lets Grafana graph how many requests enable ClassyFire and their average
+	// query count (match_queries_total / match_requests_total)
+	requestSet := metric.WithAttributes(clientAttr,
+		attribute.Bool("classyfire_enabled", opts.ClassyFireEnabled))
 
 	queryCount := len(results)
 	missCount := queryCount - matchCount
@@ -90,12 +100,12 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 		hitPercent = float64(matchCount) / float64(queryCount) * 100.0
 	}
 
-	matchRequests.Add(ctx, 1, clientSet)
-	matchQueries.Add(ctx, int64(queryCount), clientSet)
-	matchMatches.Add(ctx, int64(matchCount), clientSet)
-	matchHitPercent.Record(ctx, hitPercent, clientSet)
-	matchDuration.Record(ctx, durationMs, clientSet)
-	matchQueriesPerReq.Record(ctx, int64(queryCount), clientSet)
+	matchRequests.Add(ctx, 1, requestSet)
+	matchQueries.Add(ctx, int64(queryCount), requestSet)
+	matchMatches.Add(ctx, int64(matchCount), requestSet)
+	matchHitPercent.Record(ctx, hitPercent, requestSet)
+	matchDuration.Record(ctx, durationMs, requestSet)
+	matchQueriesPerReq.Record(ctx, int64(queryCount), requestSet)
 
 	// Collect the query type distribution and the first few misses in one pass.
 	// The query type counter carries a "matched" attribute so the missed-query
@@ -136,10 +146,28 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 		log.Bool("top_hit_only", opts.TopHitOnly),
 		log.Bool("first_block_matches", opts.AllowFirstBlockMatches),
 		log.Bool("rdkit_conversion", opts.AllowRdkitConversion),
+		log.Bool("classyfire_enabled", opts.ClassyFireEnabled),
 		log.Slice("misses", misses...),
 	)
 	if missCount > maxLoggedMisses {
 		record.AddAttributes(log.Bool("misses_truncated", true))
 	}
 	matchLogger.Emit(ctx, record)
+}
+
+// RecordClassyFireOutcomes counts terminal ClassyFire classification outcomes.
+// Statuses: classified (successful), not_found (no classification exists),
+// failed (unreachable, rate limit give-up, or circuit breaker)
+func RecordClassyFireOutcomes(ctx context.Context, classified, notFound, failed int) {
+	initInstruments()
+	add := func(status string, n int) {
+		if n <= 0 {
+			return
+		}
+		classyfireClassifications.Add(ctx, int64(n),
+			metric.WithAttributes(attribute.String("status", status)))
+	}
+	add("classified", classified)
+	add("not_found", notFound)
+	add("failed", failed)
 }

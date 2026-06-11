@@ -50,6 +50,19 @@ test('first_block_matches=false sent when toggle is unchecked', async ({ page })
   expect(request.url()).toContain('first_block_matches=false');
 });
 
+test('rdkit_conversion=false sent when toggle is unchecked', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="RDKit conversion"]').click();
+
+  const [request] = await Promise.all([
+    page.waitForRequest(req => req.url().includes('/match')),
+    page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E'),
+    page.click('button[type="submit"]'),
+  ]);
+
+  expect(request.url()).toContain('rdkit_conversion=false');
+});
+
 test('Top Hit Only info icon opens correct docs section', async ({ page, context }) => {
   await page.locator('#settings-toggle').click();
 
@@ -87,6 +100,9 @@ test('applied settings label shows default settings after query', async ({ page 
   await expect(page.locator('#applied-settings-label')).toBeVisible();
   await expect(page.locator('#applied-settings-label')).toContainText('Top Hit Only');
   await expect(page.locator('#applied-settings-label')).toContainText('First Block Matches');
+  await expect(page.locator('#applied-settings-label')).toContainText('RDKit Conversion');
+  await expect(page.locator('#applied-settings-label')).not.toContainText('No RDKit Conversion');
+  await expect(page.locator('#applied-settings-label')).not.toContainText('ClassyFire');
 });
 
 test('applied settings label shows All Hits when top hit only disabled', async ({ page }) => {
@@ -105,6 +121,58 @@ test('applied settings label shows Exact Matches Only when first block matches d
   await page.click('button[type="submit"]');
 
   await expect(page.locator('#applied-settings-label')).toContainText('Exact Matches Only');
+});
+
+test('applied settings label shows No RDKit Conversion when rdkit disabled', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="RDKit conversion"]').click();
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText('No RDKit Conversion');
+});
+
+test('applied settings label reflects all toggles disabled at once', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="Top hit only"]').click();
+  await page.locator('label[aria-label="First block matches"]').click();
+  await page.locator('label[aria-label="RDKit conversion"]').click();
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText(
+    'All Hits, Exact Matches Only, No RDKit Conversion'
+  );
+});
+
+// Every label segment renders its non-default text when all toggles are flipped.
+// The query matches nothing, so the server never calls the live ClassyFire service
+test('applied settings label shows full permutation with ClassyFire enabled', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="Top hit only"]').click();
+  await page.locator('label[aria-label="First block matches"]').click();
+  await page.locator('label[aria-label="RDKit conversion"]').click();
+  await page.locator('label[aria-label="ClassyFire chemical classes"]').click();
+  await page.fill('#query-input', 'ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText(
+    'All Hits, Exact Matches Only, No RDKit Conversion, ClassyFire'
+  );
+});
+
+test('applied settings label reflects settings at submit time, not later toggling', async ({ page }) => {
+  await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
+  await page.click('button[type="submit"]');
+  await expect(page.locator('#applied-settings-label')).toContainText('Top Hit Only');
+
+  // Flipping a toggle after the query must not change the label until the next submit
+  await page.locator('#settings-toggle').click();
+  await page.locator('label[aria-label="Top hit only"]').click();
+  await expect(page.locator('#applied-settings-label')).toContainText('Top Hit Only');
+
+  await page.click('button[type="submit"]');
+  await expect(page.locator('#applied-settings-label')).toContainText('All Hits');
 });
 
 test('page size persists across queries', async ({ page }) => {

@@ -1,5 +1,5 @@
 # CTS-Lite
-A lightweight Chemical Translation Service using a curated subset of <strong>10.6 million compounds</strong> from the PubChem database.
+A lightweight Chemical Translation Service using a curated subset of <strong>10.6 million compounds</strong> from the PubChem database
 
 ### Project Health
 [![CI/CD](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml/badge.svg)](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml)
@@ -10,23 +10,28 @@ A lightweight Chemical Translation Service using a curated subset of <strong>10.
 - https://cts-lite.metabolomics.us/
 
 ### API Usage
-- Please refer to the [documentation page](https://cts-lite.metabolomics.us/docs) for information regarding the API
+- Please refer to the [documentation](https://cts-lite.metabolomics.us/docs#rest-api) for information regarding the API
 
 ### Credits
-- **PubChem** — compound data sourced from the [PubChem database](https://pubchem.ncbi.nlm.nih.gov/)
-- **RDKit** — library used for SMILES to InChIKey conversion. [rdkit.org](https://www.rdkit.org/)
+- [**PubChem**](https://pubchem.ncbi.nlm.nih.gov/) - database used for compound data
+- [**RDKit**](https://rdkit.org/) - library used for SMILES to InChIKey conversion
+- [**Wishart Research Group**](https://wishartlab.com/) - Chemical Taxonomy using ClassyFire
 
 <br>
 
 ## Development
 
 ### Stack
-- Go 1.25
+- Go
 - SQLite
 - JavaScript/HTML/CSS
 - Docker
 - Playwright
 - Locust (load testing)
+
+### Testing
+- Run unit tests with `go test ./...`
+- Run E2E playwright tests with `cd playwright && npm test`
 
 ### Docker
 - CTS-Lite is containerized with Docker

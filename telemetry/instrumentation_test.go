@@ -239,9 +239,9 @@ func TestRecordMatchQueryTypeBreakdown(t *testing.T) {
 
 func TestRecordMatchLogSummaryTruncatesMisses(t *testing.T) {
 	capture.take()
-	results := makeResults(3, 7) // 7 misses: over the cap of 5
+	results := makeResults(3, 7)                     // 7 misses: over the cap of 5
 	results[3].ConvertedQuery = "CONVERTED-INCHIKEY" // first miss carries a conversion
-	opts := MatchOptions{TopHitOnly: true, AllowFirstBlockMatches: false, AllowRdkitConversion: true}
+	opts := MatchOptions{TopHitOnly: true, AllowFirstBlockMatches: false, AllowRdkitConversion: true, ClassyFireEnabled: false}
 	RecordMatch(newMatchRequest(false), results, 3, 100*time.Millisecond, opts)
 	collectMetrics(t) // drain metrics so later tests stay isolated
 
@@ -315,6 +315,83 @@ func TestRecordMatchNoTruncationUnderCap(t *testing.T) {
 	}
 	if _, ok := attrs["misses_truncated"]; ok {
 		t.Error("misses_truncated present, want absent when under the cap")
+	}
+}
+
+// The per-request metrics needed for the ClassyFire Grafana panels carry the
+// classyfire_enabled attribute so requests and query counts can be filtered
+func TestRecordMatchClassyFireEnabledAttribute(t *testing.T) {
+	capture.take()
+	RecordMatch(newMatchRequest(false), makeResults(2, 1), 2, time.Millisecond, MatchOptions{ClassyFireEnabled: true})
+	metrics := collectMetrics(t)
+
+	for _, name := range []string{"match_requests_total", "match_queries_total"} {
+		sum, ok := metrics[name].Data.(metricdata.Sum[int64])
+		if !ok || len(sum.DataPoints) != 1 {
+			t.Fatalf("%s: unexpected data %#v", name, metrics[name].Data)
+		}
+		cf, ok := sum.DataPoints[0].Attributes.Value(attribute.Key("classyfire_enabled"))
+		if !ok || !cf.AsBool() {
+			t.Errorf("%s: classyfire_enabled attribute = %v (present=%v), want true", name, cf.AsBool(), ok)
+		}
+	}
+
+	hist, ok := metrics["match_queries_per_request"].Data.(metricdata.Histogram[int64])
+	if !ok || len(hist.DataPoints) != 1 {
+		t.Fatalf("match_queries_per_request: unexpected data %#v", metrics["match_queries_per_request"].Data)
+	}
+	cf, ok := hist.DataPoints[0].Attributes.Value(attribute.Key("classyfire_enabled"))
+	if !ok || !cf.AsBool() {
+		t.Errorf("match_queries_per_request: classyfire_enabled = %v (present=%v), want true", cf.AsBool(), ok)
+	}
+
+	records := capture.take()
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want 1", len(records))
+	}
+	if !logAttrs(records[0])["classyfire_enabled"].AsBool() {
+		t.Error("log classyfire_enabled = false, want true")
+	}
+}
+
+func TestRecordClassyFireOutcomes(t *testing.T) {
+	capture.take()
+	RecordClassyFireOutcomes(context.Background(), 3, 1, 2)
+	metrics := collectMetrics(t)
+
+	sum, ok := metrics["classyfire_classifications_total"].Data.(metricdata.Sum[int64])
+	if !ok {
+		t.Fatalf("classyfire_classifications_total: unexpected data %#v", metrics["classyfire_classifications_total"].Data)
+	}
+	got := map[string]int64{}
+	for _, dp := range sum.DataPoints {
+		status, _ := dp.Attributes.Value(attribute.Key("status"))
+		got[status.AsString()] = dp.Value
+	}
+	want := map[string]int64{"classified": 3, "not_found": 1, "failed": 2}
+	for status, n := range want {
+		if got[status] != n {
+			t.Errorf("status %q = %d, want %d", status, got[status], n)
+		}
+	}
+}
+
+// Zero counts must not emit datapoints, so absent statuses stay absent in Grafana
+func TestRecordClassyFireOutcomesSkipsZeroes(t *testing.T) {
+	capture.take()
+	RecordClassyFireOutcomes(context.Background(), 2, 0, 0)
+	metrics := collectMetrics(t)
+
+	sum, ok := metrics["classyfire_classifications_total"].Data.(metricdata.Sum[int64])
+	if !ok {
+		t.Fatalf("classyfire_classifications_total: unexpected data %#v", metrics["classyfire_classifications_total"].Data)
+	}
+	if len(sum.DataPoints) != 1 {
+		t.Fatalf("got %d datapoints, want 1 (zero counts must not record)", len(sum.DataPoints))
+	}
+	status, _ := sum.DataPoints[0].Attributes.Value(attribute.Key("status"))
+	if status.AsString() != "classified" || sum.DataPoints[0].Value != 2 {
+		t.Errorf("datapoint = %s/%d, want classified/2", status.AsString(), sum.DataPoints[0].Value)
 	}
 }
 

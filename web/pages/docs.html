@@ -37,7 +37,7 @@
 
             <section class="doc-section">
                 <p class="doc-intro">
-                <strong style="color: #1a3e68">CTS-Lite</strong> is a lightweight <i>Chemical Translation Service</i> inspired by the Fiehn Lab's original <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2951090/" target="_blank">CTS</a>.
+                <strong style="color: #1a3e68">CTS-Lite</strong> is a lightweight <i>Chemical Translation Service</i>, and the successor to the Fiehn Lab's original <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2951090/" target="_blank">CTS</a>.
                 It allows users to easily match InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs against a curated subset of the PubChem database containing <b>10.6 million compounds</b>.
                 </p>
             </section>
@@ -52,7 +52,7 @@
                 </p>
 
                 <div class="doc-note">
-                    <strong>Note:</strong> Queries are limited to 100,000 entries at a time. Very large queries may take some time to process. Please be patient while the server handles your request.
+                    <strong>Note:</strong> Queries are limited to 100,000 entries per request. With ClassyFire enabled, the limit is reduced to 100 entries (see <a href="#classyfire">Chemical Classification</a>). Very large queries may take some time to process. Please be patient while the server handles your request.
                 </div>
             </section>
 
@@ -99,6 +99,13 @@
                 </p>
                 <div class="code-block">
                     <code>"cts-lite.metabolomics.us/match<strong>?rdkit_conversion=false</strong>"</code>
+                </div>
+
+                <p style="margin-bottom: -10px">
+                Enable ClassyFire chemical classification:
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true"</strong></code>
                 </div>
 
                 <h4 class="doc-subheading">Response Formats</h4>
@@ -196,6 +203,18 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
             </section>
 
             <section class="doc-section">
+                <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                    By default, CTS-Lite will return only the top hit per query. This setting can be toggled in the settings panel, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
+                </p>
+
+                <p>
+                For each query, the top hit is determined by ranking the hits on a weighted relevance score:<br>
+                <code class="inline-code">(0.7 * literature_count) + (0.3 * patent_count)</code>.
+                </p>
+            </section>
+
+            <section class="doc-section">
                 <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     Given the setting for first block matches is enabled (default), "InChIKey" and "Converted SMILES" queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
@@ -212,18 +231,6 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <p>
-                    By default, CTS-Lite will return only the top hit per query. This can be changed by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
-                </p>
-
-                <p>
-                For each query, the top hit is determined by ranking the hits on a weighted relevance score:<br>
-                <code class="inline-code">(0.7 * literature_count) + (0.3 * patent_count)</code>.
-                </p>
-            </section>
-
-            <section class="doc-section">
                 <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                 By default, CTS-Lite will attempt to convert <strong>failed</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>. It will then retry the lookup against the database using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Converted SMILES</code>.
@@ -233,6 +240,63 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 </p>
                 <p>
                     Disable RDKit conversion by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">rdkit_conversion=false</code> parameter to the API request.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="classyfire">Chemical Classification (ClassyFire)<button class="heading-anchor" onclick="copyHeadingLink(event,'classyfire')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <div class="doc-note-blue">
+                    <strong>BETA:</strong> Please be aware that the ClassyFire implementation in CTS-Lite is in a beta state. Please report any issues to the <a href=https://github.com/metabolomics-us/cts-lite/issues target=_blank>issue tracker</a>.
+                </div>
+                <p>
+                    CTS-Lite can optionally provide chemical taxonomy classifications from
+                    <a href="https://cfb.metabolomics.us/" target="_blank">ClassyFire</a>, developed by the
+                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>.
+                </p>
+                <p>
+                ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API with the <code class="inline-code">classyfire=true</code> parameter. Requests with ClassyFire enabled are <strong>limited to 100 entries</strong>.
+                </p>
+                <p>
+                    Each matched compound receives the following ClassyFire fields (some may be empty and therefore omitted):
+                </p>
+                <ul class="doc-list">
+                    <li><strong>Kingdom</strong>&emsp;(organic vs inorganic, e.g., <code class="inline-code">Organic compounds</code>)</li>
+                    <li><strong>Superclass</strong>&emsp;(general structural identifiers, e.g., <code class="inline-code">Organoheterocycli compounds)</code></li>
+                    <li><strong>Class</strong>&emsp;(specific structural features, e.g., <code class="inline-code">Imidazopyrimidines)</code></li>
+                    <li><strong>Subclass</strong>&emsp;(even more specific features, e.g., <code class="inline-code">Purines and purine derivatives)</code></li>
+                    <li><strong>Direct Parent</strong>&emsp;(most specific class (e.g., <code class="inline-code">Xanthines</code>)</li>
+                    <li><strong>Description</strong>&emsp;(text description of the compound's chemical class)</li>
+                </ul>
+                <p>
+                    If a compound is not found by ClassyFire, or if the ClassyFire service is unavailable, the
+                    reason is reported in an <code class="inline-code">error</code> field.
+                </p>
+                <p>
+                    A single query can match many compounds (for example, a molecular formula with
+                    <code class="inline-code">top_hit_only=false</code> may return hundreds of hits). To keep latency
+                    reasonable, only the <strong>top 3 matches of each identifier</strong> are classified.
+                </p>
+                <div class="doc-note">
+                    <strong>Note:</strong> ClassyFire adds significant network latency proportional to the number of unique matched compounds in your query.
+                </div>
+                <h4 class="doc-subheading">API Details When Using ClassyFire</h4>
+                <p>
+                    Enable ClassyFire by adding the <code class="inline-code">classyfire=true</code> parameter to an API request.
+                </p>
+                <p>
+                    You can stream ClassyFire results by adding the <code class="inline-code">stream=true</code> parameter. 
+                    Instead of a single JSON array upon completion, the server returns live NDJSON results. This may help with timeouts of large requests.
+                </p>
+                <p>
+                    JSON responses include a <code class="inline-code">classyfire</code>
+                    object on each matched compound.
+                </p>
+                <p>
+                    CSV outputs append seven additional columns:
+                    <div class="code-block">
+                        <pre><code>...,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error
+                        </code></pre>
+                    </div>
                 </p>
             </section>
 
