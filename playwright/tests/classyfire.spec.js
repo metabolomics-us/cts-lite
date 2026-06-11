@@ -301,8 +301,8 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
   );
 
   // Server-format CSV, authored to match api/handler.go writeResultsAsCSV exactly.
-  const header = 'query,query_type,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error';
-  const dataRow = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N,inchikey,true,exact,,2519,RYYVLZVUVIJVGH-UHFFFAOYSA-N,InChI=1S/C8H10N4O2,CN1C=NC2=C1C(=O)N(C(=O)N2C)C,Caffeine,C8H10N4O2,194.08,100,50,Organic compounds,Organoheterocyclic compounds,Imidazopyrimidines,Purines and purine derivatives,Xanthines,A xanthine alkaloid,';
+  const header = 'query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error';
+  const dataRow = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N,inchikey,,true,exact,,2519,RYYVLZVUVIJVGH-UHFFFAOYSA-N,InChI=1S/C8H10N4O2,CN1C=NC2=C1C(=O)N(C(=O)N2C)C,Caffeine,C8H10N4O2,194.08,100,50,Organic compounds,Organoheterocyclic compounds,Imidazopyrimidines,Purines and purine derivatives,Xanthines,A xanthine alkaloid,';
   const apiCsv = header + '\n' + dataRow + '\n';
 
   await page.route('**/match*', (route) => {
