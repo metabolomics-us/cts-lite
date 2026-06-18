@@ -274,18 +274,18 @@ test('classyfire is off by default', async ({ page }) => {
   await expect(page.locator('#cf-progress')).not.toBeVisible();
 });
 
-// The client rejects >100 identifiers before sending a ClassyFire request
-test('classyfire blocks more than 100 identifiers client-side', async ({ page }) => {
+// The client rejects >1000 identifiers before sending a ClassyFire request
+test('classyfire blocks more than 1,000 identifiers client-side', async ({ page }) => {
   let requested = false;
   await page.route('**/match*', (route) => { requested = true; route.fulfill({ status: 200, body: '' }); });
 
   await page.goto('/');
   await page.locator('#settings-toggle').click();
   await page.locator('label[aria-label="ClassyFire chemical classes"]').click();
-  await page.fill('#query-input', Array.from({ length: 101 }, () => 'O').join(' '));
+  await page.fill('#query-input', Array.from({ length: 1001 }, () => 'O').join(' '));
   await page.click('button[type="submit"]');
 
-  await expect(page.locator('#output-text')).toContainText('limit to 100 identifiers');
+  await expect(page.locator('#output-text')).toContainText('limit to 1,000 identifiers');
   expect(requested).toBe(false);
 });
 

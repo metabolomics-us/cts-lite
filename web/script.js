@@ -192,11 +192,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // ClassyFire is rate limited, max 100 queries
-    if (document.getElementById("classyfire-enabled").checked && queryCount > 100) {
+    // ClassyFire is rate limited, max 1000 queries
+    if (document.getElementById("classyfire-enabled").checked && queryCount > 1000) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
-      output.innerHTML = `ClassyFire is enabled - please <strong>limit to 100 identifiers</strong> per submission (currently ${queryCount.toLocaleString()}).<br><br>Non-ClassyFire submissions may contain up to 100,000 identifiers.`;
+      output.innerHTML = `ClassyFire is enabled - please <strong>limit to 1,000 identifiers</strong> per submission (currently ${queryCount.toLocaleString()}).<br><br>Non-ClassyFire submissions may contain up to 100,000 identifiers.`;
       return;
     }
 
