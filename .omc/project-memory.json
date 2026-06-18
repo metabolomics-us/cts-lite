@@ -1,0 +1,177 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1781768182125,
+  "projectRoot": "/private/var/folders/m_/hg7g2z1s1tg_b_l04fzrrrtm0000gn/T/doclake-factory-2m1c_kls/cts-lite",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Go",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "go.mod"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "go",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "api": {
+      "path": "api",
+      "purpose": "API routes",
+      "fileCount": 5,
+      "lastAccessed": 1781768182013,
+      "keyFiles": [
+        "api_test.go",
+        "classyfire.go",
+        "classyfire_test.go",
+        "handler.go",
+        "match.go"
+      ]
+    },
+    "dataset": {
+      "path": "dataset",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1781768182040,
+      "keyFiles": [
+        "missing_gnps_ids.txt"
+      ]
+    },
+    "model": {
+      "path": "model",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1781768182045,
+      "keyFiles": [
+        "model.go",
+        "model_test.go",
+        "testing.go"
+      ]
+    },
+    "playwright": {
+      "path": "playwright",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1781768182050,
+      "keyFiles": [
+        "package-lock.json",
+        "package.json",
+        "playwright.config.js"
+      ]
+    },
+    "rdkit": {
+      "path": "rdkit",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1781768182052,
+      "keyFiles": [
+        "README.md",
+        "rdkit.go"
+      ]
+    },
+    "server": {
+      "path": "server",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1781768182066,
+      "keyFiles": [
+        "main.go"
+      ]
+    },
+    "telemetry": {
+      "path": "telemetry",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1781768182085,
+      "keyFiles": [
+        "instrumentation.go",
+        "instrumentation_test.go",
+        "telemetry.go",
+        "telemetry_test.go"
+      ]
+    },
+    "web": {
+      "path": "web",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1781768182085,
+      "keyFiles": [
+        "favicon.ico",
+        "index.html",
+        "robots.txt",
+        "script.js",
+        "sitemap.xml"
+      ]
+    },
+    "playwright/tests": {
+      "path": "playwright/tests",
+      "purpose": "Test files",
+      "fileCount": 7,
+      "lastAccessed": 1781768182114,
+      "keyFiles": [
+        "classyfire.spec.js",
+        "download.spec.js",
+        "links.spec.js"
+      ]
+    },
+    "rdkit/lib": {
+      "path": "rdkit/lib",
+      "purpose": "Library code",
+      "fileCount": 2,
+      "lastAccessed": 1781768182114,
+      "keyFiles": [
+        "libsmiles_inchikey.a",
+        "smiles_inchikey.h"
+      ]
+    },
+    "web/assets": {
+      "path": "web/assets",
+      "purpose": "Static assets",
+      "fileCount": 11,
+      "lastAccessed": 1781768182116,
+      "keyFiles": [
+        "beta-icon.svg",
+        "chevron-icon.svg",
+        "copy-icon.svg"
+      ]
+    },
+    "web/pages": {
+      "path": "web/pages",
+      "purpose": "Page components",
+      "fileCount": 2,
+      "lastAccessed": 1781768182125,
+      "keyFiles": [
+        "docs.css",
+        "docs.html"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}
