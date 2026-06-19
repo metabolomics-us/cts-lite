@@ -349,3 +349,95 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
   const clientJson = JSON.parse(fs.readFileSync(await jsonDownload.path(), 'utf-8'));
   expect(clientJson).toEqual(apiJson);
 });
+
+// The /classyfire/status endpoint drives whether the toggle is usable. These tests
+// mock it (registered before goto, since initClassyfireStatus fetches it on load)
+// so the real ClassyFire backend is never probed.
+
+// mockStatus answers /classyfire/status with the given reachability
+async function mockStatus(page, up) {
+  await page.route('**/classyfire/status', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ up }) }));
+}
+
+// The ClassyFire toggle label, the clickable surface of the row
+const cfLabel = 'label[aria-label="ClassyFire chemical classes"]';
+
+// When the service is up the toggle behaves normally and never shows the modal
+test('toggle works normally when ClassyFire is up', async ({ page }) => {
+  await mockStatus(page, true);
+  await page.goto('/');
+  await page.locator('#settings-toggle').click();
+
+  await expect(page.locator('#classyfire-enabled')).toBeEnabled();
+  await expect(page.locator('#classyfire-row')).not.toHaveClass(/cf-disabled/);
+
+  await page.locator(cfLabel).click();
+  await expect(page.locator('#classyfire-enabled')).toBeChecked();
+  await expect(page.locator('#cf-down-modal')).toBeHidden();
+});
+
+// When the service is down the toggle is locked off and cannot be enabled
+test('toggle is disabled and stays off when ClassyFire is down', async ({ page }) => {
+  await mockStatus(page, false);
+  await page.goto('/');
+  await page.locator('#settings-toggle').click();
+
+  await expect(page.locator('#classyfire-row')).toHaveClass(/cf-disabled/);
+  await expect(page.locator('#classyfire-enabled')).toBeDisabled();
+  await expect(page.locator('#classyfire-enabled')).not.toBeChecked();
+
+  // Clicking the toggle does not enable it (force past Playwright's disabled-control check)
+  await page.locator(cfLabel).click({ force: true });
+  await expect(page.locator('#classyfire-enabled')).not.toBeChecked();
+});
+
+// Clicking the down toggle opens the explainer modal with a link to the docs
+test('clicking the down toggle opens the modal with a docs link', async ({ page }) => {
+  await mockStatus(page, false);
+  await page.goto('/');
+  await page.locator('#settings-toggle').click();
+
+  await expect(page.locator('#cf-down-modal')).toBeHidden();
+  await page.locator(cfLabel).click({ force: true });
+
+  const modal = page.locator('#cf-down-modal');
+  await expect(modal).toBeVisible();
+  await expect(modal).toContainText('ClassyFire is currently down');
+  await expect(modal.locator('.cf-modal-link')).toHaveAttribute('href', '/docs#classyfire');
+});
+
+// The modal closes via the close button and via the Escape key
+test('the down modal closes via button and Escape', async ({ page }) => {
+  await mockStatus(page, false);
+  await page.goto('/');
+  await page.locator('#settings-toggle').click();
+
+  // Close button
+  await page.locator(cfLabel).click({ force: true });
+  await expect(page.locator('#cf-down-modal')).toBeVisible();
+  await page.locator('#cf-modal-close').click();
+  await expect(page.locator('#cf-down-modal')).toBeHidden();
+
+  // Escape key (the close-button click above also closed the settings panel, so reopen it)
+  await page.locator('#settings-toggle').click();
+  await page.locator(cfLabel).click({ force: true });
+  await expect(page.locator('#cf-down-modal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#cf-down-modal')).toBeHidden();
+});
+
+// The docs question-mark link in the row navigates instead of opening the modal
+test('the row docs link does not trigger the down modal', async ({ page }) => {
+  await mockStatus(page, false);
+  await page.goto('/');
+  await page.locator('#settings-toggle').click();
+
+  const link = page.locator('#classyfire-row a[href="/docs#classyfire"]');
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    link.click(),
+  ]);
+  await expect(page.locator('#cf-down-modal')).toBeHidden();
+  await popup.close();
+});

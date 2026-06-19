@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"ctslite/model"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -980,4 +982,55 @@ func TestEnrichWithClassyFireIsSequential(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// setCfbServiceUp sets the reachability flag and restores it after the test
+func setCfbServiceUp(t *testing.T, up bool) {
+	t.Helper()
+	orig := cfbServiceUp.Load()
+	cfbServiceUp.Store(up)
+	t.Cleanup(func() { cfbServiceUp.Store(orig) })
+}
+
+func TestClassyFireStatusReportsFlag(t *testing.T) {
+	for _, up := range []bool{true, false} {
+		setCfbServiceUp(t, up)
+		rec := httptest.NewRecorder()
+		ClassyFireStatus(rec, httptest.NewRequest(http.MethodGet, "/classyfire/status", nil))
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status code = %d, want 200", rec.Code)
+		}
+		var body struct {
+			Up bool `json:"up"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
+		if body.Up != up {
+			t.Errorf("up = %v, want %v", body.Up, up)
+		}
+	}
+}
+
+// StartClassyFireHealthCheck runs the probe immediately, so a stubbed-down probe
+// should flip the flag to down shortly after launch
+func TestStartClassyFireHealthCheckUpdatesFlag(t *testing.T) {
+	setCfbServiceUp(t, true)
+	origProbe := cfbHealthProbe
+	cfbHealthProbe = func() bool { return false }
+	t.Cleanup(func() { cfbHealthProbe = origProbe })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	StartClassyFireHealthCheck(ctx)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !cfbServiceUp.Load() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("cfbServiceUp not set to false after health check launch")
 }
