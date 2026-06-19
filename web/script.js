@@ -43,6 +43,48 @@ function updateCfQueue(depth) {
   }
 }
 
+// Show the "ClassyFire is down" popup and move focus to its close button
+function showCfDownModal() {
+  const m = document.getElementById("cf-down-modal");
+  if (!m) return;
+  m.hidden = false;
+  document.getElementById("cf-modal-close").focus();
+}
+
+// Hide the "ClassyFire is down" popup
+function hideCfDownModal() {
+  const m = document.getElementById("cf-down-modal");
+  if (m) m.hidden = true;
+}
+
+// Check whether the ClassyFire backend is reachable. If it is down, disable the
+// settings toggle and popup the modal when the row is clicked
+async function initClassyfireStatus() {
+  const row = document.getElementById("classyfire-row");
+  const checkbox = document.getElementById("classyfire-enabled");
+  if (!row || !checkbox) return;
+
+  let up = true;
+  try {
+    const res = await fetch("/classyfire/status");
+    if (res.ok) up = (await res.json()).up !== false;
+  } catch (e) {
+    // Network error reaching our own status endpoint, leave the toggle usable
+    return;
+  }
+  if (up) return;
+
+  checkbox.checked = false;
+  checkbox.disabled = true;
+  row.classList.add("cf-disabled");
+  row.title = "ClassyFire is currently unavailable";
+  row.addEventListener("click", (e) => {
+    if (e.target.closest("a")) return; // let the docs question-mark link work
+    e.preventDefault();
+    showCfDownModal();
+  });
+}
+
 // Read NDJSON stream, dispatching each message by type
 async function consumeMatchStream(response, { onMatches, onClassyfire, onDone }) {
   const reader = response.body.getReader();
@@ -82,6 +124,17 @@ document.addEventListener("DOMContentLoaded", () => {
       settingsPanel.classList.remove("open");
       settingsToggle.setAttribute("aria-expanded", "false");
     }
+  });
+
+  // ClassyFire availability: lock the toggle and wire the down-modal
+  initClassyfireStatus();
+  const cfModal = document.getElementById("cf-down-modal");
+  document.getElementById("cf-modal-close").addEventListener("click", hideCfDownModal);
+  cfModal.addEventListener("click", (e) => {
+    if (e.target === cfModal) hideCfDownModal(); // click on the backdrop
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideCfDownModal();
   });
 
   // Pagination buttons (set up once, always reference current allData/currentPage)

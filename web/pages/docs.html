@@ -248,6 +248,9 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 <div class="doc-note-blue">
                     <strong>BETA:</strong> Please be aware that the ClassyFire implementation in CTS-Lite is in a beta state. Please report any issues to the <a href=https://github.com/metabolomics-us/cts-lite/issues target=_blank>issue tracker</a>.
                 </div>
+                <div class="doc-note-red" id="classyfire-status-note" hidden>
+                    <strong>STATUS:</strong> ClassyFire is currently unavailable. Chemical classification is temporarily disabled in CTS-Lite. Please try again later, or report a persistent outage to the <a href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank">issue tracker</a>.
+                </div>
                 <p>
                     CTS-Lite can optionally provide chemical taxonomy classifications from
                     <a href="https://cfb.metabolomics.us/" target="_blank">ClassyFire</a>, developed by the
@@ -329,6 +332,17 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 });
                 block.appendChild(btn);
             });
+
+            // Reveal the ClassyFire outage note only when the backend reports it down
+            fetch('/classyfire/status')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    if (d && d.up === false) {
+                        var note = document.getElementById('classyfire-status-note');
+                        if (note) note.hidden = false;
+                    }
+                })
+                .catch(function() {});
 
             if (location.hash) {
                 var target = document.querySelector(location.hash);
