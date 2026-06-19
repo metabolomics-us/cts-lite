@@ -352,14 +352,25 @@ button:disabled {
 
 .cf-modal-close {
   position: absolute;
-  top: 0.4rem;
-  right: 0.7rem;
+  top: 0.5rem;
+  right: 0.5rem;
+  margin: 0;
+  padding: 0;
+  width: 1.75rem;
+  height: 1.75rem;
   background: none;
-  border: none;
-  font-size: 1.6rem;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
   color: #666666;
+}
+
+.cf-modal-close:hover,
+.cf-modal-close:focus {
+  background: none;
+  color: #1a3e68;
 }
 
 .query-section h3 {
