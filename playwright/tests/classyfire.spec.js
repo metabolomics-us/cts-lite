@@ -47,6 +47,18 @@ async function mockMatch(page, body) {
     route.fulfill({ status: 200, contentType: 'application/x-ndjson', body }));
 }
 
+// mockStatus answers /classyfire/status with the given reachability
+async function mockStatus(page, up) {
+  await page.route('**/classyfire/status', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ up }) }));
+}
+
+// Pin ClassyFire to up by default so the toggle is usable regardless of the real
+// service state. Tests that need it down register their own route
+test.beforeEach(async ({ page }) => {
+  await mockStatus(page, true);
+});
+
 // enableClassyFireAndSubmit opens settings, turns on ClassyFire and submits a query
 async function enableClassyFireAndSubmit(page, query = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N') {
   await page.goto('/');
@@ -349,16 +361,6 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
   const clientJson = JSON.parse(fs.readFileSync(await jsonDownload.path(), 'utf-8'));
   expect(clientJson).toEqual(apiJson);
 });
-
-// The /classyfire/status endpoint drives whether the toggle is usable. These tests
-// mock it (registered before goto, since initClassyfireStatus fetches it on load)
-// so the real ClassyFire backend is never probed.
-
-// mockStatus answers /classyfire/status with the given reachability
-async function mockStatus(page, up) {
-  await page.route('**/classyfire/status', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ up }) }));
-}
 
 // The ClassyFire toggle label, the clickable surface of the row
 const cfLabel = 'label[aria-label="ClassyFire chemical classes"]';
