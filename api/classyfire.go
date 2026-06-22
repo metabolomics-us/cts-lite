@@ -138,6 +138,8 @@ var cfbHealthProbe = func() bool {
 
 // StartClassyFireHealthCheck probes ClassyFire on startup and then intermittently
 func StartClassyFireHealthCheck(ctx context.Context) {
+	// Export the current reachability as an observable gauge for the uptime timeline
+	telemetry.RegisterClassyFireServiceGauge(func() bool { return cfbServiceUp.Load() })
 	go func() {
 		check := func() { cfbServiceUp.Store(cfbHealthProbe()) }
 		check()
