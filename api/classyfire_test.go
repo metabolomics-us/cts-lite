@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"ctslite/model"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -428,6 +430,98 @@ func TestEnrichWithClassyFireGivesUpWhenServiceDown(t *testing.T) {
 	}
 }
 
+// A single key that always 500s exhausts the normal bounded retries
+// and then fails. With no further keys to probe, the breaker never trips
+func TestEnrichWithClassyFire500SingleKeyRetries(t *testing.T) {
+	var calls int32
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		atomic.AddInt32(&calls, 1)
+		return cfbFetch{mode: cfbRetry500, errMsg: "ClassyFire internal error (HTTP 500)"}, errors.New("HTTP 500")
+	})
+
+	results := []*model.SingleResult{
+		{MatchFound: true, Matches: []*model.Compound{{InChIKey: "RYYVLZVUVIJVGH-UHFFFAOYSA-N"}}},
+	}
+	enrichWithClassyFire(context.Background(), results)
+
+	if got, want := atomic.LoadInt32(&calls), int32(len(cfbRetryDelays)+1); got != want {
+		t.Errorf("expected %d attempts on a persistent 500, got %d", want, got)
+	}
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "ClassyFire internal error (HTTP 500)" {
+		t.Errorf("expected 500 error surfaced, got %+v", cf)
+	}
+}
+
+// A persistent 500 retries the key, probes the next two keys once each, and only
+// after all three 500 does it assume the service is down and fast-fail the rest
+func TestEnrichWithClassyFireProbesThenGivesUpOn500(t *testing.T) {
+	var calls int32
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		atomic.AddInt32(&calls, 1)
+		return cfbFetch{mode: cfbRetry500, errMsg: "ClassyFire internal error (HTTP 500)"}, errors.New("HTTP 500")
+	})
+
+	const numKeys = 10
+	results := make([]*model.SingleResult, numKeys)
+	for i := range results {
+		key := string(rune('A'+i)) + "YYVLZVUVIJVGH-UHFFFAOYSA-N"
+		results[i] = &model.SingleResult{MatchFound: true, Matches: []*model.Compound{{InChIKey: key}}}
+	}
+	enrichWithClassyFire(context.Background(), results)
+
+	// First key retries (len(cfbRetryDelays)+1 attempts), then each probe key is
+	// tried once. After all three keys 500 the breaker trips
+	wantCalls := int32(len(cfbRetryDelays) + 1 + cfb500Probes)
+	if got := atomic.LoadInt32(&calls); got != wantCalls {
+		t.Errorf("expected %d fetches before giving up, got %d", wantCalls, got)
+	}
+
+	// Every compound is still reported with an error
+	for i, r := range results {
+		if cf := r.Matches[0].ClassyFire; cf == nil || cf.Error == "" {
+			t.Errorf("result[%d]: expected an error, got %+v", i, cf)
+		}
+	}
+
+	// Keys after the breaker tripped carry the generic unavailable note
+	if cf := results[numKeys-1].Matches[0].ClassyFire; cf == nil || cf.Error != cfbUnavailableNote {
+		t.Errorf("expected last compound to carry %q, got %+v", cfbUnavailableNote, cf)
+	}
+}
+
+// A 500 on one key must not be mistaken for the service being down: once a probe
+// key returns a non-500 outcome the remaining compounds are classified normally
+func TestEnrichWithClassyFire500RecoversWhenProbeSucceeds(t *testing.T) {
+	var calls int32
+	bad := "AYYVLZVUVIJVGH-UHFFFAOYSA-N"
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		atomic.AddInt32(&calls, 1)
+		if inchikey == bad {
+			return cfbFetch{mode: cfbRetry500, errMsg: "ClassyFire internal error (HTTP 500)"}, errors.New("HTTP 500")
+		}
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	const numKeys = 5
+	results := make([]*model.SingleResult, numKeys)
+	for i := range results {
+		key := string(rune('A'+i)) + "YYVLZVUVIJVGH-UHFFFAOYSA-N"
+		results[i] = &model.SingleResult{MatchFound: true, Matches: []*model.Compound{{InChIKey: key}}}
+	}
+	enrichWithClassyFire(context.Background(), results)
+
+	// The bad key fails with the 500 message
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "ClassyFire internal error (HTTP 500)" {
+		t.Errorf("expected 500 error for the bad key, got %+v", cf)
+	}
+	// The first probe confirms the service is up, so every other key is classified
+	for i := 1; i < numKeys; i++ {
+		if cf := results[i].Matches[0].ClassyFire; cf == nil || cf.Error != "" {
+			t.Errorf("result[%d]: expected classification, got %+v", i, cf)
+		}
+	}
+}
+
 // Consecutive 429s are treated differently to non-429s, retry more than cfbDownGiveUp times
 func TestEnrichWithClassyFireRetriesRateLimitBeyondNormalLimit(t *testing.T) {
 	var calls int32
@@ -759,6 +853,29 @@ func TestDefaultFetcherServerError(t *testing.T) {
 	}
 }
 
+// An HTTP 500 is flagged with the internal-error message and the probe-aware mode
+func TestDefaultFetcherInternalServerError(t *testing.T) {
+	key := freshKey(t, "INTERNALERR001-AAAAAAAAA-N")
+	withMockTransport(t, func(*http.Request) (*http.Response, error) {
+		return cfbResp(http.StatusInternalServerError, "", nil), nil
+	})
+
+	res, err := defaultClassyFireFetcher(key)
+	if err == nil {
+		t.Error("expected error for HTTP 500")
+	}
+	if res.mode != cfbRetry500 {
+		t.Errorf("mode: want cfbRetry500, got %v", res.mode)
+	}
+	if res.errMsg != "ClassyFire internal error (HTTP 500)" {
+		t.Errorf("errMsg: want %q, got %q", "ClassyFire internal error (HTTP 500)", res.errMsg)
+	}
+	// A 500 is transient and must not be cached
+	if _, ok := cfbCacheLookup(key); ok {
+		t.Error("500 must not be cached")
+	}
+}
+
 // An unparseable 200 body is treated as a transient failure
 func TestDefaultFetcherMalformedJSON(t *testing.T) {
 	key := freshKey(t, "MALFORMED00001-AAAAAAAAA-N")
@@ -865,4 +982,55 @@ func TestEnrichWithClassyFireIsSequential(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// setCfbServiceUp sets the reachability flag and restores it after the test
+func setCfbServiceUp(t *testing.T, up bool) {
+	t.Helper()
+	orig := cfbServiceUp.Load()
+	cfbServiceUp.Store(up)
+	t.Cleanup(func() { cfbServiceUp.Store(orig) })
+}
+
+func TestClassyFireStatusReportsFlag(t *testing.T) {
+	for _, up := range []bool{true, false} {
+		setCfbServiceUp(t, up)
+		rec := httptest.NewRecorder()
+		ClassyFireStatus(rec, httptest.NewRequest(http.MethodGet, "/classyfire/status", nil))
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status code = %d, want 200", rec.Code)
+		}
+		var body struct {
+			Up bool `json:"up"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
+		if body.Up != up {
+			t.Errorf("up = %v, want %v", body.Up, up)
+		}
+	}
+}
+
+// StartClassyFireHealthCheck runs the probe immediately, so a stubbed-down probe
+// should flip the flag to down shortly after launch
+func TestStartClassyFireHealthCheckUpdatesFlag(t *testing.T) {
+	setCfbServiceUp(t, true)
+	origProbe := cfbHealthProbe
+	cfbHealthProbe = func() bool { return false }
+	t.Cleanup(func() { cfbHealthProbe = origProbe })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	StartClassyFireHealthCheck(ctx)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !cfbServiceUp.Load() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("cfbServiceUp not set to false after health check launch")
 }

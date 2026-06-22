@@ -6,6 +6,7 @@ const testDbPath = '/tmp/cts-lite-playwright-test.db';
 const csvPath = 'dataset/test_datasets/unittest_data.csv';
 
 module.exports = defineConfig({
+  timeout: 10_000,
   testDir: './tests',
   retries: 1,
   reporter: process.env.GITHUB_ACTIONS ? 'github' : process.env.CI ? 'playwright-teamcity-reporter' : 'list',

@@ -69,7 +69,7 @@
                                     <span class="toggle-track"></span>
                                 </label>
                             </div>
-                            <div class="settings-row" style="margin-top: 0.75rem;">
+                            <div class="settings-row" style="margin-top: 0.75rem;" id="classyfire-row">
                                 <span>ClassyFire <img src="assets/beta-icon.svg" alt="Beta feature" width="42" height="19" style="vertical-align:middle;margin:0.25rem;opacity:0.7;"> <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="ClassyFire chemical classes">
                                     <input type="checkbox" id="classyfire-enabled">
@@ -119,6 +119,16 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Popup shown when the ClassyFire toggle is clicked while the service is down -->
+    <div id="cf-down-modal" class="cf-modal" hidden>
+        <div class="cf-modal-box" role="dialog" aria-modal="true" aria-labelledby="cf-modal-title">
+            <button type="button" class="cf-modal-close" id="cf-modal-close" aria-label="Close">&times;</button>
+            <h3 id="cf-modal-title">ClassyFire is currently down</h3>
+            <p>The ClassyFire service is unreachable right now. Chemical classification is temporarily unavailable.</p>
+            <a href="/docs#classyfire" target="_blank" class="cf-modal-link">See docs for more</a>
+        </div>
     </div>
 <script src="script.js"></script>
 </body>

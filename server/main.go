@@ -83,6 +83,10 @@ func main() {
 	http.HandleFunc("/health", corsMiddleware(api.Status))
 	http.HandleFunc("/status", corsMiddleware(api.Status))
 
+	// Status check of the ClassyFire backend
+	api.StartClassyFireHealthCheck(context.Background())
+	http.HandleFunc("/classyfire/status", corsMiddleware(api.ClassyFireStatus))
+
 	// Endpoint for matching against database
 	matchHandler := corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		api.Match(index, w, r)

@@ -204,8 +204,8 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enforce ClassyFire query limit
-	if classyfireEnabled && len(queries) > 100 {
-		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100 when ClassyFire is enabled)", len(queries)), http.StatusBadRequest)
+	if classyfireEnabled && len(queries) > 1000 {
+		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 1,000 when ClassyFire is enabled)", len(queries)), http.StatusBadRequest)
 		return
 	}
 

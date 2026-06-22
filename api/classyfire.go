@@ -37,15 +37,22 @@ const (
 	cfb429MaxRetries = 5
 )
 
-// cfbDownGiveUp = number of consecutive 5xx failures before fast-failing remaining compounds 
+// cfbDownGiveUp = number of consecutive non-500 failures (network errors, 502/503 etc) before fast-failing remaining compounds
 // 429 or 200 resets the counter. Counter is per-request.
 var cfbDownGiveUp = 3
 const cfbUnavailableNote = "ClassyFire is currently unavailable"
 
+// cfb500Probes = number of subsequent keys probed once each after a key exhausts its retries on HTTP 500s
+// Some InChIKeys consistently 500 even when the service is healthy, so a 500 alone does not
+// mean cfb is down. If every probe key also 500s the service is assumed down and the
+// remaining compounds fast-fail. Any non-500 outcome from a probe confirms cfb is up
+const cfb500Probes = 2
+
 // cfbBreaker is the 'give-up' state of each request, passed through classifyKey()
 type cfbBreaker struct {
-	downStreak int  // consecutive failures during this request
+	downStreak int  // consecutive non-500 failures during this request
 	tripped    bool // cfb down, remaining keys fast-fail
+	probes500  int  // single-attempt probes left after a key exhausted its retries on 500s
 }
 
 // Enum for the outcomes of CFB
@@ -99,12 +106,71 @@ func cfbEnterQueue() { atomic.AddInt64(&cfbActiveRequests, 1) }
 func cfbLeaveQueue() { atomic.AddInt64(&cfbActiveRequests, -1) }
 func cfbQueueDepth() int64 { return atomic.LoadInt64(&cfbActiveRequests) }
 
+// cfbServiceUp = last known reachability of the ClassyFire service, updated by a
+// periodic background probe and by live request outcomes
+var cfbServiceUp atomic.Bool
+
+func init() { cfbServiceUp.Store(true) }
+
+const (
+	cfbHealthProbeInterval = 180 * time.Second
+	cfbHealthProbeKey = "RYYVLZVUVIJVGH-UHFFFAOYSA-N" // caffeine
+	cfbHealthProbeTimeout = 15 * time.Second
+)
+
+// cfbHealthProbe performs a single reachability check, it's a var so tests can mock it
+var cfbHealthProbe = func() bool {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s.json", cfbBaseURL, cfbHealthProbeKey), nil)
+	if err != nil {
+		return false
+	}
+	// Cache-Control: no-cache forces cfb to revalidate against the real classyfire API
+	req.Header.Set("Cache-Control", "no-cache")
+
+	client := &http.Client{Timeout: cfbHealthProbeTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false // network error or timeout, the service is unreachable
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode < http.StatusInternalServerError
+}
+
+// StartClassyFireHealthCheck probes ClassyFire on startup and then intermittently
+func StartClassyFireHealthCheck(ctx context.Context) {
+	// Export the current reachability as an observable gauge for the uptime timeline
+	telemetry.RegisterClassyFireServiceGauge(func() bool { return cfbServiceUp.Load() })
+	go func() {
+		check := func() { cfbServiceUp.Store(cfbHealthProbe()) }
+		check()
+		ticker := time.NewTicker(cfbHealthProbeInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				check()
+			}
+		}
+	}()
+}
+
+// ClassyFireStatus reports whether the ClassyFire service is currently reachable
+func ClassyFireStatus(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]bool{"up": cfbServiceUp.Load()}); err != nil {
+		log.Printf("Failed to encode ClassyFire status response: %v", err)
+	}
+}
+
 // cfbRetryMode describes the outcome of a single lookup attempt and how the caller should retry
 type cfbRetryMode int
 const (
 	cfbTerminal         cfbRetryMode = iota // 200, 404, or empty -> no retry
-	cfbRetryLimited                         // 5xx error -> bounded number of retries (per key)
+	cfbRetryLimited                         // network error or non-500 5xx -> bounded retries, counts toward 'down'
 	cfbRetryRateLimited                     // 429 -> pause entire queue, retry, give up after cfb429MaxRetries
+	cfbRetry500                             // HTTP 500 -> bounded retries, then probe the next keys before giving up
 )
 
 // cfbFetch = result of an InChIKey lookup 
@@ -168,8 +234,15 @@ func defaultClassyFireFetcher(inchikey string) (cfbFetch, error) {
 				errMsg: "ClassyFire rate limited (HTTP 429)"},
 			fmt.Errorf("classyfire HTTP 429")
 	}
+	if resp.StatusCode == http.StatusInternalServerError {
+		// Some InChIKeys consistently return HTTP 500 even when the service is healthy,
+		// so a 500 is retried per key and then confirmed by probing the next keys
+		return cfbFetch{cacheHit: cacheHit, mode: cfbRetry500,
+				errMsg: "ClassyFire internal error (HTTP 500)"},
+			fmt.Errorf("classyfire HTTP 500")
+	}
 	if resp.StatusCode != http.StatusOK {
-		// Other server errors (5xx etc)
+		// Other server errors (502, 503 etc)
 		return cfbFetch{cacheHit: cacheHit, mode: cfbRetryLimited,
 				errMsg: fmt.Sprintf("ClassyFire unavailable (HTTP %d)", resp.StatusCode)},
 			fmt.Errorf("classyfire HTTP %d", resp.StatusCode)
@@ -347,7 +420,7 @@ func classifyKey(ctx context.Context, key string, br *cfbBreaker) (info *model.C
 		return &model.ClassyFireInfo{Error: cfbUnavailableNote}, cfbOutFailed
 	}
 
-	var rateLimited, transient int
+	var rateLimited, transient, serverErr int
 	for {
 		res, ok := fetchOnce(ctx, key)
 		if !ok {
@@ -360,9 +433,31 @@ func classifyKey(ctx context.Context, key string, br *cfbBreaker) (info *model.C
 			msg = "ClassyFire lookup failed"
 		}
 
+		// While probing after a 500, each key gets a single attempt. Another 500
+		// counts toward confirming the service is down; any other outcome clears
+		// probe mode and the result is handled normally below
+		if br.probes500 > 0 {
+			if res.mode == cfbRetry500 {
+				br.probes500--
+				if br.probes500 == 0 {
+					br.tripped = true
+					cfbServiceUp.Store(false) // classyfire down
+					log.Printf("ERROR: ClassyFire returned HTTP 500 for %d consecutive keys; assuming it is down and failing remaining compounds for this request", cfb500Probes+1)
+					return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+				}
+				log.Printf("ClassyFire HTTP 500 for probe key %s; %d probe(s) remaining", key, br.probes500)
+				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+			}
+			// A non-500 outcome confirms the service is up
+			br.probes500 = 0
+		}
+
 		switch res.mode {
 		case cfbTerminal:
 			br.downStreak = 0
+			if !res.cacheHit { // only consider classyfire up if it was not a cfb cache hit
+				cfbServiceUp.Store(true)
+			}
 			return res.info, cfbTerminalOutcome(res.info)
 
 		case cfbRetryRateLimited:
@@ -374,11 +469,27 @@ func classifyKey(ctx context.Context, key string, br *cfbBreaker) (info *model.C
 			}
 			log.Printf("ClassyFire rate limited (429) for %s; pausing and retrying (%d/%d)", key, rateLimited, cfb429MaxRetries)
 
+		case cfbRetry500:
+			// A 500 means the service responded, so it does not count toward the
+			// 'down' streak. Retry this key, then probe the next keys to decide
+			// whether the service is down or this key just persistently 500s
+			br.downStreak = 0
+			if serverErr >= len(cfbRetryDelays) {
+				log.Printf("ClassyFire HTTP 500 for %s after %d attempts; probing the next %d key(s)", key, serverErr+1, cfb500Probes)
+				br.probes500 = cfb500Probes
+				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+			}
+			if sleepCtx(ctx, cfbRetryDelays[serverErr]) != nil {
+				return nil, cfbOutFailed // ctx cancelled during backoff
+			}
+			serverErr++
+
 		default: // cfbRetryLimited, service down
 			br.downStreak++
 			if br.downStreak >= cfbDownGiveUp {
 				// cfb looks down, fail fast
 				br.tripped = true
+				cfbServiceUp.Store(false) // classyfire down
 				log.Printf("ERROR: ClassyFire appears down after %d consecutive failures; failing remaining compounds for this request", br.downStreak)
 				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
 			}

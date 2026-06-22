@@ -39,6 +39,7 @@ var (
 	matchQueriesPerReq        metric.Int64Histogram
 	classyfireClassifications metric.Int64Counter
 	matchLogger               log.Logger
+	classyfireGaugeOnce       sync.Once
 )
 
 // initInstruments lazily creates the metric instruments and logger from the
@@ -153,6 +154,31 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 		record.AddAttributes(log.Bool("misses_truncated", true))
 	}
 	matchLogger.Emit(ctx, record)
+}
+
+// RegisterClassyFireServiceGauge wires an observable gauge that samples
+// ClassyFire reachability at each metric export: 1 when up, 0 when down
+func RegisterClassyFireServiceGauge(up func() bool) {
+	if up == nil {
+		return
+	}
+	classyfireGaugeOnce.Do(func() {
+		meter := otel.Meter(scopeName)
+		_, err := meter.Int64ObservableGauge("classyfire_service_up",
+			metric.WithDescription("ClassyFire service reachability sampled by the health probe (1 = up, 0 = down)"),
+			metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+				var v int64
+				if up() {
+					v = 1
+				}
+				o.Observe(v)
+				return nil
+			}),
+		)
+		if err != nil {
+			otel.Handle(err)
+		}
+	})
 }
 
 // RecordClassyFireOutcomes counts terminal ClassyFire classification outcomes.

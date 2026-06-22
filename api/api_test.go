@@ -414,15 +414,15 @@ func TestQueryLimitExceeded(t *testing.T) {
 }
 
 func TestClassyFireQueryLimitExceeded(t *testing.T) {
-	// ClassyFire enabled limits queries to 100 entries/identifiers
-	queries := strings.TrimRight(strings.Repeat("O ", 101), " ")
+	// ClassyFire enabled limits queries to 1,000 entries/identifiers
+	queries := strings.TrimRight(strings.Repeat("O ", 1001), " ")
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true", strings.NewReader(`{"queries":"`+queries+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	Match(mockIndex, w, req)
 
 	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400 for >100 entries with ClassyFire enabled, got %d", w.Result().StatusCode)
+		t.Errorf("expected 400 for >1,000 entries with ClassyFire enabled, got %d", w.Result().StatusCode)
 	}
 }
 
@@ -818,16 +818,16 @@ func TestMatchStreamingClassyFire(t *testing.T) {
 }
 
 func TestMatchStreamingRespectsClassyFireLimit(t *testing.T) {
-	// The 100-entry cap is validated before streaming begins, so it still
+	// The 1000-entry cap is validated before streaming begins, so it still
 	// returns a 400 (not a 200 stream) even with stream=true.
-	queries := strings.TrimRight(strings.Repeat("O ", 101), " ")
+	queries := strings.TrimRight(strings.Repeat("O ", 1001), " ")
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", strings.NewReader(`{"queries":"`+queries+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	Match(mockIndex, w, req)
 
 	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400 for >100 entries even when streaming, got %d", w.Result().StatusCode)
+		t.Errorf("expected 400 for >1,000 entries even when streaming, got %d", w.Result().StatusCode)
 	}
 }
 

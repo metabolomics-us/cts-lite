@@ -1,6 +1,10 @@
 const { test, expect } = require('@playwright/test');
 
 test.beforeEach(async ({ page }) => {
+  // Pin ClassyFire status to up so its toggle is enabled. Otherwise a live "down"
+  // response disables the toggle and the ClassyFire settings test cannot click it
+  await page.route('**/classyfire/status', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ up: true }) }));
   await page.goto('/');
 });
 

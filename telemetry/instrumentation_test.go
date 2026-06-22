@@ -395,6 +395,34 @@ func TestRecordClassyFireOutcomesSkipsZeroes(t *testing.T) {
 	}
 }
 
+// The observable gauge reports 1 while up and 0 once the provider flips to down,
+// the 0/1 series that drives the uptime timeline and percentage
+func TestClassyFireServiceGauge(t *testing.T) {
+	up := true
+	RegisterClassyFireServiceGauge(func() bool { return up })
+
+	collectServiceUp := func() int64 {
+		t.Helper()
+		metrics := collectMetrics(t)
+		g, ok := metrics["classyfire_service_up"].Data.(metricdata.Gauge[int64])
+		if !ok {
+			t.Fatalf("classyfire_service_up: unexpected data %#v", metrics["classyfire_service_up"].Data)
+		}
+		if len(g.DataPoints) != 1 {
+			t.Fatalf("got %d datapoints, want 1", len(g.DataPoints))
+		}
+		return g.DataPoints[0].Value
+	}
+
+	if got := collectServiceUp(); got != 1 {
+		t.Errorf("gauge while up = %d, want 1", got)
+	}
+	up = false
+	if got := collectServiceUp(); got != 0 {
+		t.Errorf("gauge while down = %d, want 0", got)
+	}
+}
+
 func TestRecordMatchEmptyResults(t *testing.T) {
 	capture.take()
 	// Must not panic or divide by zero.
