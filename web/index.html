@@ -36,8 +36,18 @@
                 <h2 class="hero-tagline">Translate chemical identifiers at lite-speed</h2>
             </div>
             <form id="query-form">
-                <label for="query-input" id="input-label">Accepts InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs</label>
-                <p style="font-size: 0.9rem; margin-top: 0.5rem;">Space, Tab, or Newline separated entries</p>
+                <label for="query-input" id="input-label">
+                    <div id="input-label-row">
+                        <img src="assets/info-icon.svg" alt="" width="16" height="16">
+                        <span><strong>Accepts:</strong></span>
+                        <span class="format-tag">InChI</span>
+                        <span class="format-tag">InChIKey</span>
+                        <span class="format-tag">SMILES</span>
+                        <span class="format-tag">Molecular Formula</span>
+                        <span class="format-tag">PubChem CID</span>
+                    </div>
+                    <p id="input-label-sub">Space, Tab, or Newline separated entries</p>
+                </label>
                 <textarea id="query-input" rows="5" cols="40"
                 placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C &#10;H2O &#10;962"></textarea>
                 <br>

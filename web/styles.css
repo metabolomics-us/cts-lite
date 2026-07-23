@@ -243,9 +243,32 @@ button:disabled {
 }
 
 #input-label {
-  font-weight: bold;
-  margin-bottom: 3rem;
+  display: block;
+  margin-bottom: 1rem;
   margin-top: 0rem;
+}
+
+#input-label-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+#input-label-sub {
+  font-size: 0.95rem;
+  margin: 0.4rem 0 0 0;
+}
+
+.format-tag {
+  background-color: #e8eef5;
+  color: #1a3e68;
+  border: 1px solid #1a3e68;
+  font-size: 0.85rem;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
 }
 
 #output-text {
