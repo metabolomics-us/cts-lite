@@ -17,7 +17,6 @@ declare -A pubchem_categories=(
   ["lc-ms"]=3857761
   ["ms-ms"]=1857020
   ["agrochemical"]=1857282
-  ["pathways"]=3647702
   ["drug-and-medic-info"]=1857071
   ["food-additives"]=1857308
   ["pharma-biochem"]=3647584
@@ -26,7 +25,10 @@ declare -A pubchem_categories=(
   ["manufacturing"]=3647592
   ["disorders"]=1857178
   ["identification"]=1857246
-  ["chemical-classes"]=1857014
+  ["chemical-physical-props"]=1857008
+  ["biologic-description"]=1856929
+  ["interactions-and-pathways"]=5564640
+  ["taxonomy"]=4814687
 )
 
 # Ensure all required tools are available
@@ -95,7 +97,7 @@ download_pubchem_category() {
     echo "Failed to fetch cache key for ${hnid}"
     exit 1
   fi
-  wget "https://pubchem.ncbi.nlm.nih.gov/sdq/sphinxql.cgi?infmt=json&outfmt=csv&query={%22download%22:%20%22cid,cmpdname,inchikey,inchi,smiles,mf,exactmass,gpidcnt,pclidcnt%22,%22collection%22:%22compound%22,%22order%22:[%22relevancescore,desc%22],%22start%22:1,%22limit%22:10000000,%22where%22:{%22ands%22:[{%22input%22:{%22type%22:%22netcachekey%22,%22idtype%22:%22cid%22,%22key%22:%22${key}%22}}]}}&showcolumndisplayname=1" -O "${outfile}"
+  wget "https://pubchem.ncbi.nlm.nih.gov/sdq/sphinxql.cgi?infmt=json&outfmt=csv&query={%22download%22:%20%22cid,cmpdname,inchikey,inchi,smiles,mf,exactmass,gpidcnt,pclidcnt,annothitcnt%22,%22collection%22:%22compound%22,%22order%22:[%22relevancescore,desc%22],%22start%22:1,%22limit%22:10000000,%22where%22:{%22ands%22:[{%22input%22:{%22type%22:%22netcachekey%22,%22idtype%22:%22cid%22,%22key%22:%22${key}%22}}]}}&showcolumndisplayname=1" -O "${outfile}"
 }
 
 download_csvs() {

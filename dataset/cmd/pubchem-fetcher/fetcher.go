@@ -1,4 +1,4 @@
-package main 
+package main
 
 // Usage:
 // go run fetcher.go <cid-list-file> [output-file]
@@ -19,15 +19,16 @@ import (
 )
 
 type Property struct {
-	CID              int    `json:"CID"`
-	InChIKey         string `json:"InChIKey"`
-	InChI            string `json:"InChI"`
-	SMILES           string `json:"SMILES"`
-	ExactMass        string `json:"ExactMass"`
-	LiteratureCount  int    `json:"LiteratureCount"`
-	PatentCount      int    `json:"PatentCount"`
-	Title            string `json:"Title"`
-	MolecularFormula string `json:"MolecularFormula"`
+	CID                 int    `json:"CID"`
+	InChIKey            string `json:"InChIKey"`
+	InChI               string `json:"InChI"`
+	SMILES              string `json:"SMILES"`
+	ExactMass           string `json:"ExactMass"`
+	LiteratureCount     int    `json:"LiteratureCount"`
+	PatentCount         int    `json:"PatentCount"`
+	AnnotationTypeCount int    `json:"AnnotationTypeCount"`
+	Title               string `json:"Title"`
+	MolecularFormula    string `json:"MolecularFormula"`
 }
 
 type PugResponse struct {
@@ -41,7 +42,7 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 	for i, c := range cids {
 		cidStrs[i] = fmt.Sprintf("%d", c)
 	}
-	const endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/property/InChIKey,InChI,SMILES,ExactMass,LiteratureCount,PatentCount,Title,MolecularFormula/JSON"
+	const endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/property/InChIKey,InChI,SMILES,ExactMass,LiteratureCount,PatentCount,AnnotationTypeCount,Title,MolecularFormula/JSON"
 	body := url.Values{"cid": {strings.Join(cidStrs, ",")}}.Encode()
 
 	// Simple retry
@@ -128,7 +129,7 @@ func main() {
 	defer w.Flush()
 
 	// Header:
-	w.Write([]string{"Compound_CID", "Linked_PubChem_Literature_Count", "Linked_PubChem_Patent_Count", "Molecular_Formula", "SMILES", "InChI", "InChIKey", "Exact_Mass", "Name"})
+	w.Write([]string{"Compound_CID", "Linked_PubChem_Literature_Count", "Linked_PubChem_Patent_Count", "Annotation_Type_Count", "Molecular_Formula", "SMILES", "InChI", "InChIKey", "Exact_Mass", "Name"})
 
 	batchSize := 1000
 
@@ -153,6 +154,7 @@ func main() {
 				fmt.Sprintf("%d", p.CID),
 				fmt.Sprintf("%d", p.LiteratureCount),
 				fmt.Sprintf("%d", p.PatentCount),
+				fmt.Sprintf("%d", p.AnnotationTypeCount),
 				p.MolecularFormula,
 				p.SMILES,
 				p.InChI,

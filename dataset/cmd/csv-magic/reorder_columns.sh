@@ -14,13 +14,13 @@ OUT="$2"
 
 # Reorder columns
 csvcut -c \
-Compound_CID,Linked_PubChem_Literature_Count,Linked_PubChem_Patent_Count,Molecular_Formula,SMILES,InChI,InChIKey,Exact_Mass,Name \
+Compound_CID,Linked_PubChem_Literature_Count,Linked_PubChem_Patent_Count,Annotation_Type_Count,Molecular_Formula,SMILES,InChI,InChIKey,Exact_Mass,Name \
 "$IN" | \
 
 # Rename columns
 awk 'BEGIN{OFS=","}
 NR==1 {
-  print "Identifier,Literature_Count,Patent_Count,MolecularFormula,SMILES,InChI,InChIKey,ExactMass,CompoundName"
+  print "Identifier,Literature_Count,Patent_Count,AnnotationTypeCount,MolecularFormula,SMILES,InChI,InChIKey,ExactMass,CompoundName"
   next
 }
 { print }' > "$OUT"
