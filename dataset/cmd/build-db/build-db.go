@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -93,8 +94,8 @@ func run(csvPath, dbPath string) error {
 }
 
 // bulkInsert inserts all CSV rows using batched transactions for performance
-// CSV column order: identifier, literature_count, patent_count,
-//   molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name
+// CSV column order: identifier, literature_count, patent_count, annotation_type_count,
+//	molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name
 func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 	tx, stmt, err := beginBatch(db)
 	if err != nil {
@@ -107,32 +108,40 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 		if err == io.EOF {
 			break
 		}
+
 		if err != nil {
 			tx.Rollback()
 			return 0, fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		if len(line) != 9 {
+		if len(line) != 10 {
 			tx.Rollback()
-			return 0, fmt.Errorf("row %d has %d fields, expected 9", count+1, len(line))
+			return 0, fmt.Errorf("row %d has %d fields, expected 10", count+1, len(line))
 		}
 
 		// Skip lines without inchikeys
-		if line[6] == "" {
+		if line[7] == "" {
+			continue
+		}
+
+		// Skip rows with a missing formula or non-numeric fields
+		if !hasValidNumericFields(line) {
+			log.Printf("skipping row %d (identifier %s): missing or non-numeric fields", count+1, line[0])
 			continue
 		}
 
 		if _, err := stmt.Exec(
-			line[0], // identifier
-			line[6], // inchikey
-			line[6][:14], // first_block
-			line[5], // inchi
-			line[4], // smiles
-			line[8], // compound_name
-			line[3], // molecular_formula
-			line[7], // exact_mass
-			line[1], // literature_count
-			line[2], // patent_count
+			line[0],      // identifier
+			line[7],      // inchikey
+			line[7][:14], // first_block
+			line[6],      // inchi
+			line[5],      // smiles
+			line[9],      // compound_name
+			line[4],      // molecular_formula
+			line[8],      // exact_mass
+			line[1],      // literature_count
+			line[2],      // patent_count
+			line[3],      // annotation_type_count
 		); err != nil {
 			tx.Rollback()
 			return 0, fmt.Errorf("failed to insert row %d: %w", count+1, err)
@@ -161,6 +170,21 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 	}
 
 	return count, nil
+}
+
+// hasValidNumericFields checks that molecular_formula is present and that
+// exact_mass, literature_count, patent_count, and annotation_type_count all
+// parse as numbers
+func hasValidNumericFields(line []string) bool {
+	if line[4] == "" { // molecular_formula
+		return false
+	}
+	for _, idx := range []int{8, 1, 2, 3} { // exact_mass, literature_count, patent_count, annotation_type_count
+		if _, err := strconv.ParseFloat(line[idx], 64); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func beginBatch(db *sql.DB) (*sql.Tx, *sql.Stmt, error) {

@@ -330,15 +330,16 @@ func TestCompoundFields(t *testing.T) {
 	}
 
 	want := &Compound{
-		Identifier:       "1",
-		InChIKey:         "MYFAKEINCHIKEY-ISRIGHTHER-E",
-		InChI:            "InChI=1S/H2O/h1H2",
-		Smiles:           "O",
-		CompoundName:     "Water",
-		MolecularFormula: "H2O",
-		ExactMass: 100,
-		LiteratureCount:  10,
-		PatentCount:      2,
+		Identifier:          "1",
+		InChIKey:            "MYFAKEINCHIKEY-ISRIGHTHER-E",
+		InChI:               "InChI=1S/H2O/h1H2",
+		Smiles:              "O",
+		CompoundName:        "Water",
+		MolecularFormula:    "H2O",
+		ExactMass:           100,
+		LiteratureCount:     10,
+		PatentCount:         2,
+		AnnotationTypeCount: 6,
 	}
 	if diff := cmp.Diff(want, compounds[0]); diff != "" {
 		t.Errorf("compound fields mismatch (-want +got):\n%s", diff)

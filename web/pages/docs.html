@@ -38,7 +38,7 @@
             <section class="doc-section">
                 <p class="doc-intro">
                 <strong style="color: #1a3e68">CTS-Lite</strong> is a lightweight <i>Chemical Translation Service</i>, and the successor to the Fiehn Lab's original <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2951090/" target="_blank">CTS</a>.
-                It allows users to easily match InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs against a curated subset of the PubChem database containing <b>10.6 million compounds</b>.
+                It allows users to easily match InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs against a curated subset of the PubChem database containing <b>13 million compounds</b>.
                 </p>
             </section>
 
@@ -128,7 +128,8 @@
         "molecular_formula": "HI",
         "exact_mass": 127.9123,
         "literature_count": 4430,
-        "patent_count": 329042
+        "patent_count": 329042,
+        "annotation_type_count": 16
       }
     ],
     "error_message": ""
@@ -146,9 +147,9 @@
 
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px;">CSV</p>
                 <div class="code-block">
-                    <pre><code>query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count
-XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042
-will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,
+                    <pre><code>query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count
+XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042,16
+will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,,
                     </code></pre>
                 </div>
             </section>
@@ -200,6 +201,16 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                         <strong>Unidentified</strong> are queries that didn't fit any of the above criteria
                     </li>
                 </ul>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="anno-type-count">Anno. Type Count<button class="heading-anchor" onclick="copyHeadingLink(event,'anno-type-count')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                    The "Annotation Type Count" indicates the number of PubChem categories (i.e. Taxonomy, Toxicity, Pharmacology, etc.) that a compound has been annotated with.
+                </p>
+                <p>
+                    Well-researched compounds tend to have 10+ types, with an observed maximum of 20. The "Annotation Type Count" can be used as a supplementary confidence metric when comparing compounds.
+                </p>
             </section>
 
             <section class="doc-section">
