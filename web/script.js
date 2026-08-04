@@ -155,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
     const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
-    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count";
+    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count";
     if (hasClassyfire) {
       csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error";
     }
@@ -179,7 +179,8 @@ document.addEventListener("DOMContentLoaded", () => {
             csvField(match.molecular_formula),
             csvField(match.exact_mass),
             csvField(match.literature_count),
-            csvField(match.patent_count)
+            csvField(match.patent_count),
+            csvField(match.annotation_type_count)
           ];
           if (hasClassyfire) {
             row.push(csvField(cf.kingdom), csvField(cf.superclass), csvField(cf.class),
@@ -191,7 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const row = [
           csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
-          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
+          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
         ];
         if (hasClassyfire) {
           row.push(csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""));
@@ -481,6 +482,7 @@ function displayResults(data, outputElement, offset = 0) {
               <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
               <div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>
               <div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>
+              <div class="match-field"><label>Anno. Type Count:</label><span class="monospace">${match.annotation_type_count}</span></div>
               ${classyfireRequested ? `
               <div class="match-field classyfire-heading"><label>Chemical Classification</label></div>
               ${!match.classyfire ? `<div class="match-field cf-queued"><span>Queued</span><span class="inline-spinner" aria-hidden="true"></span></div>`
