@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"runtime"
+	"strconv"
 
 	_ "modernc.org/sqlite" // SQLite driver
 )
@@ -164,12 +165,21 @@ func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) 
 	var compounds []*Compound
 	for rows.Next() {
 		c := &Compound{}
+		// Read exact mass, literature count, patent count, and annotation type count as strings in case of null/empty strings
+		var exactMass, litCount, patCount, annotCount sql.NullString
 		if err := rows.Scan(
 			&c.Identifier, &c.InChIKey, &c.InChI, &c.Smiles, &c.CompoundName,
-			&c.MolecularFormula, &c.ExactMass, &c.LiteratureCount, &c.PatentCount, &c.AnnotationTypeCount,
+			&c.MolecularFormula, &exactMass, &litCount, &patCount, &annotCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}
+		c.ExactMass, _ = strconv.ParseFloat(exactMass.String, 64)
+		lc, _ := strconv.ParseFloat(litCount.String, 32)
+		c.LiteratureCount = float32(lc)
+		pc, _ := strconv.ParseFloat(patCount.String, 32)
+		c.PatentCount = float32(pc)
+		ac, _ := strconv.ParseFloat(annotCount.String, 32)
+		c.AnnotationTypeCount = float32(ac)
 		compounds = append(compounds, c)
 	}
 	return compounds, rows.Err()
