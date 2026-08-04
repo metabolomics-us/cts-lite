@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -107,6 +108,7 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 		if err == io.EOF {
 			break
 		}
+
 		if err != nil {
 			tx.Rollback()
 			return 0, fmt.Errorf("failed to read CSV row: %w", err)
@@ -119,6 +121,12 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 
 		// Skip lines without inchikeys
 		if line[7] == "" {
+			continue
+		}
+
+		// Skip rows with a missing formula or non-numeric fields
+		if !hasValidNumericFields(line) {
+			log.Printf("skipping row %d (identifier %s): missing or non-numeric fields", count+1, line[0])
 			continue
 		}
 
@@ -162,6 +170,21 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 	}
 
 	return count, nil
+}
+
+// hasValidNumericFields checks that molecular_formula is present and that
+// exact_mass, literature_count, patent_count, and annotation_type_count all
+// parse as numbers
+func hasValidNumericFields(line []string) bool {
+	if line[4] == "" { // molecular_formula
+		return false
+	}
+	for _, idx := range []int{8, 1, 2, 3} { // exact_mass, literature_count, patent_count, annotation_type_count
+		if _, err := strconv.ParseFloat(line[idx], 64); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func beginBatch(db *sql.DB) (*sql.Tx, *sql.Stmt, error) {
