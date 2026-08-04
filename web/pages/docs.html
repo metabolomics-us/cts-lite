@@ -204,6 +204,16 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
             </section>
 
             <section class="doc-section">
+                <h3 class="doc-heading" id="anno-type-count">Anno. Type Count<button class="heading-anchor" onclick="copyHeadingLink(event,'anno-type-count')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                    The "Annotation Type Count" indicates the number of PubChem categories (i.e. Taxonomy, Toxicity, Pharmacology, etc.) that a compound has been annotated with.
+                </p>
+                <p>
+                    Well-researched compounds tend to have 10+ types, with an observed maximum of 20. The "Annotation Type Count" can be used as a supplementary confidence metric when comparing compounds.
+                </p>
+            </section>
+
+            <section class="doc-section">
                 <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
                     By default, CTS-Lite will return only the top hit per query. This setting can be toggled in the settings panel, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
