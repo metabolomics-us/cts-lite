@@ -23,7 +23,7 @@ var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-
 var CSVHeader = []string{
 	"query", "query_type", "converted_query", "found_match", "match_level", "error_message",
 	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-	"molecular_formula", "exact_mass", "literature_count", "patent_count",
+	"molecular_formula", "exact_mass", "literature_count", "patent_count", "annotation_type_count",
 }
 
 func isAllDigits(s string) bool {
@@ -114,7 +114,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
-				"", "", "", "", "", "", "", "", "", // Empty compound fields
+				"", "", "", "", "", "", "", "", "", "", // Empty compound fields
 			}
 			if classyfireEnabled {
 				row = append(row, cfFields(nil)...)
@@ -141,6 +141,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 					strconv.FormatFloat(match.ExactMass, 'f', -1, 64),
 					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
+					strconv.FormatFloat(float64(match.AnnotationTypeCount), 'f', -1, 32),
 				}
 				if classyfireEnabled {
 					row = append(row, cfFields(match.ClassyFire)...)

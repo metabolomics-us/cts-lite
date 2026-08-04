@@ -19,47 +19,48 @@ type ClassyFireInfo struct {
 }
 
 type Compound struct {
-	Identifier       string          `json:"identifier"`
-	InChIKey         string          `json:"inchikey"`
-	InChI            string          `json:"inchi"`
-	Smiles           string          `json:"smiles"`
-	CompoundName     string          `json:"compound_name"`
-	MolecularFormula string          `json:"molecular_formula"`
-	ExactMass        float64         `json:"exact_mass"`
-	LiteratureCount  float32         `json:"literature_count"`
-	PatentCount      float32         `json:"patent_count"`
-	ClassyFire       *ClassyFireInfo `json:"classyfire,omitempty"`
+	Identifier          string          `json:"identifier"`
+	InChIKey            string          `json:"inchikey"`
+	InChI               string          `json:"inchi"`
+	Smiles              string          `json:"smiles"`
+	CompoundName        string          `json:"compound_name"`
+	MolecularFormula    string          `json:"molecular_formula"`
+	ExactMass           float64         `json:"exact_mass"`
+	LiteratureCount     float32         `json:"literature_count"`
+	PatentCount         float32         `json:"patent_count"`
+	AnnotationTypeCount float32         `json:"annotation_type_count"`
+	ClassyFire          *ClassyFireInfo `json:"classyfire,omitempty"`
 }
 
 type SingleResult struct {
-	Query               string      `json:"query"`
-	QueryType           string      `json:"query_type"`
-	ConvertedQuery      string      `json:"converted_query,omitempty"`
-	MatchFound          bool        `json:"found_match"`
-	MatchLevel          string      `json:"match_level"`
-	Matches             []*Compound `json:"matches"`
-	ErrMsg              string      `json:"error_message"`
+	Query          string      `json:"query"`
+	QueryType      string      `json:"query_type"`
+	ConvertedQuery string      `json:"converted_query,omitempty"`
+	MatchFound     bool        `json:"found_match"`
+	MatchLevel     string      `json:"match_level"`
+	Matches        []*Compound `json:"matches"`
+	ErrMsg         string      `json:"error_message"`
 }
 
 // PubChemIndex wraps an SQLite database and prepared statements for each lookup type
 type PubChemIndex struct {
-	db           *sql.DB
-	byPubChemID  *sql.Stmt
-	byPubChemID1 *sql.Stmt
-	byInChIKey   *sql.Stmt
-	byInChIKey1  *sql.Stmt
-	byFirstBlock *sql.Stmt
+	db            *sql.DB
+	byPubChemID   *sql.Stmt
+	byPubChemID1  *sql.Stmt
+	byInChIKey    *sql.Stmt
+	byInChIKey1   *sql.Stmt
+	byFirstBlock  *sql.Stmt
 	byFirstBlock1 *sql.Stmt
-	byInChI      *sql.Stmt
-	byInChI1     *sql.Stmt
-	bySmiles     *sql.Stmt
-	bySmiles1    *sql.Stmt
-	byFormula    *sql.Stmt
-	byFormula1   *sql.Stmt
+	byInChI       *sql.Stmt
+	byInChI1      *sql.Stmt
+	bySmiles      *sql.Stmt
+	bySmiles1     *sql.Stmt
+	byFormula     *sql.Stmt
+	byFormula1    *sql.Stmt
 }
 
 const selectCols = `SELECT identifier, inchikey, inchi, smiles, compound_name,
-	molecular_formula, exact_mass, literature_count, patent_count FROM compounds`
+	molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count FROM compounds`
 const orderByScore = ` ORDER BY (0.7 * literature_count + 0.3 * patent_count) DESC`
 
 // OpenSQLiteIndex opens a pre-built SQLite database for production use
@@ -72,8 +73,8 @@ func OpenSQLiteIndex(dbPath string) (*PubChemIndex, error) {
 	// Performance tuning: mmap lets the OS page cache serve reads directly from
 	//   the mapped file, reducing Go heap and GC pressure
 	pragmas := []string{
-		"PRAGMA mmap_size = 2147483648",  // 2 GB memory-mapped I/O (adjusted for ECS instance resources)
-		"PRAGMA cache_size = -131072",    // 128 MB SQLite page cache
+		"PRAGMA mmap_size = 2147483648", // 2 GB memory-mapped I/O (adjusted for ECS instance resources)
+		"PRAGMA cache_size = -131072",   // 128 MB SQLite page cache
 		"PRAGMA temp_store = MEMORY",
 	}
 	for _, p := range pragmas {
@@ -99,18 +100,18 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		dest  **sql.Stmt
 		query string
 	}{
-		{&idx.byPubChemID,  selectCols + ` WHERE identifier = ?` + orderByScore},
+		{&idx.byPubChemID, selectCols + ` WHERE identifier = ?` + orderByScore},
 		{&idx.byPubChemID1, selectCols + ` WHERE identifier = ?` + orderByScore + ` LIMIT 1`},
-		{&idx.byInChIKey,   selectCols + ` WHERE inchikey = ?` + orderByScore},
-		{&idx.byInChIKey1,  selectCols + ` WHERE inchikey = ?` + orderByScore + ` LIMIT 1`},
+		{&idx.byInChIKey, selectCols + ` WHERE inchikey = ?` + orderByScore},
+		{&idx.byInChIKey1, selectCols + ` WHERE inchikey = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byFirstBlock, selectCols + ` WHERE first_block = ?` + orderByScore},
 		{&idx.byFirstBlock1, selectCols + ` WHERE first_block = ?` + orderByScore + ` LIMIT 1`},
-		{&idx.byInChI,      selectCols + ` WHERE inchi = ?` + orderByScore},
-		{&idx.byInChI1,     selectCols + ` WHERE inchi = ?` + orderByScore + ` LIMIT 1`},
-		{&idx.bySmiles,     selectCols + ` WHERE smiles = ?` + orderByScore},
-		{&idx.bySmiles1,    selectCols + ` WHERE smiles = ?` + orderByScore + ` LIMIT 1`},
-		{&idx.byFormula,    selectCols + ` WHERE molecular_formula = ?` + orderByScore},
-		{&idx.byFormula1,   selectCols + ` WHERE molecular_formula = ?` + orderByScore + ` LIMIT 1`},
+		{&idx.byInChI, selectCols + ` WHERE inchi = ?` + orderByScore},
+		{&idx.byInChI1, selectCols + ` WHERE inchi = ?` + orderByScore + ` LIMIT 1`},
+		{&idx.bySmiles, selectCols + ` WHERE smiles = ?` + orderByScore},
+		{&idx.bySmiles1, selectCols + ` WHERE smiles = ?` + orderByScore + ` LIMIT 1`},
+		{&idx.byFormula, selectCols + ` WHERE molecular_formula = ?` + orderByScore},
+		{&idx.byFormula1, selectCols + ` WHERE molecular_formula = ?` + orderByScore + ` LIMIT 1`},
 	}
 
 	for _, s := range stmts {
@@ -136,7 +137,8 @@ const CreateTableSQL = `CREATE TABLE IF NOT EXISTS compounds (
 	molecular_formula TEXT NOT NULL,
 	exact_mass		  REAL NOT NULL,
 	literature_count  REAL NOT NULL,
-	patent_count      REAL NOT NULL
+	patent_count      REAL NOT NULL,
+	annotation_type_count REAL NOT NULL
 )`
 
 const CreateIndexSQL = `
@@ -148,8 +150,8 @@ CREATE INDEX IF NOT EXISTS idx_smiles      ON compounds(smiles);
 CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula)`
 
 const InsertSQL = `INSERT INTO compounds
-	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, exact_mass, literature_count, patent_count)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // query executes a prepared statement and scans all result rows into Compound pointers
 func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) {
@@ -164,7 +166,7 @@ func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) 
 		c := &Compound{}
 		if err := rows.Scan(
 			&c.Identifier, &c.InChIKey, &c.InChI, &c.Smiles, &c.CompoundName,
-			&c.MolecularFormula, &c.ExactMass, &c.LiteratureCount, &c.PatentCount,
+			&c.MolecularFormula, &c.ExactMass, &c.LiteratureCount, &c.PatentCount, &c.AnnotationTypeCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}
