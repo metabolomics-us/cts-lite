@@ -18,11 +18,12 @@
 # threshold is enforced here, in the repository, by the same arithmetic
 # TeamCity's step used to publish the numbers. Dropping it to an echo would
 # have turned a gate into a printout while leaving the tick green.
-# TeamCity measured 654/756 = 86.5% on every build since #163; this script's
-# arithmetic on the same tree reports 835/945 = 88.4% -- the denominators
-# differ with the Go toolchain's own block accounting, the ratio does not
-# meaningfully. Either way the floor starts with >11 points of headroom,
-# exactly as it did under TeamCity.
+# TeamCity measured 654/756 = 86.5% on every build since #163, and this
+# script reproduces 654/756 exactly on an exec host (Go 1.25.1), so the floor
+# starts with 11.5 points of headroom, precisely as it did under TeamCity.
+# The counts DO move with the toolchain -- Go 1.27.1 reports 835/945 = 88.4%
+# on the same tree -- so read a changed denominator as a Go upgrade, not as a
+# lost test.
 #
 # WHY THE E2E SUITE IS NOT HERE. playwright/ pins `channel: 'chrome'` -- real
 # Google Chrome, which on Linux Playwright installs through apt. The exec
