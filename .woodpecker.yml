@@ -1,0 +1,76 @@
+# Woodpecker CI (ci.metabolomics.us) -- the cts-lite gate.
+#
+# It replaces two TeamCity build configurations:
+#
+#   backend_CtsLite            "Unit & E2E Tests": clean test cache, build,
+#                              test with coverage, publish the coverage
+#                              metric, and run the Playwright E2E suite.
+#   backend_CtsLiteOtelConfig  "otel-config-validate": otelcol-contrib
+#                              validate of telemetry/collector/config.yaml.
+#
+# TeamCity build FEATURES have no file to live in on Woodpecker, so they map
+# as follows:
+#
+#   pullRequests            -> `when: event: [push, pull_request, manual]`
+#   commit-status-publisher -> native; Woodpecker posts the check itself
+#   BuildFailureOnMetric    -> the 75% coverage floor, now enforced inside
+#                              ops/ci/woodpecker-gates.sh (it was a GATE,
+#                              not a report, and had to keep failing builds)
+#   golang (test.format=json) -> dropped with `go test -json`; the flag only
+#                              fed TeamCity's test-report parser
+#   perfmon                 -> dropped; agent resource graphs, not a gate
+#   PROVIDE_AWS_CREDS       -> dropped; nothing these steps run touches AWS.
+#                              The only `aws` call in the repository is the
+#                              interactive S3 upload in
+#                              dataset/cmd/create_csv_dataset.sh, which CI
+#                              never ran. No Woodpecker secret is needed.
+#
+# The E2E suite does NOT migrate: it pins Chrome (`channel: 'chrome'`) and
+# the exec hosts have no browser and no way to install one. The PR that
+# added this file says so, and links the tracking issue.
+#
+# Exec hosts are Slurm allocations on Rocky 9 nodes, so:
+#
+#  * `image:` names a HOST executable, not a container image: `bash` runs the
+#    job's own shell. There is no docker, no apt and no sudo.
+#  * The clone plugin fails invisibly on this backend (no step logs for
+#    plugins), so skip_clone + a plain git checkout step, with the forge
+#    credential staged at /etc/woodpecker-git-credentials.
+#  * The agent reproducibly drops a step's final log chunk, so the gate
+#    script prints its journal path FIRST and tees everything to it.
+#
+# The step logic is in this repo (ops/ci/woodpecker-gates.sh) rather than on
+# beegfs with the shared ci-steps, so a check changes in the same commit as
+# the code it covers. It takes no Woodpecker-specific input:
+# `bash ops/ci/woodpecker-gates.sh` reproduces CI from a clean checkout.
+when:
+  - event: [push, pull_request, manual]
+
+skip_clone: true
+
+steps:
+  - name: checkout
+    image: bash
+    commands:
+      - 'set -eu'
+      - 'test -r /etc/woodpecker-git-credentials || { echo "the job staged no forge credential" >&2; exit 1; }'
+      - 'git init -q -b "${CI_COMMIT_BRANCH:-main}" .'
+      - 'git remote add origin "https://github.com/${CI_REPO}.git"'
+      - 'git fetch --no-tags --depth=1 origin "$CI_COMMIT_SHA"'
+      - 'git checkout -q FETCH_HEAD'
+      - 'git --no-pager log --oneline -1'
+
+  - name: gates
+    image: bash
+    commands:
+      - 'set -eu'
+      - 'bash ops/ci/woodpecker-gates.sh go'
+
+  # Its own step, so a collector-config regression is attributable at a
+  # glance instead of being buried in the Go log -- and so it keeps the
+  # 1:1 shape of the two TeamCity configurations it replaces.
+  - name: otel-config
+    image: bash
+    commands:
+      - 'set -eu'
+      - 'bash ops/ci/woodpecker-gates.sh otel'
