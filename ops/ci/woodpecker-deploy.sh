@@ -84,6 +84,19 @@ skip_if() {
   fi
 }
 
+# The allocation's memory as the cgroup sees it. Slurm's MaxRSS for these
+# agents includes page cache (the 10 GB db and 3.6 GB layer are written
+# through it), so print anon vs file to tell real pressure from cache.
+# Diagnostic only: never fails the build.
+cgroup_mem() {
+  local cg
+  cg="/sys/fs/cgroup$(awk -F: '$1=="0"{print $3}' /proc/self/cgroup 2>/dev/null)" || return 0
+  [ -r "$cg/memory.stat" ] || { echo "cgroup memory: not readable here"; return 0; }
+  awk -v peak="$(cat "$cg/memory.peak" 2>/dev/null || echo '?')" '
+    $1=="anon"||$1=="file"{printf "%s=%.2fGiB ", $1, $2/1073741824}
+    END{if (peak ~ /^[0-9]+$/) printf "peak=%.2fGiB", peak/1073741824; print ""}' "$cg/memory.stat" || true
+}
+
 tool() { "$WORK/bin/deploy" "$@"; }
 
 build_tool() {
@@ -174,6 +187,7 @@ build() {
   go build -o "$WORK/bin/build-db" ./dataset/cmd/build-db
   (cd dataset && SQLITE_TMPDIR="$WORK/sqlite-tmp" peak_rss "$WORK/bin/build-db" cts-lite_latest.csv compounds.db)
   rm -rf "$WORK/sqlite-tmp"
+  cgroup_mem
   # Normalised mtime, as the GitHub job did for layer caching.
   touch -t 197001010000 dataset/compounds.db
   rm -v dataset/cts-lite_latest.csv
@@ -209,6 +223,7 @@ build() {
   peak_rss "$WORK/bin/deploy" build-push -base "$BASE" -expect-go "$BASE_GO" -repo "$REPO" -tag "$tag" \
     -layer "$WORK/l1.tar.gz" -layer "$WORK/l2.tar.gz" -digest-out "$DIGEST_FILE"
 
+  cgroup_mem
   if [ "$DRY_RUN" = 1 ]; then
     echo "DRY_RUN=1: pushed $REPO:$tag only; :latest and ECS untouched"
     return 0
