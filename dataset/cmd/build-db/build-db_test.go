@@ -167,3 +167,16 @@ func TestBulkInsert_BatchCommit(t *testing.T) {
 		t.Errorf("expected 2 rows inserted, got %d", count)
 	}
 }
+
+// TestTempStorePragma: in memory by default, spilled to files when
+// SQLITE_TMPDIR names a directory for them
+func TestTempStorePragma(t *testing.T) {
+	t.Setenv("SQLITE_TMPDIR", "")
+	if got := tempStorePragma(); got != "PRAGMA temp_store = MEMORY" {
+		t.Errorf("default: got %q", got)
+	}
+	t.Setenv("SQLITE_TMPDIR", t.TempDir())
+	if got := tempStorePragma(); got != "PRAGMA temp_store = FILE" {
+		t.Errorf("with SQLITE_TMPDIR: got %q", got)
+	}
+}
