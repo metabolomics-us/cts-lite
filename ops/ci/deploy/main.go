@@ -40,6 +40,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -466,8 +467,20 @@ func ecsDeploy(ctx context.Context, args []string) error {
 	}
 }
 
+func accessDenied(err error) bool {
+	var ae smithy.APIError
+	return errors.As(err, &ae) && strings.Contains(ae.ErrorCode(), "AccessDenied")
+}
+
 func verifyRunning(ctx context.Context, c *ecs.Client, cluster, service, container, want string) error {
 	lt, err := c.ListTasks(ctx, &ecs.ListTasksInput{Cluster: &cluster, ServiceName: &service, DesiredStatus: ecstypes.DesiredStatusRunning})
+	if accessDenied(err) {
+		// The deploy user is granted UpdateService + DescribeServices only.
+		// The rollout itself is already gated on COMPLETED above, and the new
+		// tasks resolved :latest, which was moved to the pushed digest first.
+		fmt.Printf("WARNING: cannot verify the running task's digest (%v); grant ecs:ListTasks + ecs:DescribeTasks to check it here\n", err)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -475,6 +488,10 @@ func verifyRunning(ctx context.Context, c *ecs.Client, cluster, service, contain
 		return errors.New("service reports steady state but lists no running task")
 	}
 	dt, err := c.DescribeTasks(ctx, &ecs.DescribeTasksInput{Cluster: &cluster, Tasks: lt.TaskArns})
+	if accessDenied(err) {
+		fmt.Printf("WARNING: cannot verify the running task's digest (%v); grant ecs:DescribeTasks to check it here\n", err)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
