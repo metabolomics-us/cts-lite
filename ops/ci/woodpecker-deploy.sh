@@ -194,9 +194,12 @@ build() {
   smoke "$l2/app" "$l1/app/dataset/compounds.db"
 
   step "layer tarballs"
+  # The agent's umask is 077, so the checkout and the db are 0600/0700 on
+  # disk; --mode gives them the 0644/0755 a docker build context would have.
   local t
   for t in l1 l2; do
     tar --sort=name --mtime='1970-01-01 00:00:00Z' --owner=0 --group=0 --numeric-owner \
+      --mode='u+rwX,go+rX,go-w' \
       -C "$WORK/$t" -cf - app | gzip -1 >"$WORK/$t.tar.gz"
     ls -l "$WORK/$t.tar.gz"
   done
