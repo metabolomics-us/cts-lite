@@ -60,7 +60,7 @@ func run(csvPath, dbPath string) error {
 		"PRAGMA synchronous = OFF",
 		"PRAGMA locking_mode = EXCLUSIVE",
 		"PRAGMA cache_size = -524288",
-		"PRAGMA temp_store = MEMORY",
+		tempStorePragma(),
 	} {
 		if _, err := db.Exec(pragma); err != nil {
 			return fmt.Errorf("failed to apply pragma %q: %w", pragma, err)
@@ -91,6 +91,18 @@ func run(csvPath, dbPath string) error {
 
 	fmt.Printf("Done. Database written to %s (total %.1f minutes)\n", dbPath, time.Since(start).Minutes())
 	return nil
+}
+
+// tempStorePragma keeps SQLite's temporary data (chiefly the sorter behind
+// CREATE INDEX over ~13M rows) in memory, unless SQLITE_TMPDIR is set: then
+// it spills to files in that directory. CI sets it, because the in-memory
+// sort pushes a memory-capped build agent to its limit; SQLite itself reads
+// SQLITE_TMPDIR to place the files.
+func tempStorePragma() string {
+	if os.Getenv("SQLITE_TMPDIR") != "" {
+		return "PRAGMA temp_store = FILE"
+	}
+	return "PRAGMA temp_store = MEMORY"
 }
 
 // bulkInsert inserts all CSV rows using batched transactions for performance

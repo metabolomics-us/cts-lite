@@ -62,7 +62,19 @@ DRY_RUN="${DRY_RUN:-0}"
 WORK="$PWD/.cd"
 DIGEST_FILE="$WORK/image-digest"
 
-step() { echo; echo "=== $* ==="; }
+step() { echo; echo "=== [+${SECONDS}s] $* ==="; }
+
+# Peak RSS of a command and its descendants, for the log (the agent is a
+# memory-capped Slurm allocation; see the build-db note below).
+peak_rss() {
+  python3 - "$@" <<'PY'
+import resource, subprocess, sys
+rc = subprocess.run(sys.argv[1:]).returncode
+kib = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+print(f"peak RSS of {sys.argv[1].rsplit('/', 1)[-1]}: {kib / 1048576:.2f} GiB")
+sys.exit(rc)
+PY
+}
 
 skip_if() {
   local word="$1" what="$2"
@@ -142,7 +154,7 @@ build() {
   rm -rf "$WORK"
   mkdir -p "$WORK"
   # Large intermediates go even on failure; the digest file stays for deploy.
-  trap 'rm -rf "$WORK/l1" "$WORK/l2" "$WORK"/*.tar.gz dataset/cts-lite_latest.csv dataset/cts-lite_latest.csv.part' EXIT
+  trap 'rm -rf "$WORK/l1" "$WORK/l2" "$WORK/sqlite-tmp" "$WORK"/*.tar.gz dataset/cts-lite_latest.csv dataset/cts-lite_latest.csv.part' EXIT
 
   build_tool
   export GOTOOLCHAIN="go$BASE_GO"
@@ -155,7 +167,13 @@ build() {
 
   step "build compounds.db"
   rm -f dataset/compounds.db
-  (cd dataset && go run ./cmd/build-db/build-db.go cts-lite_latest.csv compounds.db)
+  # SQLITE_TMPDIR makes build-db spill SQLite's temp data (the CREATE INDEX
+  # sorter over ~13M rows) to files here instead of holding it in RAM, which
+  # pushed an 18 GB agent to its limit. Private to this workspace.
+  mkdir -p "$WORK/sqlite-tmp"
+  go build -o "$WORK/bin/build-db" ./dataset/cmd/build-db
+  (cd dataset && SQLITE_TMPDIR="$WORK/sqlite-tmp" peak_rss "$WORK/bin/build-db" cts-lite_latest.csv compounds.db)
+  rm -rf "$WORK/sqlite-tmp"
   # Normalised mtime, as the GitHub job did for layer caching.
   touch -t 197001010000 dataset/compounds.db
   rm -v dataset/cts-lite_latest.csv
@@ -185,7 +203,7 @@ build() {
   rm -rf "$l1" "$l2"
 
   step "push $REPO:$tag"
-  tool build-push -base "$BASE" -expect-go "$BASE_GO" -repo "$REPO" -tag "$tag" \
+  peak_rss "$WORK/bin/deploy" build-push -base "$BASE" -expect-go "$BASE_GO" -repo "$REPO" -tag "$tag" \
     -layer "$WORK/l1.tar.gz" -layer "$WORK/l2.tar.gz" -digest-out "$DIGEST_FILE"
 
   if [ "$DRY_RUN" = 1 ]; then
