@@ -6,6 +6,7 @@
 #   backend_CtsLite            build + test + coverage (+ the E2E suite, which
 #                              does NOT migrate -- see the `e2e` note below)
 #   backend_CtsLiteOtelConfig  otelcol-contrib validate of the collector config
+#                              (+ GitHub's otel_compare_configs: yaml == json)
 #
 # RUN IT LOCALLY: `bash ops/ci/woodpecker-gates.sh` from a clean checkout runs
 # everything; `... go` or `... otel` runs one half. It takes no Woodpecker
@@ -182,6 +183,28 @@ otel_gate() {
     "$bindir/otelcol-contrib" validate --config="$cfg"
   rm -rf "$bindir"
   echo "collector config valid"
+
+  step "otel collector config.yaml and config.json hold the same config"
+  # GitHub Actions' otel_compare_configs, which neither TeamCity config had.
+  # config.json is what gets pasted into the task definition's
+  # OTELCOL_CONFIG, so a drift between the two ships an untested config.
+  # Parsed and compared as data (key order and formatting do not matter),
+  # like the workflow's `yq sort_keys | diff`; python3 + PyYAML are in the
+  # CI image, yq is not.
+  python3 - telemetry/collector/config.yaml telemetry/collector/config.json <<'PY'
+import json, sys, yaml
+with open(sys.argv[1]) as f:
+    from_yaml = yaml.safe_load(f)
+with open(sys.argv[2]) as f:
+    from_json = json.load(f)
+if from_yaml != from_json:
+    a = json.dumps(from_yaml, indent=2, sort_keys=True).splitlines()
+    b = json.dumps(from_json, indent=2, sort_keys=True).splitlines()
+    import difflib
+    sys.stderr.write("\n".join(difflib.unified_diff(a, b, sys.argv[1], sys.argv[2], lineterm="")) + "\n")
+    sys.exit("FATAL: config.yaml and config.json differ")
+print("config.yaml and config.json match")
+PY
 }
 
 main() {

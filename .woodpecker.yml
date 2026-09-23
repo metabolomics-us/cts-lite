@@ -1,17 +1,28 @@
-# Woodpecker CI (ci.metabolomics.us) -- the cts-lite gate.
+# Woodpecker CI (ci.metabolomics.us) -- the cts-lite gate AND its deploy.
 #
-# It replaces two TeamCity build configurations:
+# CD: it also replaces the build_and_push_image and deploy_to_ecs jobs of the
+# removed GitHub Actions workflow (.github/workflows/cicd.yml, see c68a30f8^):
+# steps `build-image` and `deploy`, which run only on a push to main (and on
+# manual pipelines), only after both gates passed, and honour the old
+# `nobuild` / `nodeploy` commit-message words. See ops/ci/woodpecker-deploy.sh.
+# A manual pipeline with the variable DRY_RUN=1 builds, smoke-tests and pushes
+# only :ci-dryrun-<sha> -- no :latest, no ECS.
+#
+# CI: it replaces two TeamCity build configurations:
 #
 #   backend_CtsLite            "Unit & E2E Tests": clean test cache, build,
 #                              test with coverage, publish the coverage
 #                              metric, and run the Playwright E2E suite.
 #   backend_CtsLiteOtelConfig  "otel-config-validate": otelcol-contrib
 #                              validate of telemetry/collector/config.yaml.
+#                              The otel-config step also carries GitHub's
+#                              otel_compare_configs: config.yaml and
+#                              config.json must hold the same config.
 #
 # TeamCity build FEATURES have no file to live in on Woodpecker, so they map
 # as follows:
 #
-#   pullRequests            -> `when: event: [push, pull_request, manual]`
+#   pullRequests            -> `when:` pull_request, manual, push to main
 #   commit-status-publisher -> native; Woodpecker posts the check itself
 #   BuildFailureOnMetric    -> the 75% coverage floor, now enforced inside
 #                              ops/ci/woodpecker-gates.sh (it was a GATE,
@@ -19,11 +30,9 @@
 #   golang (test.format=json) -> dropped with `go test -json`; the flag only
 #                              fed TeamCity's test-report parser
 #   perfmon                 -> dropped; agent resource graphs, not a gate
-#   PROVIDE_AWS_CREDS       -> dropped; nothing these steps run touches AWS.
-#                              The only `aws` call in the repository is the
-#                              interactive S3 upload in
-#                              dataset/cmd/create_csv_dataset.sh, which CI
-#                              never ran. No Woodpecker secret is needed.
+#   PROVIDE_AWS_CREDS       -> dropped for the gates; nothing they run touches
+#                              AWS. Only build-image/deploy get credentials
+#                              (repo secrets deploy_aws_*, push+manual only).
 #
 # The E2E suite does NOT migrate: it pins Chrome (`channel: 'chrome'`) and
 # the exec hosts have no browser and no way to install one. The PR that
@@ -44,7 +53,9 @@
 # the code it covers. It takes no Woodpecker-specific input:
 # `bash ops/ci/woodpecker-gates.sh` reproduces CI from a clean checkout.
 when:
-  - event: [push, pull_request, manual]
+  - event: [pull_request, manual]
+  - event: push
+    branch: main
 
 skip_clone: true
 
@@ -74,3 +85,35 @@ steps:
     commands:
       - 'set -eu'
       - 'bash ops/ci/woodpecker-gates.sh otel'
+
+  # CD. Both steps run after the gates (steps are sequential; a red gate
+  # stops the pipeline) and only for a push to main or a manual pipeline.
+  # A manual pipeline on any branch but main refuses to deploy unless it is
+  # a DRY_RUN=1 dry run.
+  - name: build-image
+    image: bash
+    when:
+      - event: push
+        branch: main
+      - event: manual
+    environment:
+      AWS_ACCESS_KEY_ID:
+        from_secret: deploy_aws_access_key_id
+      AWS_SECRET_ACCESS_KEY:
+        from_secret: deploy_aws_secret_access_key
+    commands:
+      - 'bash ops/ci/woodpecker-deploy.sh build'
+
+  - name: deploy
+    image: bash
+    when:
+      - event: push
+        branch: main
+      - event: manual
+    environment:
+      AWS_ACCESS_KEY_ID:
+        from_secret: deploy_aws_access_key_id
+      AWS_SECRET_ACCESS_KEY:
+        from_secret: deploy_aws_secret_access_key
+    commands:
+      - 'bash ops/ci/woodpecker-deploy.sh deploy'
