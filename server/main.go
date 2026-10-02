@@ -87,6 +87,9 @@ func main() {
 	api.StartClassyFireHealthCheck(context.Background())
 	http.HandleFunc("/classyfire/status", corsMiddleware(api.ClassyFireStatus))
 
+	// Status check of the live PubChem fallback backend (observability only)
+	api.StartPubChemHealthCheck(context.Background())
+
 	// Endpoint for matching against database
 	matchHandler := corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		api.Match(index, w, r)

@@ -6,4 +6,5 @@ __pycache__
 .coveragedata
 coverage.out
 *.db*
-
+.scratch_rdkit_check/
+scripts/*

@@ -12,11 +12,20 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 var mockIndex *model.PubChemIndex
+
+// pcbNetworkDisabledTransport fails every request instantly. It is the
+// test-binary default for pcbHTTPClient
+type pcbNetworkDisabledTransport struct{}
+
+func (pcbNetworkDisabledTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("network access disabled in tests; use withMockPCBTransport")
+}
 
 func TestMain(m *testing.M) {
 	var err error
@@ -24,6 +33,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("failed to load test CSV: %v", err)
 	}
+
+	// Default PubChem fallback to fail fast and offline unless a test
+	// explicitly mocks it; also zero the pacing/retry delays for testing
+	pcbHTTPClient = &http.Client{Transport: pcbNetworkDisabledTransport{}}
+	pcbMinGap, pcbThrottledGap, pcbThrottlePause, pcbIdleReset = 0, 0, 0, 0
+	pcbRetryDelays = []time.Duration{0, 0}
+
 	os.Exit(m.Run())
 }
 
@@ -303,24 +319,26 @@ func TestMatchErrors(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
+			// A local miss now always attempts a live PubChem fallback
+			// fallback is disabled in this test binary so the misses all fail fast
 			name:       "inchi no match",
 			query:      "InChI=1S/NOTHING",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 		{
 			name:       "inchikey first block not found",
 			query:      "ZZZZZZZZZZZZZZ-XXXXXXXXXX-Y",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 		{
 			name:       "smiles no match",
 			query:      "CC(O)=O",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 		{
 			name:       "formula no match",
 			query:      "Unknown",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 		{
 			name:       "bad inchikey",
@@ -568,7 +586,7 @@ func TestMatchPubChemID(t *testing.T) {
 			name:       "no match for unknown PubChem ID",
 			query:      "999",
 			wantFound:  false,
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 	}
 
@@ -1082,6 +1100,13 @@ func mockSmilesConverter(t *testing.T, fn func(string) (string, error)) {
 	t.Cleanup(func() { smilesToInChIKey = orig })
 }
 
+func mockInChIConverter(t *testing.T, fn func(string) (string, error)) {
+	t.Helper()
+	orig := inchiToInChIKey
+	inchiToInChIKey = fn
+	t.Cleanup(func() { inchiToInChIKey = orig })
+}
+
 func TestSmilesViaInChIKeyFallback(t *testing.T) {
 	t.Run("exact InChIKey match", func(t *testing.T) {
 		mockSmilesConverter(t, func(string) (string, error) {
@@ -1143,8 +1168,11 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 		if results[0].MatchFound {
 			t.Error("expected no match when converter returns empty")
 		}
-		if results[0].ErrMsg != "No compound found" {
-			t.Errorf("expected 'No compound found', got %q", results[0].ErrMsg)
+		// The fallback converts SMILES to an InChIKey before looking it up, so
+		// a converter that yields nothing leaves it with nothing to query and
+		// PubChem is never reached
+		if results[0].ErrMsg != "No local match; structure could not be read for PubChem lookup" {
+			t.Errorf("expected unreadable-structure message, got %q", results[0].ErrMsg)
 		}
 	})
 }
@@ -1165,8 +1193,8 @@ func TestRdkitConversionDisabled(t *testing.T) {
 	if results[0].MatchFound {
 		t.Error("expected no match when rdkit_conversion=false")
 	}
-	if results[0].ErrMsg != "No compound found" {
-		t.Errorf("expected 'No compound found', got %q", results[0].ErrMsg)
+	if results[0].ErrMsg != "No local match; PubChem live lookup unavailable" {
+		t.Errorf("expected fallback-unavailable message, got %q", results[0].ErrMsg)
 	}
 }
 

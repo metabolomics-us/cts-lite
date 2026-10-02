@@ -269,11 +269,20 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		results = append(results, result)
+	}
+
+	// Always attempt a live PubChem lookup for anything that missed locally (except unidentified queries)
+	attempted, pcbFound, pcbNotFound, pcbFailed, pcbSkipped := resolvePubChemFallback(r.Context(), results, topHitOnly)
+	if attempted > 0 {
+		log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d skipped (due to limit reached)",
+			attempted, pcbFound, pcbNotFound, pcbFailed, pcbSkipped)
+	}
+
+	for _, result := range results {
 		if result.MatchFound {
 			matchCount++
 		}
-
-		results = append(results, result)
 	}
 
 	duration := time.Since(timeStart)

@@ -38,8 +38,11 @@ var (
 	matchDuration             metric.Float64Histogram
 	matchQueriesPerReq        metric.Int64Histogram
 	classyfireClassifications metric.Int64Counter
+	pubchemFallbackOutcomes   metric.Int64Counter
+	pubchemFallbackCallShape  metric.Int64Counter
 	matchLogger               log.Logger
 	classyfireGaugeOnce       sync.Once
+	pubchemGaugeOnce          sync.Once
 )
 
 // initInstruments lazily creates the metric instruments and logger from the
@@ -68,6 +71,10 @@ func initInstruments() {
 			metric.WithExplicitBucketBoundaries(1, 5, 50, 250, 1000, 5000, 25000, 100000))
 		classyfireClassifications, _ = meter.Int64Counter("classyfire_classifications_total",
 			metric.WithDescription("Terminal outcomes of individual ClassyFire classifications, split by status"))
+		pubchemFallbackOutcomes, _ = meter.Int64Counter("pubchem_fallback_outcomes_total",
+			metric.WithDescription("Terminal outcomes of live PubChem fallback lookups triggered by /match misses, split by status"))
+		pubchemFallbackCallShape, _ = meter.Int64Counter("pubchem_fallback_calls_total",
+			metric.WithDescription("Live PubChem fallback HTTP calls, split by whether the call was batched or individual"))
 		matchLogger = logglobal.GetLoggerProvider().Logger(scopeName)
 	})
 }
@@ -197,3 +204,64 @@ func RecordClassyFireOutcomes(ctx context.Context, classified, notFound, failed 
 	add("not_found", notFound)
 	add("failed", failed)
 }
+
+// RegisterPubChemServiceGauge wires an observable gauge that samples the
+// live PubChem fallback backend's reachability at each metric export: 1
+// when up, 0 when down
+func RegisterPubChemServiceGauge(up func() bool) {
+	if up == nil {
+		return
+	}
+	pubchemGaugeOnce.Do(func() {
+		meter := otel.Meter(scopeName)
+		_, err := meter.Int64ObservableGauge("pubchem_fallback_service_up",
+			metric.WithDescription("PubChem fallback service reachability sampled by the health probe (1 = up, 0 = down)"),
+			metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+				var v int64
+				if up() {
+					v = 1
+				}
+				o.Observe(v)
+				return nil
+			}),
+		)
+		if err != nil {
+			otel.Handle(err)
+		}
+	})
+}
+
+// RecordPubChemFallbackOutcomes counts terminal outcomes of live PubChem
+// fallback lookups triggered by /match misses. Statuses: found (resolved via
+// PubChem), not_found (PubChem also has no match), failed (unreachable or
+// circuit breaker), skipped (never attempted)
+func RecordPubChemFallbackOutcomes(ctx context.Context, found, notFound, failed, skipped int) {
+	initInstruments()
+	add := func(status string, n int) {
+		if n <= 0 {
+			return
+		}
+		pubchemFallbackOutcomes.Add(ctx, int64(n),
+			metric.WithAttributes(attribute.String("status", status)))
+	}
+	add("found", found)
+	add("not_found", notFound)
+	add("failed", failed)
+	add("skipped", skipped)
+}
+
+// RecordPubChemFallbackCallShape counts the outbound HTTP calls a fallback
+// pass made, split by whether the call was batched or individual (formula).
+func RecordPubChemFallbackCallShape(ctx context.Context, batchedCalls, individualCalls int) {
+	initInstruments()
+	add := func(shape string, n int) {
+		if n <= 0 {
+			return
+		}
+		pubchemFallbackCallShape.Add(ctx, int64(n),
+			metric.WithAttributes(attribute.String("shape", shape)))
+	}
+	add("batched", batchedCalls)
+	add("individual", individualCalls)
+}
+

@@ -10,6 +10,10 @@ var smilesToInChIKey = func(smiles string) (string, error) {
 	return rdkit.SmilesToInChIKey(smiles)
 }
 
+var inchiToInChIKey = func(inchi string) (string, error) {
+	return rdkit.InChIToInChIKey(inchi)
+}
+
 func matchPubChemID(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
 	compounds, err := index.QueryByPubChemID(query, topHitOnly)
 	if err != nil {
