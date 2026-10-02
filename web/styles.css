@@ -442,6 +442,12 @@ button:disabled {
   border: 1px solid #ffeaa7;
 }
 
+.match-status.pubchem-live-match {
+  background-color: #d1ecf1;
+  color: #0d4a54;
+  border: 1px solid #a0d1d9;
+}
+
 .query-type-expandable-wrapper {
   display: inline-flex;
   flex-direction: column;

@@ -508,6 +508,8 @@ function displayResults(data, outputElement, offset = 0) {
       ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
       : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
 
+    const matchStatus = getMatchStatus(result);
+
     const resultDiv = document.createElement("div");
     resultDiv.className = "result-item";
     resultDiv.innerHTML = `
@@ -518,7 +520,7 @@ function displayResults(data, outputElement, offset = 0) {
         </div>
         <div class="query-details">
           ${queryTypeBubble}
-          <span class="match-status ${getMatchStatusClass(result)}">${getMatchStatusText(result)}</span>
+          <span class="match-status ${matchStatus.className}">${matchStatus.text}</span>
         </div>
       </div>
       <div class="result-body">
@@ -555,25 +557,17 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function getMatchStatusText(result) {
-  if (!result.found_match) return "✗ No match";
-  if (result.match_level) {
-    const level = result.match_level.toLowerCase();
-    if (level.includes("exact")) return "✓ Match Found: Exact";
-    if (level.includes("first block")) return "✓ Match Found: First Block";
-    return `✓ Match Found: ${result.match_level}`;
+// Classifies a result once and returns both the badge text and its CSS class
+function getMatchStatus(result) {
+  if (!result.found_match) return { text: "✗ No match", className: "no-match" };
+  const level = (result.match_level || "").toLowerCase();
+  if (level.startsWith("pubchem live:")) {
+    return { text: "✓ Match Found: PubChem Live", className: "pubchem-live-match" };
   }
-  return "✓ Match Found";
-}
-
-function getMatchStatusClass(result) {
-  if (!result.found_match) return "no-match";
-  if (result.match_level) {
-    const level = result.match_level.toLowerCase();
-    if (level.includes("exact")) return "exact-match";
-    if (level.includes("first block")) return "first-block-match";
-  }
-  return "found";
+  if (level.includes("exact")) return { text: "✓ Match Found: Exact", className: "exact-match" };
+  if (level.includes("first block")) return { text: "✓ Match Found: First Block", className: "first-block-match" };
+  if (result.match_level) return { text: `✓ Match Found: ${result.match_level}`, className: "found" };
+  return { text: "✓ Match Found", className: "found" };
 }
 
 function formatQueryType(queryType) {
