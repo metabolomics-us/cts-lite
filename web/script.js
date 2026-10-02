@@ -291,7 +291,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (output.querySelector(".ellipsis-animate")) {
         const slowNote = classyfireEnabled
           ? "<div class='doc-note'>You have <strong>ClassyFire</strong> classification enabled, which increases latency significantly. You can expect ~3s per query.</div>"
-          : "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 entries.</div>";
+          : "<div class='doc-note'><strong>Sorry</strong>, this is taking longer than usual. This can be expected when querying ~100,000 identifiers or when the server is experiencing heavy load.</div>";
         output.innerHTML += slowNote;
       }
     }, 5000);
