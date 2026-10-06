@@ -348,7 +348,11 @@ func pcbInChIKeyPropertyRequest(ctx context.Context, keys []string) (*http.Reque
 	return pcbFormEncodedRequest(ctx, "compound/inchikey", "inchikey", strings.Join(keys, ","))
 }
 
+// pcbFastFormulaRequest searches the formula with any charge suffix removed (O4P-3 becomes O4P)
 func pcbFastFormulaRequest(ctx context.Context, formula string) (*http.Request, error) {
+	if body, _, _, ok := splitChargeSuffix(formula); ok {
+		formula = body
+	}
 	u := fmt.Sprintf("%s/compound/fastformula/%s/cids/JSON", pcbBaseURL, url.PathEscape(formula))
 	return http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 }
@@ -449,13 +453,26 @@ func fetchInChIKeysBatched(ctx context.Context, br *pcbBreaker, keys []string) p
 	return res
 }
 
-// deriveInChIKeys converts each value to an InChIKey locally via RDKit so it
-// can ride the shared InChIKey batch instead of costing its own PubChem call
-func deriveInChIKeys(values []string, convert func(string) (string, error)) (derived map[string]string, unparseable []string) {
+// RDKit is never asked to parse a string longer than this
+const pcbMaxConvertibleLength = 4096
+
+// deriveInChIKeys converts values to InChIKeys so they can ride the batched
+// InChIKey lookup instead of costing one call each 
+func deriveInChIKeys(values []string, convert func(string) (string, error), precomputed map[string]string) (derived map[string]string, unparseable []string) {
 	derived = make(map[string]string, len(values))
 	for _, v := range values {
-		key, err := convert(v)
-		if err != nil || key == "" {
+		key, reused := precomputed[v]
+		if !reused {
+			if len(v) > pcbMaxConvertibleLength {
+				unparseable = append(unparseable, v)
+				continue
+			}
+			var err error
+			if key, err = convert(v); err != nil {
+				key = ""
+			}
+		}
+		if key == "" {
 			unparseable = append(unparseable, v)
 			continue
 		}
@@ -731,10 +748,9 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		m.result.ErrMsg = "No local match; PubChem live lookup limit reached"
 	}
 
-	// Group deduplicated values by kind. smiles_or_formula values are queued
-	// into both the smiles and formula buckets (mirroring matchSmilesOrFormula's
-	// try-smiles-then-formula order) in addition to their own bucket, which
-	// drives the final resolveOne("smiles_or_formula", ...) call
+	// Group deduplicated values by kind.
+	// Same try-smiles-first order. Formula branch is queued further down, and
+	// only when the SMILES branch turns out not to be attemptable
 	byKind := map[string][]string{}
 	valueSeen := map[string]map[string]bool{}
 	addToKindValueSet := func(kind, value string) {
@@ -746,40 +762,41 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 			byKind[kind] = append(byKind[kind], value)
 		}
 	}
+	ambiguous := map[string]bool{}
 	for _, m := range eligible {
 		addToKindValueSet(m.kind, m.value)
 		if m.kind == "smiles_or_formula" {
+			ambiguous[m.value] = true
 			addToKindValueSet("smiles", m.value)
-			addToKindValueSet("formula", m.value)
 		}
 	}
 
 	br := &pcbBreaker{}
 
-	// Formula CIDs are folded into the shared CID batch before it's fetched
-	byFormulaCIDs, allFormulaCIDs := map[string][]string{}, []string{}
-	formulaCalls := len(byKind["formula"])
-	if formulaCalls > 0 && ctx.Err() == nil {
-		byFormulaCIDs, allFormulaCIDs = fetchFormulaCIDs(ctx, br, byKind["formula"])
-		for _, c := range allFormulaCIDs {
-			addToKindValueSet("pubchem_id", c)
+	// A value converts here when local matching never did, 
+	// which is the case for InChI, for a SMILES longer than
+	// the local guard allows, and for any request sending rdkit_conversion=false
+	precomputedKeys := make(map[string]string)
+	for _, m := range eligible {
+		if m.result.DerivedInChIKey != "" {
+			precomputedKeys[m.value] = m.result.DerivedInChIKey
 		}
 	}
 
-	cidResolved, cidFetched := pcbResolveKind("pubchem_id", byKind["pubchem_id"], func(vs []string) pcbFetchResult {
-		return fetchCIDsBatched(ctx, br, vs)
-	})
-
-	// SMILES and InChI misses are converted locally to InChIKeys so they ride
-	// the shared InChIKey batch instead of costing one call each. This has to
-	// run before that batch is fetched, since the derived keys join its bucket
-	smilesToKey, badSmiles := deriveInChIKeys(byKind["smiles"], smilesToInChIKey)
-	inchiToKey, badInChI := deriveInChIKeys(byKind["inchi"], inchiToInChIKey)
+	smilesToKey, badSmiles := deriveInChIKeys(byKind["smiles"], smilesToInChIKey, precomputedKeys)
+	inchiToKey, badInChI := deriveInChIKeys(byKind["inchi"], inchiToInChIKey, precomputedKeys)
 	for _, key := range smilesToKey {
 		addToKindValueSet("inchikey", key)
 	}
 	for _, key := range inchiToKey {
 		addToKindValueSet("inchikey", key)
+	}
+
+	// An ambiguous value only reaches fastformula when RDKit could not read it as a structure
+	for _, v := range badSmiles {
+		if ambiguous[v] {
+			addToKindValueSet("formula", v)
+		}
 	}
 
 	// Keyed by kind so a smiles_or_formula value, which often fails SMILES
@@ -793,9 +810,33 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		unparseable["inchi|"+v] = true
 	}
 
+	// Batch calls run before the per-value formula calls
+	cidResolved, cidFetched := pcbResolveKind("pubchem_id", byKind["pubchem_id"], func(vs []string) pcbFetchResult {
+		return fetchCIDsBatched(ctx, br, vs)
+	})
+
 	inchikeyResolved, inchikeyFetched := pcbResolveKind("inchikey", byKind["inchikey"], func(vs []string) pcbFetchResult {
 		return fetchInChIKeysBatched(ctx, br, vs)
 	})
+
+	// fastformula answers with CIDs rather than compounds, so formulas need a
+	// second pass over the CID endpoint once their candidates are known
+	byFormulaCIDs, allFormulaCIDs := map[string][]string{}, []string{}
+	formulaCalls := len(byKind["formula"])
+	if formulaCalls > 0 && ctx.Err() == nil {
+		byFormulaCIDs, allFormulaCIDs = fetchFormulaCIDs(ctx, br, byKind["formula"])
+	}
+
+	// Second CID batch after formula resolution so the real CID queries don't have to wait
+	if len(allFormulaCIDs) > 0 {
+		formulaCIDResolved, formulaCIDFetched := pcbResolveKind("pubchem_id", allFormulaCIDs, func(vs []string) pcbFetchResult {
+			return fetchCIDsBatched(ctx, br, vs)
+		})
+		cidFetched += formulaCIDFetched
+		for cid, compound := range formulaCIDResolved {
+			cidResolved[cid] = compound
+		}
+	}
 
 	formulaResolved := pcbBuildFormulaResults(byFormulaCIDs, cidResolved, topHitOnly)
 

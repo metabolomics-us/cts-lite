@@ -41,6 +41,7 @@ type SingleResult struct {
 	MatchLevel     string      `json:"match_level"`
 	Matches        []*Compound `json:"matches"`
 	ErrMsg         string      `json:"error_message"`
+	DerivedInChIKey string `json:"-"`
 }
 
 // PubChemIndex wraps an SQLite database and prepared statements for each lookup type

@@ -125,6 +125,9 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.MatchFound = false
 		return
 	}
+	// Keep the converted inchikey in case pubchem fallback needs it later
+	result.DerivedInChIKey = inchikey
+
 	if inchikey != "" {
 		matchInchiKey(index, inchikey, result, allowFirstBlockMatches, topHitOnly)
 		if result.MatchFound {
