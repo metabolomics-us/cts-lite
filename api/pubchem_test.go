@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -632,6 +633,27 @@ func TestResolvePubChemFallbackUnreadableSmilesSkipsPubChem(t *testing.T) {
 	}
 }
 
+// fastformula ignores charge at best and fails or widens the search at worst,
+// so the request should carry only the neutral formula
+func TestPcbFastFormulaRequestStripsCharge(t *testing.T) {
+	cases := map[string]string{
+		"C7H16NO2+": "C7H16NO2",
+		"Ca+2":      "Ca",
+		"Cl-":       "Cl",
+		"O4P-3":     "O4P",
+		"C6H12O6":   "C6H12O6",
+	}
+	for formula, want := range cases {
+		req, err := pcbFastFormulaRequest(context.Background(), formula)
+		if err != nil {
+			t.Fatalf("%s: %v", formula, err)
+		}
+		if wantPath := "/compound/fastformula/" + want + "/cids/JSON"; !strings.HasSuffix(req.URL.Path, wantPath) {
+			t.Errorf("%s: path %q, want suffix %q", formula, req.URL.Path, wantPath)
+		}
+	}
+}
+
 func TestResolvePubChemFallbackOnFormulaMiss(t *testing.T) {
 	resetPcbPacing(t)
 	formula := "C6H12O6"
@@ -748,6 +770,110 @@ func TestResolvePubChemFallbackSmilesOrFormulaFallsBackToFormula(t *testing.T) {
 	}
 	if len(r.Matches) != 1 || r.Matches[0].CompoundName != "D-Glucose" {
 		t.Errorf("expected the formula-resolved compound, got %+v", r.Matches)
+	}
+}
+
+// pcbRecordRequestKinds collects the kind of each PubChem request a test makes,
+// so a test can assert which endpoints were reached and in what order
+func pcbRecordRequestKinds(t *testing.T, respond func(*http.Request) (*http.Response, error)) *[]string {
+	t.Helper()
+	var seen []string
+	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
+		switch {
+		case strings.Contains(r.URL.Path, "fastformula"):
+			seen = append(seen, "fastformula")
+		case strings.Contains(r.URL.Path, "/compound/cid/"):
+			seen = append(seen, "cid")
+		case strings.Contains(r.URL.Path, "/compound/inchikey/"):
+			seen = append(seen, "inchikey")
+		}
+		return respond(r)
+	})
+	return &seen
+}
+
+// The two branches of smiles_or_formula run in sequence, not in parallel: a
+// value RDKit can read is settled as SMILES and never reaches fastformula
+func TestResolvePubChemFallbackSmilesOrFormulaSkipsFormulaWhenRDKitReads(t *testing.T) {
+	resetPcbPacing(t)
+	value := "CO" // both a formula (carbon monoxide) and a SMILES (methanol)
+	key := "OKKJLVBELUTLKV-UHFFFAOYSA-N"
+	pcbClearCache(t, "inchikey", key)
+	pcbClearCache(t, "formula", value)
+	pcbClearCache(t, "smiles", value)
+
+	mockSmilesConverter(t, func(string) (string, error) { return key, nil })
+	seen := pcbRecordRequestKinds(t, func(r *http.Request) (*http.Response, error) {
+		return pcbResp(http.StatusOK, pcbPropertyJSON(
+			fmt.Sprintf(`{"CID":887,"InChIKey":%q,"Title":"Methanol"}`, key))), nil
+	})
+
+	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
+	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	if found != 1 {
+		t.Fatalf("expected 1 found, got %d", found)
+	}
+	if slices.Contains(*seen, "fastformula") {
+		t.Errorf("RDKit read the value, so fastformula should never be called; requests were %v", *seen)
+	}
+}
+
+// The mirror case: RDKit cannot read it, so the formula branch is the only one
+// left and fastformula is reached
+func TestResolvePubChemFallbackSmilesOrFormulaUsesFormulaWhenRDKitCannot(t *testing.T) {
+	resetPcbPacing(t)
+	value := "B2Br2" // digits pair, so it stays ambiguous, but it is not a structure
+	pcbClearCache(t, "formula", value)
+	pcbClearCache(t, "smiles", value)
+	pcbClearCache(t, "pubchem_id", "5359596")
+
+	mockSmilesConverter(t, func(string) (string, error) { return "", nil })
+	seen := pcbRecordRequestKinds(t, func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "fastformula") {
+			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[5359596]}}`), nil
+		}
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":5359596,"Title":"Diboron dibromide"}`)), nil
+	})
+
+	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
+	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	if found != 1 {
+		t.Fatalf("expected 1 found via the formula branch, got %d", found)
+	}
+	if !slices.Contains(*seen, "fastformula") {
+		t.Errorf("RDKit could not read the value, so fastformula should be called; requests were %v", *seen)
+	}
+}
+
+// A CID the request asked for directly is ready to send immediately, so its
+// batch must not be held behind the serial per-value formula lookups
+func TestResolvePubChemFallbackDirectCIDsDoNotWaitOnFormulaLookups(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "999999991", "5359596")
+	pcbClearCache(t, "formula", "B2Br2")
+	pcbClearCache(t, "smiles", "B2Br2")
+
+	mockSmilesConverter(t, func(string) (string, error) { return "", nil })
+	seen := pcbRecordRequestKinds(t, func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "fastformula") {
+			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[5359596]}}`), nil
+		}
+		return pcbResp(http.StatusOK, `{"PropertyTable":{"Properties":[]}}`), nil
+	})
+
+	results := []*model.SingleResult{
+		missResult("pubchem_id", "999999991"),
+		missResult("smiles_or_formula", "B2Br2"),
+	}
+	resolvePubChemFallback(context.Background(), results, true)
+
+	cidAt := slices.Index(*seen, "cid")
+	formulaAt := slices.Index(*seen, "fastformula")
+	if cidAt < 0 || formulaAt < 0 {
+		t.Fatalf("expected both a cid batch and a fastformula call, got %v", *seen)
+	}
+	if cidAt > formulaAt {
+		t.Errorf("the direct CID batch waited on the formula lookup; requests were %v", *seen)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -299,7 +300,7 @@ func TestMultiQueryOrderPreserved(t *testing.T) {
 		fakeMethaneCompound(), // "2"                            pubchem_id
 		fakeWaterCompound(),   // "O"                            smiles
 		fakeFormaldehyde(),    // "FAKEFORMALDEHY-FAKEFRMALD-E"  inchikey
-		fakeWaterCompound(),   // "InChI=1S/H2O/h1H2"           inchi
+		fakeWaterCompound(),   // "InChI=1S/H2O/h1H2"            inchi
 		fakeFormaldehyde(),    // "3"                            pubchem_id
 		fakeMethaneCompound(), // "C"                            smiles_or_formula
 	}
@@ -336,8 +337,9 @@ func TestMatchErrors(t *testing.T) {
 			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 		{
+			// A real formula shape that is absent from the test dataset
 			name:       "formula no match",
-			query:      "Unknown",
+			query:      "C99H99N99O99",
 			wantErrMsg: "No local match; PubChem live lookup unavailable",
 		},
 		{
@@ -930,7 +932,7 @@ func TestMatchErrorPaths(t *testing.T) {
 		// C=O contains '=' so smilesGuaranteePattern matches -> type smiles -> matchSmiles
 		{"smiles_direct", `{"queries":"C=O"}`},
 		{"formula", `{"queries":"H2O"}`},
-		{"smiles_or_formula", `{"queries":"CH4"}`},
+		{"formula_from_hydrogen_rule", `{"queries":"CH4"}`},
 		// Numeric query -> type pubchem_id -> matchPubChemID
 		{"pubchem_id", `{"queries":"1"}`},
 	}
@@ -967,6 +969,47 @@ func TestMatchErrorPaths(t *testing.T) {
 				t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
 			}
 		})
+	}
+}
+
+// DerivedInChIKey field should never appear in results, only used internally for 
+// PubChem fallback to reuse the rdkit conversion if we already performed it
+func TestDerivedInChIKeyNeverSerialized(t *testing.T) {
+	results := []*model.SingleResult{{
+		Query:           "CCO",
+		QueryType:       "smiles",
+		ConvertedQuery:  "VISIBLEKEYAAAA-VISIBLEKEY-V",
+		ErrMsg:          "No compound found",
+		DerivedInChIKey: "SENTINELKEYAAA-SENTINELKK-S",
+	}}
+
+	assertHidden := func(format, out string) {
+		t.Helper()
+		// The control value proves the output really was rendered
+		if !strings.Contains(out, "VISIBLEKEY") {
+			t.Fatalf("%s: control value missing, assertion proves nothing", format)
+		}
+		if strings.Contains(out, "SENTINEL") {
+			t.Errorf("%s: DerivedInChIKey value leaked into output", format)
+		}
+		if strings.Contains(strings.ToLower(out), "derived") {
+			t.Errorf("%s: DerivedInChIKey field name leaked into output", format)
+		}
+	}
+
+	encoded, err := json.Marshal(results)
+	if err != nil {
+		t.Fatalf("failed to marshal results: %v", err)
+	}
+	assertHidden("JSON", string(encoded))
+
+	for _, classyfireEnabled := range []bool{false, true} {
+		w := httptest.NewRecorder()
+		if err := writeResultsAsCSV(w, results, classyfireEnabled); err != nil {
+			t.Fatalf("failed to write CSV: %v", err)
+		}
+		body, _ := io.ReadAll(w.Result().Body)
+		assertHidden(fmt.Sprintf("CSV(classyfire=%v)", classyfireEnabled), string(body))
 	}
 }
 
@@ -1107,7 +1150,7 @@ func mockInChIConverter(t *testing.T, fn func(string) (string, error)) {
 	t.Cleanup(func() { inchiToInChIKey = orig })
 }
 
-func TestSmilesViaInChIKeyFallback(t *testing.T) {
+func TestSmilesViaRDKitConversion(t *testing.T) {
 	t.Run("exact InChIKey match", func(t *testing.T) {
 		mockSmilesConverter(t, func(string) (string, error) {
 			return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
@@ -1119,7 +1162,7 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
 		if !results[0].MatchFound {
-			t.Fatal("expected match via SMILES InChIKey fallback")
+			t.Fatal("expected match via RDKit-converted InChIKey")
 		}
 		if results[0].QueryType != "converted_smiles" {
 			t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
@@ -1144,7 +1187,7 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
 		if !results[0].MatchFound {
-			t.Fatal("expected first block match via SMILES fallback")
+			t.Fatal("expected first block match via RDKit-converted InChIKey")
 		}
 		if results[0].QueryType != "converted_smiles" {
 			t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
@@ -1168,7 +1211,7 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 		if results[0].MatchFound {
 			t.Error("expected no match when converter returns empty")
 		}
-		// The fallback converts SMILES to an InChIKey before looking it up, so
+		// The PubChem fallback converts SMILES to an InChIKey before looking it up, so
 		// a converter that yields nothing leaves it with nothing to query and
 		// PubChem is never reached
 		if results[0].ErrMsg != "No local match; structure could not be read for PubChem lookup" {
@@ -1198,20 +1241,22 @@ func TestRdkitConversionDisabled(t *testing.T) {
 	}
 }
 
-func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
-	// "Cc1ccccc1" starts with C (not in formula-guarantee set) → smiles_or_formula,
-	// misses both formula and SMILES lookups, then falls through to RDKit.
+func TestSmilesOrFormulaKeepsConvertedSmilesType(t *testing.T) {
+	// "CO" reads as both SMILES and formula, so it classifies as
+	// smiles_or_formula. It misses the local SMILES lookup and is matched
+	// through RDKit conversion, and matchSmilesOrFormula must keep the
+	// converted_smiles query type rather than overwrite it with smiles
 	mockSmilesConverter(t, func(string) (string, error) {
 		return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
 	})
-	res := doMatchRequest(t, `{"queries":"Cc1ccccc1"}`, nil, false)
+	res := doMatchRequest(t, `{"queries":"CO"}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 	if !results[0].MatchFound {
-		t.Fatal("expected match via smiles_or_formula InChIKey fallback")
+		t.Fatal("expected smiles_or_formula match via converted SMILES InChIKey lookup")
 	}
 	if results[0].QueryType != "converted_smiles" {
 		t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
