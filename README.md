@@ -1,8 +1,8 @@
 # CTS-Lite
 A lightweight Chemical Translation Service using a curated subset of <strong>13 million compounds</strong> from the PubChem database
 
-### Project Health
-[![CI/CD](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml/badge.svg)](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml)
+### Project Status
+<!-- [![CI/CD](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml/badge.svg)](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml) -->
 [![Website](https://img.shields.io/website?url=https%3A%2F%2Fcts-lite.metabolomics.us&label=Website)](https://cts-lite.metabolomics.us)
 [![Last Commit](https://img.shields.io/github/last-commit/metabolomics-us/cts-lite?label=Last%20Commit)](https://github.com/metabolomics-us/cts-lite/commits/main)
 
