@@ -656,10 +656,7 @@ func resolveOne(kind, value string, rc pcbResolutionContext) (compounds []*model
 		}
 	case "formula":
 		if compounds, found := rc.formula[value]; found && len(compounds) > 0 {
-			level := "PubChem Live: Formula (top hit)"
-			if len(compounds) > 1 {
-				level = fmt.Sprintf("PubChem Live: Formula (top %d)", len(compounds))
-			}
+			level := "PubChem Live: Formula"
 			return compounds, level, "", "", true
 		}
 	case "smiles_or_formula":
