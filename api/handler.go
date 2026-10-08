@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
@@ -393,6 +395,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var matchCount int = 0
 	timeStart := time.Now()
 
+	// One span for the whole local SQLite pass, separate from the PubChem and
+	// ClassyFire spans so a trace shows where a request spent its time
+	_, localSpan := telemetry.StartSpan(r.Context(), "local_match")
+	localMatches := 0
+
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
 
@@ -444,18 +451,28 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 		default:
 			log.Printf("ERROR: An unexpected error occured when parsing the request. Query type unhandled. Query: '%s'", q)
+			localSpan.End()
 			http.Error(w, "An unexpected error occurred when parsing the request", http.StatusInternalServerError)
 			return
 		}
 
+		if result.MatchFound {
+			localMatches++
+		}
 		results = append(results, result)
 	}
 
+	localSpan.SetAttributes(
+		attribute.Int("local_match.queries", len(results)),
+		attribute.Int("local_match.matches", localMatches),
+	)
+	localSpan.End()
+
 	// Always attempt a live PubChem lookup for anything that missed locally (except unidentified queries)
-	attempted, pcbFound, pcbNotFound, pcbFailed, pcbSkipped := resolvePubChemFallback(r.Context(), results, topHitOnly)
-	if attempted > 0 {
-		log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d skipped (due to limit reached)",
-			attempted, pcbFound, pcbNotFound, pcbFailed, pcbSkipped)
+	pcb := resolvePubChemFallback(r.Context(), results, topHitOnly)
+	if pcb.attempted+pcb.unparseable+pcb.skipped > 0 {
+		log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d unparseable (not sent), %d skipped (due to limit reached)",
+			pcb.attempted, pcb.found, pcb.notFound, pcb.failed, pcb.unparseable, pcb.skipped)
 	}
 
 	for _, result := range results {

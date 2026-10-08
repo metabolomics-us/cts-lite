@@ -39,7 +39,9 @@ var (
 	matchQueriesPerReq        metric.Int64Histogram
 	classyfireClassifications metric.Int64Counter
 	pubchemFallbackOutcomes   metric.Int64Counter
-	pubchemFallbackCallShape  metric.Int64Counter
+	pubchemFallbackDuration   metric.Float64Histogram
+	pubchemFallbackBatchSize  metric.Int64Histogram
+	pubchemFallbackValues     metric.Int64Counter
 	matchLogger               log.Logger
 	classyfireGaugeOnce       sync.Once
 	pubchemGaugeOnce          sync.Once
@@ -72,9 +74,17 @@ func initInstruments() {
 		classyfireClassifications, _ = meter.Int64Counter("classyfire_classifications_total",
 			metric.WithDescription("Terminal outcomes of individual ClassyFire classifications, split by status"))
 		pubchemFallbackOutcomes, _ = meter.Int64Counter("pubchem_fallback_outcomes_total",
-			metric.WithDescription("Terminal outcomes of live PubChem fallback lookups triggered by /match misses, split by status"))
-		pubchemFallbackCallShape, _ = meter.Int64Counter("pubchem_fallback_calls_total",
-			metric.WithDescription("Live PubChem fallback HTTP calls, split by whether the call was batched or individual"))
+			metric.WithDescription("Terminal outcomes of live PubChem fallback lookups triggered by /match misses, split by status and query type"))
+		// Its count doubles as the number of PubChem calls, so there is no separate request counter
+		pubchemFallbackDuration, _ = meter.Float64Histogram("pubchem_fallback_request_duration_ms",
+			metric.WithDescription("Duration of each live PubChem fallback HTTP round trip (retries included), split by endpoint and result"),
+			metric.WithUnit("ms"),
+			metric.WithExplicitBucketBoundaries(50, 100, 250, 500, 1000, 2000, 5000, 10000, 30000))
+		pubchemFallbackBatchSize, _ = meter.Int64Histogram("pubchem_fallback_batch_size",
+			metric.WithDescription("Number of values carried by each live PubChem fallback HTTP round trip, split by endpoint"),
+			metric.WithExplicitBucketBoundaries(1, 5, 10, 50, 100, 250, 500, 1000))
+		pubchemFallbackValues, _ = meter.Int64Counter("pubchem_fallback_values_total",
+			metric.WithDescription("Values sent to PubChem, split by endpoint and by what PubChem answered for each"))
 		matchLogger = logglobal.GetLoggerProvider().Logger(scopeName)
 	})
 }
@@ -231,37 +241,53 @@ func RegisterPubChemServiceGauge(up func() bool) {
 	})
 }
 
-// RecordPubChemFallbackOutcomes counts terminal outcomes of live PubChem
-// fallback lookups triggered by /match misses. Statuses: found (resolved via
-// PubChem), not_found (PubChem also has no match), failed (unreachable or
-// circuit breaker), skipped (never attempted)
-func RecordPubChemFallbackOutcomes(ctx context.Context, found, notFound, failed, skipped int) {
+// RecordPubChemFallbackOutcomes counts terminal outcomes of live PubChem fallback for one query type
+// Statuses: found , not_found, unparseable (RDKit could not read the structure),
+// failed (no answer from PubChem), skipped (over the lookup limit, never attempted).
+func RecordPubChemFallbackOutcomes(ctx context.Context, queryType string, found, notFound, unparseable, failed, skipped int) {
 	initInstruments()
 	add := func(status string, n int) {
 		if n <= 0 {
 			return
 		}
-		pubchemFallbackOutcomes.Add(ctx, int64(n),
-			metric.WithAttributes(attribute.String("status", status)))
+		pubchemFallbackOutcomes.Add(ctx, int64(n), metric.WithAttributes(
+			attribute.String("status", status),
+			attribute.String("query_type", queryType),
+		))
 	}
 	add("found", found)
 	add("not_found", notFound)
+	add("unparseable", unparseable)
 	add("failed", failed)
 	add("skipped", skipped)
 }
 
-// RecordPubChemFallbackCallShape counts the outbound HTTP calls a fallback
-// pass made, split by whether the call was batched or individual (formula).
-func RecordPubChemFallbackCallShape(ctx context.Context, batchedCalls, individualCalls int) {
+// RecordPubChemFallbackRequest records one HTTP round trip to PubChem: how
+// long it took and how many values it carried.
+// Result is ok, not_found, throttled, error, or aborted
+func RecordPubChemFallbackRequest(ctx context.Context, endpoint, result string, duration time.Duration, batchSize int) {
 	initInstruments()
-	add := func(shape string, n int) {
+	endpointAttr := attribute.String("endpoint", endpoint)
+	pubchemFallbackDuration.Record(ctx, float64(duration.Microseconds())/1000.0,
+		metric.WithAttributes(endpointAttr, attribute.String("result", result)))
+	pubchemFallbackBatchSize.Record(ctx, int64(batchSize), metric.WithAttributes(endpointAttr))
+}
+
+// RecordPubChemFallbackValues counts the values one batch sent to an
+// endpoint: found, not_found, or no_answer
+func RecordPubChemFallbackValues(ctx context.Context, endpoint string, found, notFound, noAnswer int) {
+	initInstruments()
+	add := func(result string, n int) {
 		if n <= 0 {
 			return
 		}
-		pubchemFallbackCallShape.Add(ctx, int64(n),
-			metric.WithAttributes(attribute.String("shape", shape)))
+		pubchemFallbackValues.Add(ctx, int64(n), metric.WithAttributes(
+			attribute.String("endpoint", endpoint),
+			attribute.String("result", result),
+		))
 	}
-	add("batched", batchedCalls)
-	add("individual", individualCalls)
+	add("found", found)
+	add("not_found", notFound)
+	add("no_answer", noAnswer)
 }
 

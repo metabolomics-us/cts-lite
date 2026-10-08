@@ -12,6 +12,9 @@ import (
 
 	"ctslite/model"
 	"ctslite/telemetry"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const cfbBaseURL = "https://cfb.metabolomics.us/entities"
@@ -81,7 +84,12 @@ var (
 	cfbLastReqAt   time.Time
 )
 
-var cfbHTTPClient = &http.Client{Timeout: cfbRequestTimeout}
+// The traced transport gives each classification request 
+// its own child span under the classyfire span
+var cfbHTTPClient = &http.Client{
+	Timeout:   cfbRequestTimeout,
+	Transport: telemetry.NewHTTPTransport(http.DefaultTransport, "ClassyFire"),
+}
 var cfbCache sync.Map // in-memory cache of classifications, cfbCacheTTL lifetime
 type cfbCacheEntry struct {
 	info    *model.ClassyFireInfo
@@ -199,14 +207,15 @@ type cfbAPIResponse struct {
 // classyFireFetcher is a variable so tests mock it
 var classyFireFetcher = defaultClassyFireFetcher
 
-func defaultClassyFireFetcher(inchikey string) (cfbFetch, error) {
+func defaultClassyFireFetcher(ctx context.Context, inchikey string) (cfbFetch, error) {
 	// Second cache check in case the same InChIKey was fetched while we waited for the gate
 	if info, ok := cfbCacheLookup(inchikey); ok {
 		return cfbFetch{info: info, cacheHit: true}, nil
 	}
 
-	// Build the request
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s.json", cfbBaseURL, inchikey), nil)
+	// Build the request. The context carries the classyfire 
+	// span and a client disconnect cancels the call
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s.json", cfbBaseURL, inchikey), nil)
 	if err != nil {
 		return cfbFetch{}, fmt.Errorf("building request: %w", err)
 	}
@@ -320,7 +329,7 @@ func fetchOnce(ctx context.Context, key string) (res cfbFetch, ok bool) {
 		return cfbFetch{}, false
 	}
 
-	res, _ = classyFireFetcher(key)
+	res, _ = classyFireFetcher(ctx, key)
 	end := time.Now()
 	cfbLastReqAt = end
 	if ctx.Err() != nil {
@@ -371,11 +380,23 @@ func classifiableKeys(results []*model.SingleResult) []string {
 // Perform requests for each InChIKey in keys
 func streamClassyFire(ctx context.Context, keys []string, onResult func(key string, info *model.ClassyFireInfo)) {
 	start := time.Now()
+	ctx, span := telemetry.StartSpan(ctx, "classyfire")
 	br := &cfbBreaker{}
 	var completed, misses, failures int
 	// Deferred so outcomes are still counted when the client cancels mid-request
 	defer func() {
 		telemetry.RecordClassyFireOutcomes(ctx, completed, misses, failures)
+		span.SetAttributes(
+			attribute.Int("classyfire.keys", len(keys)),
+			attribute.Int("classyfire.classified", completed),
+			attribute.Int("classyfire.not_found", misses),
+			attribute.Int("classyfire.failed", failures),
+			attribute.Bool("classyfire.breaker_tripped", br.tripped),
+		)
+		if br.tripped {
+			span.SetStatus(codes.Error, "ClassyFire circuit breaker tripped")
+		}
+		span.End()
 	}()
 	for i, key := range keys {
 		if ctx.Err() != nil {
