@@ -17,11 +17,12 @@ import (
 	"time"
 )
 
-// mockClassyFire replaces classyFireFetcher for tests
+// mockClassyFire replaces classyFireFetcher for tests. Mocks only care about
+// the key, so the context is dropped here rather than in every mock
 func mockClassyFire(t *testing.T, fn func(string) (cfbFetch, error)) {
 	t.Helper()
 	orig := classyFireFetcher
-	classyFireFetcher = fn
+	classyFireFetcher = func(_ context.Context, key string) (cfbFetch, error) { return fn(key) }
 	t.Cleanup(func() { classyFireFetcher = orig })
 	resetCfbPacing(t)
 }
@@ -579,7 +580,7 @@ func TestEnrichWithClassyFirePacesByCacheHeader(t *testing.T) {
 
 	hits := map[string]bool{"AAAAAAAAAAAAAA-BBBBBBBBBB-A": false, "CCCCCCCCCCCCCC-DDDDDDDDDD-B": true}
 	orig := classyFireFetcher
-	classyFireFetcher = func(inchikey string) (cfbFetch, error) {
+	classyFireFetcher = func(_ context.Context, inchikey string) (cfbFetch, error) {
 		return cfbFetch{info: fakeClassyFireInfo(), cacheHit: hits[inchikey]}, nil
 	}
 	t.Cleanup(func() { classyFireFetcher = orig })
@@ -630,7 +631,7 @@ func TestStreamClassyFireInterleavesConcurrentBatches(t *testing.T) {
 	resetCfbPacing(t)
 	cfbHitDelay = 3 * time.Millisecond // small gap to force interleaving
 	orig := classyFireFetcher
-	classyFireFetcher = func(string) (cfbFetch, error) {
+	classyFireFetcher = func(context.Context, string) (cfbFetch, error) {
 		return cfbFetch{info: fakeClassyFireInfo(), cacheHit: true}, nil
 	}
 	t.Cleanup(func() { classyFireFetcher = orig })
@@ -724,7 +725,7 @@ func TestDefaultFetcherParsesFullTaxonomy(t *testing.T) {
 		return cfbResp(http.StatusOK, body, map[string]string{"X-Cache": "HIT"}), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -763,7 +764,7 @@ func TestDefaultFetcherDescriptionOnlyIsUnclassified(t *testing.T) {
 		return cfbResp(http.StatusOK, `{"description":"only a description"}`, nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -779,7 +780,7 @@ func TestDefaultFetcherEmptyBodyIsUnclassified(t *testing.T) {
 		return cfbResp(http.StatusOK, `{}`, nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -795,7 +796,7 @@ func TestDefaultFetcherNotFound(t *testing.T) {
 		return cfbResp(http.StatusNotFound, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -818,7 +819,7 @@ func TestDefaultFetcherRateLimited(t *testing.T) {
 		return cfbResp(http.StatusTooManyRequests, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for HTTP 429")
 	}
@@ -841,7 +842,7 @@ func TestDefaultFetcherServerError(t *testing.T) {
 		return cfbResp(http.StatusServiceUnavailable, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for HTTP 503")
 	}
@@ -860,7 +861,7 @@ func TestDefaultFetcherInternalServerError(t *testing.T) {
 		return cfbResp(http.StatusInternalServerError, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for HTTP 500")
 	}
@@ -883,7 +884,7 @@ func TestDefaultFetcherMalformedJSON(t *testing.T) {
 		return cfbResp(http.StatusOK, "this is not json", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for malformed JSON")
 	}
@@ -902,7 +903,7 @@ func TestDefaultFetcherTransportError(t *testing.T) {
 		return nil, errors.New("connection refused")
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error when transport fails")
 	}
@@ -925,7 +926,7 @@ func TestDefaultFetcherServesInProcessCacheWithoutHTTP(t *testing.T) {
 		return nil, nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -944,7 +945,7 @@ func TestDefaultFetcherEmptyNamedNodesAreUnclassified(t *testing.T) {
 		return cfbResp(http.StatusOK, `{"kingdom":{"name":""},"description":""}`, nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

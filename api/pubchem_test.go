@@ -107,7 +107,7 @@ func TestPcbExecuteRetriesThenSucceeds(t *testing.T) {
 	})
 
 	br := &pcbBreaker{}
-	body, outcome := pcbExecute(context.Background(), br, func() (*http.Request, error) {
+	body, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
 		return pcbCIDPropertyRequest(context.Background(), []string{"180"})
 	})
 	if outcome != pcbFound {
@@ -131,7 +131,7 @@ func TestPcbExecuteGivesUpAfterRetries(t *testing.T) {
 	})
 
 	br := &pcbBreaker{}
-	_, outcome := pcbExecute(context.Background(), br, func() (*http.Request, error) {
+	_, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
 		return pcbCIDPropertyRequest(context.Background(), []string{"180"})
 	})
 	if outcome != pcbFailed {
@@ -152,7 +152,7 @@ func TestPcbExecuteTrippedBreakerFailsFast(t *testing.T) {
 	})
 
 	br := &pcbBreaker{tripped: true}
-	_, outcome := pcbExecute(context.Background(), br, func() (*http.Request, error) {
+	_, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
 		return pcbCIDPropertyRequest(context.Background(), []string{"180"})
 	})
 	if outcome != pcbFailed {
@@ -172,7 +172,7 @@ func TestPcbExecuteTerminalNotFoundDoesNotRetry(t *testing.T) {
 	})
 
 	br := &pcbBreaker{}
-	_, outcome := pcbExecute(context.Background(), br, func() (*http.Request, error) {
+	_, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
 		return pcbCIDPropertyRequest(context.Background(), []string{"999999999"})
 	})
 	if outcome != pcbNotFound {
@@ -198,7 +198,7 @@ func TestPcbExecuteFastFormulaBadInputDoesNotRetry(t *testing.T) {
 	})
 
 	br := &pcbBreaker{}
-	_, outcome := pcbExecute(context.Background(), br, func() (*http.Request, error) {
+	_, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
 		return pcbFastFormulaRequest(context.Background(), "C322cc")
 	})
 	if outcome != pcbNotFound {
@@ -247,7 +247,7 @@ func TestPcbExecuteLogsWhyACallFailed(t *testing.T) {
 			t.Cleanup(func() { log.SetOutput(os.Stderr) })
 
 			withMockPCBTransport(t, tc.respond)
-			_, outcome := pcbExecute(context.Background(), &pcbBreaker{}, func() (*http.Request, error) {
+			_, outcome := pcbExecute(context.Background(), &pcbBreaker{}, 1, func() (*http.Request, error) {
 				return pcbCIDPropertyRequest(context.Background(), []string{"1"})
 			})
 			if outcome != pcbFailed {
@@ -274,7 +274,7 @@ func TestPcbExecuteLogsBudgetExhaustion(t *testing.T) {
 		return pcbResp(http.StatusOK, "{}"), nil
 	})
 
-	_, outcome := pcbExecute(ctx, &pcbBreaker{}, func() (*http.Request, error) {
+	_, outcome := pcbExecute(ctx, &pcbBreaker{}, 1, func() (*http.Request, error) {
 		return pcbCIDPropertyRequest(context.Background(), []string{"1"})
 	})
 	if outcome != pcbFailed {
@@ -297,7 +297,7 @@ func TestPcbExecuteThrottleRetriesThenSucceeds(t *testing.T) {
 	})
 
 	br := &pcbBreaker{}
-	_, outcome := pcbExecute(context.Background(), br, func() (*http.Request, error) {
+	_, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
 		return pcbCIDPropertyRequest(context.Background(), []string{"180"})
 	})
 	if outcome != pcbFound {
@@ -335,18 +335,30 @@ func TestPcbResolveKindSkipsNetworkOnCacheHit(t *testing.T) {
 	pcbCacheStore("cid", "cached-cid", []*model.Compound{{Identifier: "cached-cid", CompoundName: "Cached"}})
 
 	calls := 0
-	resolved, fetchedCount := pcbResolveKind("cid", []string{"cached-cid"}, func(vs []string) pcbFetchResult {
+	res := pcbResolveKind("cid", []string{"cached-cid"}, func(vs []string) pcbFetchResult {
 		calls++
 		return newPcbFetchResult()
 	})
 	if calls != 0 {
 		t.Errorf("expected 0 fetch calls for an all-cache-hit request, got %d", calls)
 	}
-	if fetchedCount != 0 {
-		t.Errorf("fetchedCount: want 0, got %d", fetchedCount)
+	if res.found["cached-cid"] == nil || res.found["cached-cid"].CompoundName != "Cached" {
+		t.Errorf("expected cached compound to be returned, got %+v", res.found["cached-cid"])
 	}
-	if resolved["cached-cid"] == nil || resolved["cached-cid"].CompoundName != "Cached" {
-		t.Errorf("expected cached compound to be returned, got %+v", resolved["cached-cid"])
+}
+
+// A cached negative is PubChem's earlier answer, so it must count as
+// confirmed missing rather than as a value that never got an answer
+func TestPcbResolveKindCachedNegativeIsConfirmedMissing(t *testing.T) {
+	pcbClearCache(t, "cid", "cached-missing")
+	pcbCacheStore("cid", "cached-missing", nil)
+
+	res := pcbResolveKind("cid", []string{"cached-missing"}, func(vs []string) pcbFetchResult {
+		t.Errorf("expected no fetch for a cached negative, got %v", vs)
+		return newPcbFetchResult()
+	})
+	if !res.confirmedMissing["cached-missing"] {
+		t.Error("expected a cached negative to be reported as confirmed missing")
 	}
 }
 
@@ -391,10 +403,9 @@ func TestResolvePubChemFallbackReturnsZeroWhenNoMisses(t *testing.T) {
 	results := []*model.SingleResult{
 		{Query: "180", QueryType: "pubchem_id", MatchFound: true, MatchLevel: "Exact PubChem ID"},
 	}
-	attempted, found, notFound, failed, skipped := resolvePubChemFallback(context.Background(), results, true)
-	if attempted != 0 || found != 0 || notFound != 0 || failed != 0 || skipped != 0 {
-		t.Errorf("expected all-zero counts when nothing missed, got attempted=%d found=%d notFound=%d failed=%d skipped=%d",
-			attempted, found, notFound, failed, skipped)
+	counts := resolvePubChemFallback(context.Background(), results, true)
+	if counts != (pcbFallbackCounts{}) {
+		t.Errorf("expected all-zero counts when nothing missed, got %+v", counts)
 	}
 }
 
@@ -411,7 +422,7 @@ func TestResolvePubChemFallbackNeverAttemptsMalformedQueryTypes(t *testing.T) {
 		missResult("bad_inchikey", "NOTAREALKEY"),
 		missResult("unidentified", "???"),
 	}
-	attempted, _, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	attempted := resolvePubChemFallback(context.Background(), results, true).attempted
 	if attempted != 0 {
 		t.Errorf("expected 0 attempts for malformed query types, got %d", attempted)
 	}
@@ -428,7 +439,7 @@ func TestResolvePubChemFallbackOnCIDMiss(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("pubchem_id", "180")}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
@@ -455,7 +466,7 @@ func TestResolvePubChemFallbackDedupsRepeatedCIDMisses(t *testing.T) {
 		missResult("pubchem_id", "180"),
 		missResult("pubchem_id", "180"),
 	}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 3 {
 		t.Fatalf("expected all 3 duplicate misses to resolve, got found=%d", found)
 	}
@@ -478,7 +489,7 @@ func TestResolvePubChemFallbackOnInChIKeyMiss(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("inchikey", key)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
@@ -514,7 +525,7 @@ func TestResolvePubChemFallbackOnInChIMiss(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("inchi", inchi)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 || results[0].MatchLevel != "PubChem Live: Exact InChIKey" {
 		t.Fatalf("unexpected result: found=%d level=%q", found, results[0].MatchLevel)
 	}
@@ -548,7 +559,7 @@ func TestResolvePubChemFallbackOnSmilesMiss(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("smiles", smiles)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 || results[0].MatchLevel != "PubChem Live: Exact InChIKey" {
 		t.Fatalf("unexpected result: found=%d level=%q", found, results[0].MatchLevel)
 	}
@@ -595,7 +606,7 @@ func TestResolvePubChemFallbackBatchesSmilesIntoOneCall(t *testing.T) {
 	for _, s := range smiles {
 		results = append(results, missResult("smiles", s))
 	}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != len(smiles) {
 		t.Fatalf("expected all %d to resolve, got %d", len(smiles), found)
 	}
@@ -604,10 +615,7 @@ func TestResolvePubChemFallbackBatchesSmilesIntoOneCall(t *testing.T) {
 	}
 }
 
-// A structure RDKit can't read never reaches PubChem: there is no InChIKey to
-// put in the batch, and PubChem's own SMILES endpoint can't batch, so there is
-// nothing to gain by asking it separately. The message says so rather than
-// implying PubChem was asked and answered no
+// A structure RDKit can't read never reaches PubChem
 func TestResolvePubChemFallbackUnreadableSmilesSkipsPubChem(t *testing.T) {
 	resetPcbPacing(t)
 	smiles := "weird-smiles-rdkit-cant-parse"
@@ -621,9 +629,9 @@ func TestResolvePubChemFallbackUnreadableSmilesSkipsPubChem(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("smiles", smiles)}
-	_, found, notFound, _, _ := resolvePubChemFallback(context.Background(), results, true)
-	if found != 0 || notFound != 1 {
-		t.Fatalf("expected 0 found, 1 not found, got found=%d notFound=%d", found, notFound)
+	counts := resolvePubChemFallback(context.Background(), results, true)
+	if counts.unparseable != 1 || counts.notFound != 0 || counts.attempted != 0 {
+		t.Fatalf("expected 1 unparseable, 0 not found, 0 attempted, got %+v", counts)
 	}
 	if reachedPubChem {
 		t.Error("an unreadable structure should not reach PubChem at all")
@@ -669,12 +677,12 @@ func TestResolvePubChemFallbackOnFormulaMiss(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("formula", formula)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
 	r := results[0]
-	if r.MatchLevel != "PubChem Live: Formula (top hit)" {
+	if r.MatchLevel != "PubChem Live: Formula" {
 		t.Errorf("unexpected MatchLevel: %q", r.MatchLevel)
 	}
 	if len(r.Matches) != 1 || r.Matches[0].CompoundName != "D-Glucose" {
@@ -697,7 +705,7 @@ func TestResolvePubChemFallbackFormulaTopHitOnlyFalseReturnsAll(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("formula", formula)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, false)
+	found := resolvePubChemFallback(context.Background(), results, false).found
 	if found != 1 {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
@@ -723,7 +731,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaPrefersSmiles(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
@@ -760,7 +768,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaFallsBackToFormula(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found via the formula fallback leg, got %d", found)
 	}
@@ -809,7 +817,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaSkipsFormulaWhenRDKitReads(t *test
 	})
 
 	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
@@ -836,7 +844,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaUsesFormulaWhenRDKitCannot(t *test
 	})
 
 	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
-	_, found, _, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	found := resolvePubChemFallback(context.Background(), results, true).found
 	if found != 1 {
 		t.Fatalf("expected 1 found via the formula branch, got %d", found)
 	}
@@ -885,7 +893,7 @@ func TestResolvePubChemFallbackNotFoundSetsMessage(t *testing.T) {
 	})
 
 	results := []*model.SingleResult{missResult("pubchem_id", "999999999")}
-	_, _, notFound, _, _ := resolvePubChemFallback(context.Background(), results, true)
+	notFound := resolvePubChemFallback(context.Background(), results, true).notFound
 	if notFound != 1 {
 		t.Fatalf("expected 1 not-found, got %d", notFound)
 	}
@@ -908,12 +916,93 @@ func TestResolvePubChemFallbackServiceDownSetsUnavailableMessage(t *testing.T) {
 	results := []*model.SingleResult{
 		missResult("pubchem_id", "111"),
 	}
-	_, _, _, failed, _ := resolvePubChemFallback(context.Background(), results, true)
+	failed := resolvePubChemFallback(context.Background(), results, true).failed
 	if failed != 1 {
 		t.Fatalf("expected 1 failed, got %d", failed)
 	}
 	if results[0].ErrMsg != "No local match; PubChem live lookup unavailable" {
 		t.Errorf("unexpected ErrMsg: %q", results[0].ErrMsg)
+	}
+}
+
+// A value PubChem already denied stays not_found when a later call trips the
+// breaker, rather than being swept into failed with the unanswered values
+func TestResolvePubChemFallbackConfirmedMissingSurvivesBreakerTrip(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "999999998")
+	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "fastformula") {
+			return pcbResp(http.StatusInternalServerError, ""), nil
+		}
+		return pcbResp(http.StatusOK, `{"PropertyTable":{"Properties":[]}}`), nil
+	})
+
+	results := []*model.SingleResult{
+		missResult("pubchem_id", "999999998"),
+		missResult("formula", "C9H9"),
+	}
+	counts := resolvePubChemFallback(context.Background(), results, true)
+	if counts.notFound != 1 || counts.failed != 1 {
+		t.Fatalf("want 1 not found (the denied CID) and 1 failed (the formula), got %+v", counts)
+	}
+	if results[0].ErrMsg != "No compound found (including PubChem live lookup)" {
+		t.Errorf("denied CID: unexpected ErrMsg %q", results[0].ErrMsg)
+	}
+	if results[1].ErrMsg != "No local match; PubChem live lookup unavailable" {
+		t.Errorf("formula: unexpected ErrMsg %q", results[1].ErrMsg)
+	}
+}
+
+// Same guarantee when the budget (here a cancelled context) ends the request
+func TestResolvePubChemFallbackConfirmedMissingSurvivesBudgetExpiry(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "999999997")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "fastformula") {
+			cancel() // the budget runs out during the formula lookup
+			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[1]}}`), nil
+		}
+		return pcbResp(http.StatusOK, `{"PropertyTable":{"Properties":[]}}`), nil
+	})
+
+	results := []*model.SingleResult{
+		missResult("pubchem_id", "999999997"),
+		missResult("formula", "C9H8"),
+	}
+	counts := resolvePubChemFallback(ctx, results, true)
+	if counts.notFound != 1 || counts.failed != 1 {
+		t.Fatalf("want 1 not found (the denied CID) and 1 failed (the formula), got %+v", counts)
+	}
+}
+
+// A call that gives up without tripping the breaker never got an answer, so it is failed
+func TestResolvePubChemFallbackGiveUpWithoutBreakerIsFailed(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "444")
+	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
+		return pcbResp(http.StatusTooManyRequests, ""), nil
+	})
+
+	results := []*model.SingleResult{missResult("pubchem_id", "444")}
+	counts := resolvePubChemFallback(context.Background(), results, true)
+	if counts.failed != 1 || counts.notFound != 0 {
+		t.Fatalf("want 1 failed, 0 not found, got %+v", counts)
+	}
+}
+
+func TestPcbEndpointLabel(t *testing.T) {
+	cases := map[string]string{
+		"/rest/pug/compound/cid/180,181/property/Title/JSON": "cid",
+		"/rest/pug/compound/inchikey/property/Title/JSON":    "inchikey",
+		"/rest/pug/compound/fastformula/C6H12O6/cids/JSON":   "fastformula",
+		"/rest/pug/somewhere/else":                           "other",
+	}
+	for path, want := range cases {
+		if got := pcbEndpointLabel(path); got != want {
+			t.Errorf("%s: got %q, want %q", path, got, want)
+		}
 	}
 }
 
@@ -934,7 +1023,8 @@ func TestResolvePubChemFallbackDoesNotRationBatchedValues(t *testing.T) {
 		return pcbResp(http.StatusOK, `{"PropertyTable":{"Properties":[]}}`), nil
 	})
 
-	attempted, _, _, _, skipped := resolvePubChemFallback(context.Background(), results, true)
+	counts := resolvePubChemFallback(context.Background(), results, true)
+	attempted, skipped := counts.attempted, counts.skipped
 	if attempted != 250 {
 		t.Errorf("attempted: want all 250, got %d", attempted)
 	}
@@ -959,7 +1049,8 @@ func TestResolvePubChemFallbackFormulaCapSkipsExcess(t *testing.T) {
 		return pcbResp(http.StatusNotFound, ""), nil
 	})
 
-	attempted, _, _, _, skipped := resolvePubChemFallback(context.Background(), results, true)
+	counts := resolvePubChemFallback(context.Background(), results, true)
+	attempted, skipped := counts.attempted, counts.skipped
 	if attempted != pcbMaxFormulaLookups {
 		t.Errorf("attempted: want %d, got %d", pcbMaxFormulaLookups, attempted)
 	}
