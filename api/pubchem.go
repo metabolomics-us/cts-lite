@@ -528,7 +528,7 @@ func fetchInChIKeysBatched(ctx context.Context, br *pcbBreaker, keys []string) p
 const pcbMaxConvertibleLength = 4096
 
 // deriveInChIKeys converts values to InChIKeys so they can ride the batched
-// InChIKey lookup instead of costing one call each 
+// InChIKey lookup instead of costing one call each
 func deriveInChIKeys(values []string, convert func(string) (string, error), precomputed map[string]string) (derived map[string]string, unparseable []string) {
 	derived = make(map[string]string, len(values))
 	for _, v := range values {
@@ -921,9 +921,9 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 
 	br := &pcbBreaker{}
 
-	// A value converts here when local matching never did, 
-	// which is the case for InChI, for a SMILES longer than
-	// the local guard allows, and for any request sending rdkit_conversion=false
+	// A value converts here when local matching never did,
+	// which is the case for InChI and for a SMILES longer than
+	// the local guard allows
 	precomputedKeys := make(map[string]string)
 	for _, m := range eligible {
 		if m.result.DerivedInChIKey != "" {

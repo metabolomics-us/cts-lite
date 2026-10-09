@@ -972,7 +972,7 @@ func TestMatchErrorPaths(t *testing.T) {
 	}
 }
 
-// DerivedInChIKey field should never appear in results, only used internally for 
+// DerivedInChIKey field should never appear in results, only used internally for
 // PubChem fallback to reuse the rdkit conversion if we already performed it
 func TestDerivedInChIKeyNeverSerialized(t *testing.T) {
 	results := []*model.SingleResult{{
@@ -1220,7 +1220,8 @@ func TestSmilesViaRDKitConversion(t *testing.T) {
 	})
 }
 
-func TestRdkitConversionDisabled(t *testing.T) {
+// rdkit_conversion was removed, so a client still sending it must get the converted match
+func TestRdkitConversionParamIgnored(t *testing.T) {
 	mockSmilesConverter(t, func(string) (string, error) {
 		return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
 	})
@@ -1233,11 +1234,11 @@ func TestRdkitConversionDisabled(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if results[0].MatchFound {
-		t.Error("expected no match when rdkit_conversion=false")
+	if !results[0].MatchFound {
+		t.Errorf("expected a match, got error %q", results[0].ErrMsg)
 	}
-	if results[0].ErrMsg != "No local match; PubChem live lookup unavailable" {
-		t.Errorf("expected fallback-unavailable message, got %q", results[0].ErrMsg)
+	if results[0].QueryType != "converted_smiles" {
+		t.Errorf("expected converted_smiles, got %q", results[0].QueryType)
 	}
 }
 

@@ -24,7 +24,6 @@ const maxLoggedMisses = 5
 type MatchOptions struct {
 	TopHitOnly             bool
 	AllowFirstBlockMatches bool
-	AllowRdkitConversion   bool
 	ClassyFireEnabled      bool
 }
 
@@ -163,7 +162,6 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 		log.String("client_type", clientType),
 		log.Bool("top_hit_only", opts.TopHitOnly),
 		log.Bool("first_block_matches", opts.AllowFirstBlockMatches),
-		log.Bool("rdkit_conversion", opts.AllowRdkitConversion),
 		log.Bool("classyfire_enabled", opts.ClassyFireEnabled),
 		log.Slice("misses", misses...),
 	)

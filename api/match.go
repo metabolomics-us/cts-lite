@@ -90,7 +90,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 	}
 }
 
-func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool, allowRdkitConversion bool) {
+func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
 	compounds, err := index.QueryBySmiles(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by SMILES: %v", err)
@@ -98,16 +98,11 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.ErrMsg = "Internal server error"
 		return
 	}
+
 	if len(compounds) > 0 {
 		result.MatchFound = true
 		result.MatchLevel = "Exact SMILES"
 		result.Matches = compounds
-		return
-	}
-
-	if !allowRdkitConversion {
-		result.MatchFound = false
-		result.ErrMsg = "No compound found"
 		return
 	}
 
@@ -159,8 +154,8 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	result.Matches = compounds
 }
 
-func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool, allowRdkitConversion bool) {
-	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
+func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
+	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
 	if result.MatchFound {
 		if result.QueryType != "converted_smiles" {
 			result.QueryType = "smiles"

@@ -241,7 +241,7 @@ func TestRecordMatchLogSummaryTruncatesMisses(t *testing.T) {
 	capture.take()
 	results := makeResults(3, 7)                     // 7 misses: over the cap of 5
 	results[3].ConvertedQuery = "CONVERTED-INCHIKEY" // first miss carries a conversion
-	opts := MatchOptions{TopHitOnly: true, AllowFirstBlockMatches: false, AllowRdkitConversion: true, ClassyFireEnabled: false}
+	opts := MatchOptions{TopHitOnly: true, AllowFirstBlockMatches: false, ClassyFireEnabled: false}
 	RecordMatch(newMatchRequest(false), results, 3, 100*time.Millisecond, opts)
 	collectMetrics(t) // drain metrics so later tests stay isolated
 
@@ -270,7 +270,7 @@ func TestRecordMatchLogSummaryTruncatesMisses(t *testing.T) {
 	if v := attrs["hit_percent"].AsFloat64(); v != 30.0 {
 		t.Errorf("hit_percent = %v, want 30.0", v)
 	}
-	if !attrs["top_hit_only"].AsBool() || attrs["first_block_matches"].AsBool() || !attrs["rdkit_conversion"].AsBool() {
+	if !attrs["top_hit_only"].AsBool() || attrs["first_block_matches"].AsBool() {
 		t.Errorf("options not recorded correctly: %v", attrs)
 	}
 	if v, ok := attrs["misses_truncated"]; !ok || !v.AsBool() {
