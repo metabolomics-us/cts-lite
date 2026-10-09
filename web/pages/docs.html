@@ -164,14 +164,14 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                         <code class="inline-code">= # - / \ : . @ + [ ] ( )</code> 
                     </li>
                     <li>
-                        <strong>Converted SMILES</strong> are SMILES queries that failed to match, but were then matched using their converted InChIKey. The SMILES are converted to InChIKey using <a href="https://github.com/rdkit/rdkit">RDKit</a>.
-                    </li>
-                    <li>
                         <strong>PubChem CIDs</strong> are identified as queries which only contain numbers
                     </li>
                     <li>
                         <strong>Molecular Formulas</strong> are recognized by starting with letters that cannot be at the start of SMILES:
                         <code class="inline-code">ADEGHKLMRTUVWXYZ</code>
+                    </li>
+                    <li>
+                        <strong>Converted SMILES / Converted InChI</strong> are SMILES or InChI queries that failed to match, but were then matched using their converted InChIKey. The SMILES/InChIs are converted to InChIKey using <a href="https://github.com/rdkit/rdkit">RDKit</a>.
                     </li>
                     <li>
                         <strong>SMILES/Mol. Formula</strong> some queries, like <code class="inline-code">C</code>, are ambiguous and can be either SMILES or Molecular Formulas. In these cases, the query first tries to match against SMILES, and then Molecular Formula.
