@@ -242,10 +242,10 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
             <section class="doc-section">
                 <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                CTS-Lite will attempt to convert <strong>failed</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>. It will then retry the lookup against the database using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Converted SMILES</code>.
+                The same compound can be written as many different SMILES strings, so a SMILES query with no exact match is converted to an InChIKey using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a> and searched again. If the local database still has no match, that InChIKey is used for the live PubChem lookup. InChI queries not found locally are converted to an InChIKey the same way before searching PubChem.
                 </p>
                 <p>
-                Because SMILES are non-canonical, the same compound can have many SMILES representations, but PubChem only stores one of them. Converting to InChIKey ensures the lookup is format-independent.
+                A match found this way is returned with the query type <code class="inline-code">Converted SMILES</code> or <code class="inline-code">Converted InChI</code>. For a given query, you can click the "Query Type" bubble to expand it and see the InChIKey that was used instead.
                 </p>
             </section>
 
