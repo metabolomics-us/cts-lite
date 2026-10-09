@@ -116,6 +116,9 @@ func TestPcbExecuteRetriesThenSucceeds(t *testing.T) {
 	if attempts != 3 {
 		t.Errorf("attempts: want 3, got %d", attempts)
 	}
+	if br.calls != 3 || br.retries != 2 {
+		t.Errorf("calls/retries: want 3/2, got %d/%d", br.calls, br.retries)
+	}
 	props, err := parsePropertyResponse(body)
 	if err != nil || len(props) != 1 || props[0].Title != "Acetone" {
 		t.Errorf("unexpected parsed body: props=%+v err=%v", props, err)

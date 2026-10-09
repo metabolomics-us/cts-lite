@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -559,5 +560,61 @@ func TestRecordMatchEmptyResults(t *testing.T) {
 	}
 	if v := attrs["hit_percent"].AsFloat64(); v != 0 {
 		t.Errorf("hit_percent = %v, want 0", v)
+	}
+}
+
+func TestLogPubChemEvent(t *testing.T) {
+	capture.take()
+	LogPubChemEvent(context.Background(), PubChemEvent{
+		Event: "retrying", Endpoint: "cid", Path: "/rest/pug/compound/cid/" + strings.Repeat("1,", 200),
+		Reason: "http_error", StatusCode: 502, Attempt: 1, Delay: 2 * time.Second,
+	}, "cid returned 502 on attempt 1, retrying in 2s")
+	LogPubChemEvent(context.Background(), PubChemEvent{Event: "gave_up"}, "gave up")
+
+	records := capture.take()
+	if len(records) != 2 {
+		t.Fatalf("got %d log records, want 2", len(records))
+	}
+	if records[0].Severity() != otellog.SeverityWarn || records[1].Severity() != otellog.SeverityError {
+		t.Errorf("severities = %v, %v, want Warn, Error", records[0].Severity(), records[1].Severity())
+	}
+	attrs := logAttrs(records[0])
+	if attrs["component"].AsString() != "pubchem_fallback" || attrs["event"].AsString() != "retrying" {
+		t.Errorf("component/event = %v/%v", attrs["component"], attrs["event"])
+	}
+	if attrs["status_code"].AsInt64() != 502 || attrs["delay_ms"].AsFloat64() != 2000 {
+		t.Errorf("status_code/delay_ms = %v/%v, want 502/2000", attrs["status_code"], attrs["delay_ms"])
+	}
+	if n := len(attrs["path"].AsString()); n != maxLoggedPathLen+3 {
+		t.Errorf("path length = %d, want trimmed to %d", n, maxLoggedPathLen+3)
+	}
+	if _, ok := logAttrs(records[1])["status_code"]; ok {
+		t.Error("status_code present on an event without one")
+	}
+}
+
+func TestLogPubChemFallbackSummary(t *testing.T) {
+	capture.take()
+	LogPubChemFallbackSummary(context.Background(), PubChemFallbackSummary{
+		Misses: 4, Attempted: 3, Found: 2, NotFound: 1, Skipped: 1, Calls: 5, Retries: 2,
+		BreakerTripped: true, Duration: 1500 * time.Millisecond,
+	})
+
+	records := capture.take()
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want 1", len(records))
+	}
+	if body := records[0].Body().AsString(); body != "pubchem fallback summary" {
+		t.Errorf("body = %q", body)
+	}
+	if records[0].Severity() != otellog.SeverityWarn {
+		t.Errorf("severity = %v, want Warn when the breaker tripped", records[0].Severity())
+	}
+	attrs := logAttrs(records[0])
+	if attrs["found"].AsInt64() != 2 || attrs["calls"].AsInt64() != 5 || attrs["retries"].AsInt64() != 2 {
+		t.Errorf("found/calls/retries = %v/%v/%v, want 2/5/2", attrs["found"], attrs["calls"], attrs["retries"])
+	}
+	if attrs["duration_ms"].AsFloat64() != 1500 {
+		t.Errorf("duration_ms = %v, want 1500", attrs["duration_ms"])
 	}
 }

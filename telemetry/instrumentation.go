@@ -289,3 +289,121 @@ func RecordPubChemFallbackValues(ctx context.Context, endpoint string, found, no
 	add("no_answer", noAnswer)
 }
 
+// pubchemComponent tags every PubChem fallback log record for Grafana to filter
+const pubchemComponent = "pubchem_fallback"
+
+// maxLoggedPathLen bounds the request path attached to an event, since a CID
+// batch carries up to a thousand CIDs in its path
+const maxLoggedPathLen = 200
+
+// PubChemEvent is one notable step of a PubChem fallback call
+type PubChemEvent struct {
+	Event      string // retrying, gave_up, recovered, breaker_tripped, budget_exhausted
+	Endpoint   string // cid, inchikey, fastformula
+	Path       string // request path, trimmed of the property list
+	Reason     string // throttled, http_error, transport_error, read_error, build_error
+	StatusCode int
+	Attempt    int
+	Delay      time.Duration
+	Err        error
+}
+
+// LogPubChemEvent emits a PubChemEvent as an OTel log record whose body is
+// message. Severity follows the event: recovered is Info, retrying is Warn,
+// and anything that ends a call without an answer is Error
+func LogPubChemEvent(ctx context.Context, ev PubChemEvent, message string) {
+	initInstruments()
+
+	severity, severityText := log.SeverityWarn, "WARN"
+	switch ev.Event {
+	case "recovered":
+		severity, severityText = log.SeverityInfo, "INFO"
+	case "gave_up", "breaker_tripped", "budget_exhausted":
+		severity, severityText = log.SeverityError, "ERROR"
+	}
+
+	var record log.Record
+	record.SetTimestamp(time.Now())
+	record.SetSeverity(severity)
+	record.SetSeverityText(severityText)
+	record.SetBody(log.StringValue(message))
+	record.AddAttributes(
+		log.String("component", pubchemComponent),
+		log.String("event", ev.Event),
+	)
+	if ev.Endpoint != "" {
+		record.AddAttributes(log.String("endpoint", ev.Endpoint))
+	}
+	if ev.Path != "" {
+		path := ev.Path
+		if len(path) > maxLoggedPathLen {
+			path = path[:maxLoggedPathLen] + "..."
+		}
+		record.AddAttributes(log.String("path", path))
+	}
+	if ev.Reason != "" {
+		record.AddAttributes(log.String("reason", ev.Reason))
+	}
+	if ev.StatusCode != 0 {
+		record.AddAttributes(log.Int("status_code", ev.StatusCode))
+	}
+	if ev.Attempt != 0 {
+		record.AddAttributes(log.Int("attempt", ev.Attempt))
+	}
+	if ev.Delay != 0 {
+		record.AddAttributes(log.Float64("delay_ms", float64(ev.Delay.Milliseconds())))
+	}
+	if ev.Err != nil {
+		record.AddAttributes(log.String("error", ev.Err.Error()))
+	}
+	matchLogger.Emit(ctx, record)
+}
+
+// PubChemFallbackSummary summarizes one /match request's PubChem fallback
+type PubChemFallbackSummary struct {
+	Misses          int // local misses handed to the fallback
+	Attempted       int
+	Found           int
+	NotFound        int
+	Unparseable     int
+	Failed          int
+	Skipped         int
+	Calls           int // HTTP round trips to PubChem, retries included
+	Retries         int
+	BreakerTripped  bool
+	BudgetExhausted bool
+	Duration        time.Duration
+}
+
+// LogPubChemFallbackSummary emits one record per request that reached the fallback
+func LogPubChemFallbackSummary(ctx context.Context, s PubChemFallbackSummary) {
+	initInstruments()
+
+	severity, severityText := log.SeverityInfo, "INFO"
+	if s.BreakerTripped || s.BudgetExhausted {
+		severity, severityText = log.SeverityWarn, "WARN"
+	}
+
+	var record log.Record
+	record.SetTimestamp(time.Now())
+	record.SetSeverity(severity)
+	record.SetSeverityText(severityText)
+	record.SetBody(log.StringValue("pubchem fallback summary"))
+	record.AddAttributes(
+		log.String("component", pubchemComponent),
+		log.Int("misses", s.Misses),
+		log.Int("attempted", s.Attempted),
+		log.Int("found", s.Found),
+		log.Int("not_found", s.NotFound),
+		log.Int("unparseable", s.Unparseable),
+		log.Int("failed", s.Failed),
+		log.Int("skipped", s.Skipped),
+		log.Int("calls", s.Calls),
+		log.Int("retries", s.Retries),
+		log.Bool("breaker_tripped", s.BreakerTripped),
+		log.Bool("budget_exhausted", s.BudgetExhausted),
+		log.Float64("duration_ms", float64(s.Duration.Microseconds())/1000.0),
+	)
+	matchLogger.Emit(ctx, record)
+}
+

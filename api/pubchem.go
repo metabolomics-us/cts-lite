@@ -69,6 +69,9 @@ var pcbHTTPClient = &http.Client{
 type pcbBreaker struct {
 	downStreak int
 	tripped    bool
+	// Round trips and retries, tallied for the fallback summary log
+	calls   int
+	retries int
 }
 
 // pcbOutcome is the result of one gated, retried HTTP round trip
@@ -137,8 +140,46 @@ func pcbRegisterFailure(ctx context.Context, br *pcbBreaker) bool {
 	if br.downStreak >= pcbDownGiveUp {
 		br.tripped = true
 		pcbServiceUp.Store(false)
-		log.Printf("PubChem fallback: appears down after %d consecutive failures; failing remaining calls for this request", br.downStreak)
+		pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "breaker_tripped"},
+			"appears down after %d consecutive failures; failing remaining calls for this request", br.downStreak)
 		telemetry.AddSpanEvent(ctx, "pubchem.breaker_tripped", attribute.Int("consecutive_failures", br.downStreak))
+		return false
+	}
+	return true
+}
+
+// pcbLogEvent writes a fallback event to stdout and OTel
+func pcbLogEvent(ctx context.Context, ev telemetry.PubChemEvent, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	// The path (endpoint and sometimes the query) stays out of the OTel body (OTel carries a trimmed 200-char max copy)
+	if ev.Path != "" {
+		log.Printf("PubChem fallback: %s [%s]", msg, ev.Path)
+	} else {
+		log.Printf("PubChem fallback: %s", msg)
+	}
+	telemetry.LogPubChemEvent(ctx, ev, msg)
+}
+
+// pcbRetryAfterFailure is the shared retry step for a non-throttle failure
+func pcbRetryAfterFailure(ctx context.Context, br *pcbBreaker, attempt int, ev telemetry.PubChemEvent, what string) bool {
+	ev.Attempt = attempt + 1
+	if !pcbRegisterFailure(ctx, br) {
+		ev.Event = "gave_up"
+		pcbLogEvent(ctx, ev, "%s %s on attempt %d, giving up since PubChem appears down", ev.Endpoint, what, ev.Attempt)
+		return false
+	}
+	if attempt >= len(pcbRetryDelays) {
+		ev.Event = "gave_up"
+		pcbLogEvent(ctx, ev, "%s %s on attempt %d, giving up after %d attempts", ev.Endpoint, what, ev.Attempt, ev.Attempt)
+		return false
+	}
+	ev.Event = "retrying"
+	ev.Delay = pcbRetryDelays[attempt]
+	pcbLogEvent(ctx, ev, "%s %s on attempt %d, retrying in %s", ev.Endpoint, what, ev.Attempt, ev.Delay)
+	br.retries++
+	if pcbSleep(ctx, ev.Delay) != nil {
+		pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Endpoint: ev.Endpoint, Path: ev.Path},
+			"%s retry abandoned, the request budget ran out", ev.Endpoint)
 		return false
 	}
 	return true
@@ -166,27 +207,46 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 
 	for attempt := 0; ; attempt++ {
 		if err := pcbWaitTurn(ctx); err != nil {
-			log.Printf("PubChem fallback: gave up waiting for a pacing slot: %v", err)
+			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Err: err},
+				"gave up waiting for a pacing slot: %v", err)
 			return nil, pcbFailed
 		}
 
 		req, err := buildReq()
 		if err != nil {
-			log.Printf("PubChem fallback: failed to build request: %v", err)
+			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "gave_up", Reason: "build_error", Err: err},
+				"failed to build request: %v", err)
 			return nil, pcbFailed
 		}
 		// Cut as to not bloat the logs
 		endpoint, _, _ := strings.Cut(req.URL.Path, "/property/")
+		label := pcbEndpointLabel(req.URL.Path)
+		ev := telemetry.PubChemEvent{Endpoint: label, Path: endpoint}
 		// only PubChem's own time is measured, not pacing/retry waits
 		start := time.Now()
 		record := func(result string) {
-			telemetry.RecordPubChemFallbackRequest(ctx, pcbEndpointLabel(req.URL.Path), result, time.Since(start), batchSize)
+			telemetry.RecordPubChemFallbackRequest(ctx, label, result, time.Since(start), batchSize)
+		}
+		// A clean answer after a retry is logged
+		logRecovered := func(statusCode int) {
+			if attempt == 0 {
+				return
+			}
+			rec := ev
+			rec.Event = "recovered"
+			rec.Attempt = attempt + 1
+			rec.StatusCode = statusCode
+			pcbLogEvent(ctx, rec, "%s answered %d on attempt %d", label, statusCode, attempt+1)
 		}
 
+		br.calls++
 		resp, err := pcbHTTPClient.Do(req)
 		if ctx.Err() != nil {
 			// Usually the fallback budget expiring mid-flight
-			log.Printf("PubChem fallback: %s aborted after the request budget ran out: %v", endpoint, ctx.Err())
+			ev.Event = "budget_exhausted"
+			ev.Attempt = attempt + 1
+			ev.Err = ctx.Err()
+			pcbLogEvent(ctx, ev, "%s aborted after the request budget ran out: %v", label, ctx.Err())
 			record("aborted")
 			telemetry.AddSpanEvent(ctx, "pubchem.budget_exhausted", attribute.String("endpoint", endpoint))
 			if resp != nil {
@@ -195,32 +255,29 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			return nil, pcbFailed
 		}
 		if err != nil {
-			log.Printf("PubChem fallback: request failed on attempt %d: %v", attempt+1, err)
 			record("error")
 			pcbSettlePacing(false, false)
-			if !pcbRegisterFailure(ctx, br) || attempt >= len(pcbRetryDelays) {
-				return nil, pcbFailed
+			ev.Reason = "transport_error"
+			ev.Err = err
+			if pcbRetryAfterFailure(ctx, br, attempt, ev, fmt.Sprintf("request failed (%v)", err)) {
+				continue
 			}
-			if pcbSleep(ctx, pcbRetryDelays[attempt]) != nil {
-				return nil, pcbFailed
-			}
-			continue
+			return nil, pcbFailed
 		}
 
 		respBody, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
-			log.Printf("PubChem fallback: %s returned %d but its body could not be read on attempt %d: %v",
-				endpoint, resp.StatusCode, attempt+1, readErr)
 			record("error")
 			pcbSettlePacing(false, false)
-			if !pcbRegisterFailure(ctx, br) || attempt >= len(pcbRetryDelays) {
-				return nil, pcbFailed
+			ev.Reason = "read_error"
+			ev.StatusCode = resp.StatusCode
+			ev.Err = readErr
+			what := fmt.Sprintf("returned %d but its body could not be read (%v)", resp.StatusCode, readErr)
+			if pcbRetryAfterFailure(ctx, br, attempt, ev, what) {
+				continue
 			}
-			if pcbSleep(ctx, pcbRetryDelays[attempt]) != nil {
-				return nil, pcbFailed
-			}
-			continue
+			return nil, pcbFailed
 		}
 
 		switch {
@@ -228,31 +285,42 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			record("ok")
 			br.downStreak = 0
 			pcbSettlePacing(true, false)
+			logRecovered(resp.StatusCode)
 			return respBody, pcbFound
 
 		case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest:
 			record("not_found")
 			br.downStreak = 0
 			pcbSettlePacing(true, false)
+			logRecovered(resp.StatusCode)
 			return nil, pcbNotFound
 
 		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable:
 			record("throttled")
 			pcbSettlePacing(false, true)
+			ev.Reason = "throttled"
+			ev.StatusCode = resp.StatusCode
+			ev.Attempt = attempt + 1
 			if attempt >= pcb429MaxRetries {
-				log.Printf("PubChem fallback: %s still throttled (%d) after %d attempts, giving up",
-					endpoint, resp.StatusCode, attempt+1)
+				ev.Event = "gave_up"
+				pcbLogEvent(ctx, ev, "%s still throttled (%d) after %d attempts, giving up",
+					label, resp.StatusCode, attempt+1)
 				pcbRegisterFailure(ctx, br)
 				return nil, pcbFailed
 			}
-			log.Printf("PubChem fallback: %s throttled (%d) on attempt %d, pausing %s",
-				endpoint, resp.StatusCode, attempt+1, pcbThrottlePause)
+			ev.Event = "retrying"
+			ev.Delay = pcbThrottlePause
+			pcbLogEvent(ctx, ev, "%s throttled (%d) on attempt %d, retrying in %s",
+				label, resp.StatusCode, attempt+1, pcbThrottlePause)
 			// The pause shows in the trace as a gap, this labels the gap
 			telemetry.AddSpanEvent(ctx, "pubchem.throttled",
 				attribute.String("endpoint", endpoint),
 				attribute.Int("status_code", resp.StatusCode),
 				attribute.Int("attempt", attempt+1))
+			br.retries++
 			if pcbSleep(ctx, pcbThrottlePause) != nil {
+				pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Endpoint: label, Path: endpoint},
+					"%s retry abandoned, the request budget ran out", label)
 				return nil, pcbFailed
 			}
 			continue
@@ -262,19 +330,17 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 				record("not_found")
 				br.downStreak = 0
 				pcbSettlePacing(true, false)
+				logRecovered(resp.StatusCode)
 				return nil, pcbNotFound
 			}
-			log.Printf("PubChem fallback: %s returned %d on attempt %d",
-				endpoint, resp.StatusCode, attempt+1)
 			record("error")
 			pcbSettlePacing(false, false)
-			if !pcbRegisterFailure(ctx, br) || attempt >= len(pcbRetryDelays) {
-				return nil, pcbFailed
+			ev.Reason = "http_error"
+			ev.StatusCode = resp.StatusCode
+			if pcbRetryAfterFailure(ctx, br, attempt, ev, fmt.Sprintf("returned %d", resp.StatusCode)) {
+				continue
 			}
-			if pcbSleep(ctx, pcbRetryDelays[attempt]) != nil {
-				return nil, pcbFailed
-			}
-			continue
+			return nil, pcbFailed
 		}
 	}
 }
@@ -842,6 +908,7 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		return counts
 	}
 
+	start := time.Now()
 	ctx, span := telemetry.StartSpan(ctx, "pubchem_fallback")
 	defer span.End()
 
@@ -1087,6 +1154,21 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 	case budgetExhausted:
 		span.SetStatus(codes.Error, "PubChem fallback budget exhausted")
 	}
+
+	telemetry.LogPubChemFallbackSummary(ctx, telemetry.PubChemFallbackSummary{
+		Misses:          len(misses),
+		Attempted:       counts.attempted,
+		Found:           counts.found,
+		NotFound:        counts.notFound,
+		Unparseable:     counts.unparseable,
+		Failed:          counts.failed,
+		Skipped:         counts.skipped,
+		Calls:           br.calls,
+		Retries:         br.retries,
+		BreakerTripped:  br.tripped,
+		BudgetExhausted: budgetExhausted,
+		Duration:        time.Since(start),
+	})
 
 	return counts
 }
