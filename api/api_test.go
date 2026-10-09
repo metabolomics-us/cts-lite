@@ -385,11 +385,12 @@ func TestMatchErrors(t *testing.T) {
 func TestQuotedEmptyQuery(t *testing.T) {
 	// Regression: `""` after quote-stripping becomes empty, which previously caused
 	//   a panic in parseQueryType due to an out-of-bounds slice on an empty string
-	res := doMatchRequest(t, `{"queries":"\"\""}`, nil, false)
-	results := parseMatchResults(t, res)
-
-	if len(results) != 0 {
-		t.Errorf("expected 0 results for empty quoted query, got %d", len(results))
+	// A query of only bare quotes is treated like a blank query
+	for _, payload := range []string{`{"queries":"\"\""}`, `{"queries":"\"\"\""}`, `{"queries":"\" \"\" \"\"\""}`} {
+		res := doMatchRequest(t, payload, nil, false)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 for %s, got %d", payload, res.StatusCode)
+		}
 	}
 }
 
@@ -399,10 +400,9 @@ func TestSingleDoubleQuoteQuery(t *testing.T) {
 	//   empty slice q[1:0]), and was not caught by the subsequent empty-string
 	//   check, leading to a panic in parseQueryType.
 	res := doMatchRequest(t, `{"queries":"\""}`, nil, false)
-	results := parseMatchResults(t, res)
 
-	if len(results) != 0 {
-		t.Errorf("expected 0 results for single double-quote query, got %d", len(results))
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for single double-quote query, got %d", res.StatusCode)
 	}
 }
 

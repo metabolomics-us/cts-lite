@@ -230,7 +230,11 @@ document.addEventListener("DOMContentLoaded", () => {
     hideCfProgress();
     paginationControls.style.display = "none";
 
-    if (!query) {
+    // Bare quotes are dropped by the API, so a query of only those counts as blank
+    const isBareQuote = (t) => t === '"' || t === '""' || t === '"""';
+    const hasQuery = query.split(/\s+/).some((t) => t && !isBareQuote(t));
+
+    if (!hasQuery) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
       output.textContent = "Please enter a query";

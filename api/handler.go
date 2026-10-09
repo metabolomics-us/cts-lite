@@ -468,6 +468,12 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	)
 	localSpan.End()
 
+	// Every query was a bare quote, so treat the request as blank
+	if len(results) == 0 {
+		http.Error(w, "Query was empty", http.StatusBadRequest)
+		return
+	}
+
 	// Always attempt a live PubChem lookup for anything that missed locally (except unidentified queries)
 	pcb := resolvePubChemFallback(r.Context(), results, topHitOnly)
 	if pcb.attempted+pcb.unparseable+pcb.skipped > 0 {
