@@ -533,12 +533,12 @@ func TestResolvePubChemFallbackOnInChIMiss(t *testing.T) {
 		t.Fatalf("unexpected result: found=%d level=%q", found, results[0].MatchLevel)
 	}
 	// The derived key is reported so the InChIKey match level makes sense next
-	// to an inchi query type, which itself stays untouched
+	// to the converted_inchi query type
 	if results[0].ConvertedQuery != key {
 		t.Errorf("expected ConvertedQuery %q, got %q", key, results[0].ConvertedQuery)
 	}
-	if results[0].QueryType != "inchi" {
-		t.Errorf("expected QueryType to stay inchi, got %q", results[0].QueryType)
+	if results[0].QueryType != "converted_inchi" {
+		t.Errorf("expected QueryType converted_inchi, got %q", results[0].QueryType)
 	}
 }
 
@@ -569,10 +569,9 @@ func TestResolvePubChemFallbackOnSmilesMiss(t *testing.T) {
 	if results[0].ConvertedQuery != key {
 		t.Errorf("expected ConvertedQuery %q, got %q", key, results[0].ConvertedQuery)
 	}
-	// Unlike local matchSmiles, the fallback leaves the query type alone: only
-	// ConvertedQuery and the match level record that a conversion happened
-	if results[0].QueryType != "smiles" {
-		t.Errorf("expected QueryType to stay smiles, got %q", results[0].QueryType)
+	// Like local matchSmiles, a hit through the RDKit conversion is converted_smiles
+	if results[0].QueryType != "converted_smiles" {
+		t.Errorf("expected QueryType converted_smiles, got %q", results[0].QueryType)
 	}
 }
 
@@ -739,8 +738,8 @@ func TestResolvePubChemFallbackSmilesOrFormulaPrefersSmiles(t *testing.T) {
 		t.Fatalf("expected 1 found, got %d", found)
 	}
 	r := results[0]
-	if r.QueryType != "smiles" {
-		t.Errorf("expected QueryType to resolve to smiles, got %q", r.QueryType)
+	if r.QueryType != "converted_smiles" {
+		t.Errorf("expected QueryType to resolve to converted_smiles, got %q", r.QueryType)
 	}
 	// The composite sets both: the type it resolved to, and the key the SMILES
 	// branch converted through

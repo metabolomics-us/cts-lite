@@ -822,8 +822,8 @@ func pcbConfirmedMissing(kind, value string, rc pcbResolutionContext) bool {
 }
 
 // resolveOne answers whether (kind, value) resolved, and if so the compounds,
-// the MatchLevel string, and (for the smiles/formula composite paths) the
-// QueryType/ConvertedQuery overrides matching local match.go's conventions
+// the MatchLevel string, and (for the converted and smiles/formula composite
+// paths) the QueryType/ConvertedQuery overrides matching local match.go's conventions
 func resolveOne(kind, value string, rc pcbResolutionContext) (compounds []*model.Compound, level, convType, convQuery string, ok bool) {
 	switch kind {
 	case "pubchem_id":
@@ -835,7 +835,7 @@ func resolveOne(kind, value string, rc pcbResolutionContext) (compounds []*model
 			if c, found := rc.inchikey[key]; found {
 				// The key is reported as the converted query: it explains why an
 				// inchi query comes back with an InChIKey match level
-				return []*model.Compound{c}, "PubChem Live: Exact InChIKey", "", key, true
+				return []*model.Compound{c}, "PubChem Live: Exact InChIKey", "converted_inchi", key, true
 			}
 		}
 	case "inchikey":
@@ -845,7 +845,7 @@ func resolveOne(kind, value string, rc pcbResolutionContext) (compounds []*model
 	case "smiles":
 		if key, converted := rc.smilesToKey[value]; converted {
 			if c, found := rc.inchikey[key]; found {
-				return []*model.Compound{c}, "PubChem Live: Exact InChIKey", "", key, true
+				return []*model.Compound{c}, "PubChem Live: Exact InChIKey", "converted_smiles", key, true
 			}
 		}
 	case "formula":
@@ -855,9 +855,6 @@ func resolveOne(kind, value string, rc pcbResolutionContext) (compounds []*model
 		}
 	case "smiles_or_formula":
 		if cs, lvl, ct, cq, found := resolveOne("smiles", value, rc); found {
-			if ct == "" {
-				ct = "smiles"
-			}
 			return cs, lvl, ct, cq, true
 		}
 		if cs, lvl, _, _, found := resolveOne("formula", value, rc); found {
@@ -1111,9 +1108,9 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		m.result.ErrMsg = ""
 		m.result.MatchLevel = level
 		m.result.Matches = compounds
-		// Set independently: a smiles or inchi hit reports the InChIKey it was
-		// converted to without its query type changing, while smiles_or_formula
-		// resolves its type without necessarily having a conversion to report
+		// Set independently: a smiles or inchi hit becomes converted_smiles or
+		// converted_inchi and reports the InChIKey it was converted to, while a
+		// formula hit from smiles_or_formula resolves its type with no conversion to report
 		if convType != "" {
 			m.result.QueryType = convType
 		}

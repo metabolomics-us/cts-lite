@@ -500,7 +500,7 @@ function displayResults(data, outputElement, offset = 0) {
         </div>`
       : "";
 
-    const isConverted = result.query_type === "converted_smiles" && result.converted_query;
+    const isConverted = (result.query_type === "converted_smiles" || result.query_type === "converted_inchi") && result.converted_query;
     const transId = `trans-${offset + index}`;
 
     const queryTypeBubble = isConverted
@@ -576,6 +576,7 @@ function formatQueryType(queryType) {
     case "smiles":            return "SMILES";
     case "converted_smiles":  return "Converted SMILES";
     case "inchi":             return "InChI";
+    case "converted_inchi":   return "Converted InChI";
     case "formula":           return "Molecular Formula";
     case "smiles_or_formula": return "SMILES/Mol. Formula";
     case "bad_inchi":         return "Malformed InChI";
