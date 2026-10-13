@@ -346,16 +346,32 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 		return nil, pcbFailed
 	}
 
+	// Ensure a call never hogs a spot if it fails somehow
+	holding := false
+	settle := func(ok, throttled bool, throttleHeader string) {
+		holding = false
+		pcbSettlePacing(ok, throttled, throttleHeader)
+	}
+	defer func() {
+		if holding {
+			settle(false, false, "")
+		}
+	}()
+
 	for attempt := 0; ; attempt++ {
+		if holding {
+			settle(false, false, "")
+		}
 		if err := pcbWaitTurn(ctx); err != nil {
 			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Err: err},
 				"gave up waiting for a pacing slot: %v", err)
 			return nil, pcbFailed
 		}
+		holding = true
 
 		req, err := buildReq()
 		if err != nil {
-			pcbSettlePacing(false, false, "")
+			settle(false, false, "")
 			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "gave_up", Reason: "build_error", Err: err},
 				"failed to build request: %v", err)
 			return nil, pcbFailed
@@ -396,12 +412,12 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 				throttleHeader = resp.Header.Get("X-Throttling-Control")
 				resp.Body.Close()
 			}
-			pcbSettlePacing(false, false, throttleHeader)
+			settle(false, false, throttleHeader)
 			return nil, pcbFailed
 		}
 		if err != nil {
 			record("error")
-			pcbSettlePacing(false, false, "")
+			settle(false, false, "")
 			ev.Reason = "transport_error"
 			ev.Err = err
 			if pcbRetryAfterFailure(ctx, br, attempt, ev, fmt.Sprintf("request failed (%v)", err)) {
@@ -416,7 +432,7 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 		resp.Body.Close()
 		if readErr != nil {
 			record("error")
-			pcbSettlePacing(false, false, throttleHeader)
+			settle(false, false, throttleHeader)
 			ev.Reason = "read_error"
 			ev.StatusCode = resp.StatusCode
 			ev.Err = readErr
@@ -431,20 +447,20 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 		case resp.StatusCode == http.StatusOK:
 			record("ok")
 			br.downStreak = 0
-			pcbSettlePacing(true, false, throttleHeader)
+			settle(true, false, throttleHeader)
 			logRecovered(resp.StatusCode)
 			return respBody, pcbFound
 
 		case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest:
 			record("not_found")
 			br.downStreak = 0
-			pcbSettlePacing(true, false, throttleHeader)
+			settle(true, false, throttleHeader)
 			logRecovered(resp.StatusCode)
 			return nil, pcbNotFound
 
 		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable:
 			record("throttled")
-			pcbSettlePacing(false, true, throttleHeader)
+			settle(false, true, throttleHeader)
 			ev.Reason = "throttled"
 			ev.StatusCode = resp.StatusCode
 			ev.Attempt = attempt + 1
@@ -476,12 +492,12 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			if resp.StatusCode == http.StatusInternalServerError && bytes.Contains(respBody, []byte("Search status indicates failure")) {
 				record("not_found")
 				br.downStreak = 0
-				pcbSettlePacing(true, false, throttleHeader)
+				settle(true, false, throttleHeader)
 				logRecovered(resp.StatusCode)
 				return nil, pcbNotFound
 			}
 			record("error")
-			pcbSettlePacing(false, false, throttleHeader)
+			settle(false, false, throttleHeader)
 			ev.Reason = "http_error"
 			ev.StatusCode = resp.StatusCode
 			if pcbRetryAfterFailure(ctx, br, attempt, ev, fmt.Sprintf("returned %d", resp.StatusCode)) {
