@@ -638,7 +638,7 @@ func TestResolvePubChemFallbackUnreadableSmilesSkipsPubChem(t *testing.T) {
 	if reachedPubChem {
 		t.Error("an unreadable structure should not reach PubChem at all")
 	}
-	if results[0].ErrMsg != "No local match; structure could not be read for PubChem lookup" {
+	if results[0].ErrMsg != "No compound found (structure could not be read)" {
 		t.Errorf("unexpected ErrMsg: %q", results[0].ErrMsg)
 	}
 }

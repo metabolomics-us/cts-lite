@@ -1089,7 +1089,7 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 			case unparseable[m.kind+"|"+m.value]:
 				// Never sent to PubChem, so neither attempted nor a "PubChem says no"
 				typeCounts(m).unparseable++
-				m.result.ErrMsg = "No local match; structure could not be read for PubChem lookup"
+				m.result.ErrMsg = "No compound found (structure could not be read)"
 			case pcbConfirmedMissing(m.kind, m.value, rc):
 				c := typeCounts(m)
 				c.attempted++

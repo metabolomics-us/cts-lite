@@ -1214,7 +1214,7 @@ func TestSmilesViaRDKitConversion(t *testing.T) {
 		// The PubChem fallback converts SMILES to an InChIKey before looking it up, so
 		// a converter that yields nothing leaves it with nothing to query and
 		// PubChem is never reached
-		if results[0].ErrMsg != "No local match; structure could not be read for PubChem lookup" {
+		if results[0].ErrMsg != "No compound found (structure could not be read)" {
 			t.Errorf("expected unreadable-structure message, got %q", results[0].ErrMsg)
 		}
 	})
