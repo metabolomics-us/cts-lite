@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +48,9 @@ var (
 	pcbThrottlePause = 5 * time.Second
 	pcbIdleReset     = 30 * time.Second
 	pcbRetryDelays   = []time.Duration{2 * time.Second, 5 * time.Second}
+	pcbMaxInFlight = 3 // becomes 1 under stress
+	pcbOwnLevelGaps     = []time.Duration{250 * time.Millisecond, 750 * time.Millisecond, 1500 * time.Millisecond, 5 * time.Second}
+	pcbServiceLevelGaps = []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, 750 * time.Millisecond, 1000 * time.Millisecond}
 )
 
 // pcb429MaxRetries bounds how many times a throttled (429/503) call is
@@ -82,40 +86,177 @@ const (
 	pcbFailed
 )
 
-// Request rate gate
+// Request rate gate, shared by every /match request. Starts are spaced by
+// pcbCurrentGap without waiting on completions, and up to pcbMaxInFlight calls
+// overlap. Under stress it drops to one call in flight
 var (
 	pcbGateMu      sync.Mutex
+	pcbGateChanged = make(chan struct{}) // closed and replaced whenever a call settles
 	pcbNextAllowed time.Time
 	pcbCurrentGap  = pcbMinGap
 	pcbLastReqAt   time.Time
+	pcbInFlight    int
+	pcbPenalty     time.Duration // set by a throttle, halves on every clean answer
+	pcbStressed    bool
+	pcbThrottleGen int // when throttled, slots claimed before the throttle are re-queued appropriately
 )
 
-// pcbWaitTurn blocks until this call may proceed under the shared pacing gate.
-func pcbWaitTurn(ctx context.Context) error {
-	pcbGateMu.Lock()
-	if time.Since(pcbLastReqAt) > pcbIdleReset {
-		pcbCurrentGap = pcbMinGap
-	}
-	wait := time.Until(pcbNextAllowed)
-	pcbGateMu.Unlock()
-	return pcbSleep(ctx, wait)
+// pcbThrottleRe matches one X-Throttling-Control entry, e.g. "Request Count status: Green (5%)"
+var pcbThrottleRe = regexp.MustCompile(`([A-Za-z ]+?) status: (\w+) \((\d+)%\)`)
+
+// pcbThrottleReading is a parsed X-Throttling-Control header. Levels run
+// 0 Green to 3 Black, -1 when the header did not report them
+type pcbThrottleReading struct {
+	ownLevel     int // worst between Request Count and Request Time, our own budget
+	serviceLevel int // PubChem-wide load
+	ownPercent   int // highest between Request Count and Request Time percents
 }
 
-// pcbSettlePacing sets the gap before the next call may start. ok is a clean
-// 200/404 outcome (paces at pcbMinGap); throttled is a 429/503
-func pcbSettlePacing(ok, throttled bool) {
+func pcbParseThrottle(header string) pcbThrottleReading {
+	r := pcbThrottleReading{ownLevel: -1, serviceLevel: -1}
+	for _, m := range pcbThrottleRe.FindAllStringSubmatch(header, -1) {
+		level := -1
+		switch strings.ToLower(m[2]) {
+		case "green":
+			level = 0
+		case "yellow":
+			level = 1
+		case "red":
+			level = 2
+		case "black":
+			level = 3
+		}
+		if level < 0 {
+			continue
+		}
+		pct, _ := strconv.Atoi(m[3])
+		switch strings.TrimSpace(m[1]) {
+		case "Request Count", "Request Time":
+			r.ownLevel = max(r.ownLevel, level)
+			r.ownPercent = max(r.ownPercent, pct)
+		case "Service":
+			r.serviceLevel = level
+		}
+	}
+	return r
+}
+
+func (r pcbThrottleReading) reported() bool { return r.ownLevel >= 0 || r.serviceLevel >= 0 }
+
+// gap is the spacing this reading asks for. Green leaves it at pcbMinGap
+func (r pcbThrottleReading) gap() time.Duration {
+	gap := pcbMinGap
+	if r.ownLevel > 0 {
+		gap = max(gap, pcbOwnLevelGaps[r.ownLevel])
+	}
+	if r.serviceLevel > 0 {
+		gap = max(gap, pcbServiceLevelGaps[r.serviceLevel])
+	}
+	return gap
+}
+
+// stressed reacts to our own budget. PubChem-wide load only counts once it is Red
+func (r pcbThrottleReading) stressed() bool {
+	return r.ownLevel >= 1 || r.ownPercent >= 50 || r.serviceLevel >= 2
+}
+
+// pcbGateLimit is the in-flight limit right now
+func pcbGateLimit() int {
+	if pcbStressed || pcbPenalty > 0 {
+		return 1
+	}
+	return pcbMaxInFlight
+}
+
+// pcbGateNotify wakes callers waiting for an in-flight spot
+func pcbGateNotify() {
+	close(pcbGateChanged)
+	pcbGateChanged = make(chan struct{})
+}
+
+// pcbWaitTurn blocks until this call may start
+func pcbWaitTurn(ctx context.Context) error {
+	pcbGateMu.Lock()
+	if pcbInFlight == 0 && time.Since(pcbLastReqAt) > pcbIdleReset {
+		pcbCurrentGap, pcbPenalty, pcbStressed = pcbMinGap, 0, false
+	}
+	for {
+		for pcbInFlight >= pcbGateLimit() {
+			changed := pcbGateChanged
+			pcbGateMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-changed:
+			}
+			pcbGateMu.Lock()
+		}
+		pcbInFlight++
+		slot := time.Now()
+		if pcbNextAllowed.After(slot) {
+			slot = pcbNextAllowed
+		}
+		pcbNextAllowed = slot.Add(pcbCurrentGap)
+		gen := pcbThrottleGen
+		pcbGateMu.Unlock()
+
+		err := pcbSleep(ctx, time.Until(slot))
+		pcbGateMu.Lock()
+		if err != nil {
+			pcbInFlight--
+			pcbGateNotify()
+			pcbGateMu.Unlock()
+			return err
+		}
+		// A throttle occurred while waiting, so this slot predates the pause
+		if gen != pcbThrottleGen && pcbNextAllowed.After(time.Now()) {
+			pcbInFlight--
+			pcbGateNotify()
+			continue
+		}
+		pcbGateMu.Unlock()
+		return nil
+	}
+}
+
+// pcbSettlePacing frees the in-flight spot and sets the gap from the outcome.
+// ok is a clean 200/404 outcome; throttled is a 429/503; throttleHeader is the
+// response's X-Throttling-Control
+func pcbSettlePacing(ok, throttled bool, throttleHeader string) {
 	pcbGateMu.Lock()
 	defer pcbGateMu.Unlock()
+	defer pcbGateNotify()
+	pcbInFlight--
 	now := time.Now()
 	pcbLastReqAt = now
 	switch {
 	case throttled:
-		pcbCurrentGap = pcbThrottledGap
-		pcbNextAllowed = now.Add(pcbThrottlePause)
+		pcbPenalty = pcbThrottledGap
+		pcbThrottleGen++
 	case ok:
-		pcbNextAllowed = now.Add(pcbMinGap)
+		pcbPenalty /= 2
+		if pcbPenalty < pcbMinGap {
+			pcbPenalty = 0
+		}
+	}
+	reading := pcbParseThrottle(throttleHeader)
+	if reading.reported() {
+		pcbStressed = reading.stressed()
+	}
+	pcbCurrentGap = max(pcbMinGap, pcbPenalty, reading.gap())
+
+	var next time.Time
+	switch {
+	case throttled:
+		next = now.Add(pcbThrottlePause)
+	case pcbStressed, pcbPenalty > 0, pcbCurrentGap > pcbMinGap:
+		next = now.Add(pcbCurrentGap)
 	default:
-		pcbNextAllowed = now.Add(pcbCurrentGap)
+		// Healthy starts never wait on a completion, the claimed slots already carry the spacing
+		return
+	}
+	if next.After(pcbNextAllowed) {
+		pcbNextAllowed = next
 	}
 }
 
@@ -214,6 +355,7 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 
 		req, err := buildReq()
 		if err != nil {
+			pcbSettlePacing(false, false, "")
 			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "gave_up", Reason: "build_error", Err: err},
 				"failed to build request: %v", err)
 			return nil, pcbFailed
@@ -249,14 +391,17 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			pcbLogEvent(ctx, ev, "%s aborted after the request budget ran out: %v", label, ctx.Err())
 			record("aborted")
 			telemetry.AddSpanEvent(ctx, "pubchem.budget_exhausted", attribute.String("endpoint", endpoint))
+			throttleHeader := ""
 			if resp != nil {
+				throttleHeader = resp.Header.Get("X-Throttling-Control")
 				resp.Body.Close()
 			}
+			pcbSettlePacing(false, false, throttleHeader)
 			return nil, pcbFailed
 		}
 		if err != nil {
 			record("error")
-			pcbSettlePacing(false, false)
+			pcbSettlePacing(false, false, "")
 			ev.Reason = "transport_error"
 			ev.Err = err
 			if pcbRetryAfterFailure(ctx, br, attempt, ev, fmt.Sprintf("request failed (%v)", err)) {
@@ -265,11 +410,13 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			return nil, pcbFailed
 		}
 
+		// PubChem's load report, it sets the gap and whether the gate drops to one call in flight
+		throttleHeader := resp.Header.Get("X-Throttling-Control")
 		respBody, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
 			record("error")
-			pcbSettlePacing(false, false)
+			pcbSettlePacing(false, false, throttleHeader)
 			ev.Reason = "read_error"
 			ev.StatusCode = resp.StatusCode
 			ev.Err = readErr
@@ -284,20 +431,20 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 		case resp.StatusCode == http.StatusOK:
 			record("ok")
 			br.downStreak = 0
-			pcbSettlePacing(true, false)
+			pcbSettlePacing(true, false, throttleHeader)
 			logRecovered(resp.StatusCode)
 			return respBody, pcbFound
 
 		case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest:
 			record("not_found")
 			br.downStreak = 0
-			pcbSettlePacing(true, false)
+			pcbSettlePacing(true, false, throttleHeader)
 			logRecovered(resp.StatusCode)
 			return nil, pcbNotFound
 
 		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable:
 			record("throttled")
-			pcbSettlePacing(false, true)
+			pcbSettlePacing(false, true, throttleHeader)
 			ev.Reason = "throttled"
 			ev.StatusCode = resp.StatusCode
 			ev.Attempt = attempt + 1
@@ -329,12 +476,12 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			if resp.StatusCode == http.StatusInternalServerError && bytes.Contains(respBody, []byte("Search status indicates failure")) {
 				record("not_found")
 				br.downStreak = 0
-				pcbSettlePacing(true, false)
+				pcbSettlePacing(true, false, throttleHeader)
 				logRecovered(resp.StatusCode)
 				return nil, pcbNotFound
 			}
 			record("error")
-			pcbSettlePacing(false, false)
+			pcbSettlePacing(false, false, throttleHeader)
 			ev.Reason = "http_error"
 			ev.StatusCode = resp.StatusCode
 			if pcbRetryAfterFailure(ctx, br, attempt, ev, fmt.Sprintf("returned %d", resp.StatusCode)) {

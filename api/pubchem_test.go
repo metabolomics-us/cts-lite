@@ -28,6 +28,7 @@ func resetPcbPacing(t *testing.T) {
 	pcbGateMu.Lock()
 	pcbNextAllowed, pcbLastReqAt = time.Time{}, time.Time{}
 	pcbCurrentGap = 0
+	pcbInFlight, pcbPenalty, pcbStressed = 0, 0, false
 	pcbGateMu.Unlock()
 
 	t.Cleanup(func() {
@@ -1005,6 +1006,75 @@ func TestPcbEndpointLabel(t *testing.T) {
 		if got := pcbEndpointLabel(path); got != want {
 			t.Errorf("%s: got %q, want %q", path, got, want)
 		}
+	}
+}
+
+// Concurrent callers claim spaced start slots instead of all firing at once
+func TestPcbWaitTurnSpacesConcurrentStarts(t *testing.T) {
+	resetPcbPacing(t)
+	pcbMinGap, pcbCurrentGap = 40*time.Millisecond, 40*time.Millisecond
+
+	starts := make(chan time.Time, 3)
+	for range 3 {
+		go func() {
+			if err := pcbWaitTurn(context.Background()); err != nil {
+				t.Error(err)
+			}
+			starts <- time.Now()
+		}()
+	}
+	var got []time.Time
+	for range 3 {
+		got = append(got, <-starts)
+	}
+	for range 3 {
+		pcbSettlePacing(true, false, "")
+	}
+	slices.SortFunc(got, func(a, b time.Time) int { return a.Compare(b) })
+	for i := 1; i < len(got); i++ {
+		if d := got[i].Sub(got[i-1]); d < 35*time.Millisecond {
+			t.Errorf("start %d came %s after the previous one, want about 40ms", i, d)
+		}
+	}
+}
+
+// A caller past the in-flight limit waits for a settle, and gives up with its context
+func TestPcbWaitTurnLimitsInFlight(t *testing.T) {
+	resetPcbPacing(t)
+	for range pcbMaxInFlight {
+		if err := pcbWaitTurn(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := pcbWaitTurn(ctx); err == nil {
+		t.Fatal("want a wait past the in-flight limit to end with the context")
+	}
+	pcbSettlePacing(true, false, "")
+	if err := pcbWaitTurn(context.Background()); err != nil {
+		t.Fatalf("want a free spot after a settle, got %v", err)
+	}
+	for range pcbMaxInFlight {
+		pcbSettlePacing(true, false, "")
+	}
+}
+
+// Only our own budget or a Red/Black Service drops the gate to one in flight
+func TestPcbParseThrottle(t *testing.T) {
+	busyService := pcbParseThrottle("Request Count status: Green (5%), Request Time status: Green (0%), Service status: Yellow (60%)")
+	if busyService.stressed() || busyService.gap() != pcbServiceLevelGaps[1] {
+		t.Errorf("Service Yellow: want unstressed with a %s gap, got %+v gap %s", pcbServiceLevelGaps[1], busyService, busyService.gap())
+	}
+	ownYellow := pcbParseThrottle("Request Count status: Yellow (55%), Request Time status: Green (0%), Service status: Green (20%)")
+	if !ownYellow.stressed() || ownYellow.gap() != pcbOwnLevelGaps[1] {
+		t.Errorf("own Yellow: want stressed with a %s gap, got %+v gap %s", pcbOwnLevelGaps[1], ownYellow, ownYellow.gap())
+	}
+	if !pcbParseThrottle("Request Count status: Green (0%), Request Time status: Green (0%), Service status: Red (900%)").stressed() {
+		t.Error("Service Red: want stressed")
+	}
+	if pcbParseThrottle("").reported() {
+		t.Error("empty header: want nothing reported")
 	}
 }
 
