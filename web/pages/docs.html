@@ -164,7 +164,7 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                         <code class="inline-code">= # - / \ : . @ + [ ] ( )</code> 
                     </li>
                     <li>
-                        <strong>PubChem CIDs</strong> are identified as queries which only contain numbers
+                        <strong>PubChem CIDs</strong> are identified by numbers between 1 and 500 million
                     </li>
                     <li>
                         <strong>Molecular Formulas</strong> are recognized by starting with letters that cannot be at the start of SMILES:
@@ -188,7 +188,10 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                         <code class="inline-code">^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$</code>
                     </li>
                     <li>
-                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code>, but with improper capitalization
+                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code>, but with improper capitalization, i.e. <code class="inline-code">inchi=</code>
+                    </li>
+                    <li>
+                        <strong>PubChem CIDs</strong> that cannot be valid. This includes negative numbers, zero itself, numbers with leading zeros, and numbers above 500 million
                     </li>
                     <li>
                         <strong>Unidentified</strong> are queries that didn't fit any of the above criteria
