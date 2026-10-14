@@ -38,7 +38,7 @@ const pcbFormulaCIDFetchCap = 50
 // pcbFallbackBudget is the belt-and-suspenders wall-clock backstop
 const pcbMaxBatchedValues = 100000
 const pcbMaxFormulaLookups = 50
-const pcbFallbackBudget = 20 * time.Second
+var pcbFallbackBudget = 20 * time.Second // is a var so tests can shorten it
 
 // TODO:
 // test values - revisit once there is real traffic data against PubChem.

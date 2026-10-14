@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -22,8 +24,13 @@ func resetPcbPacing(t *testing.T) {
 	t.Helper()
 	origMin, origThrottled, origPause := pcbMinGap, pcbThrottledGap, pcbThrottlePause
 	origIdle, origRetry := pcbIdleReset, pcbRetryDelays
-	pcbMinGap, pcbThrottledGap, pcbThrottlePause, pcbIdleReset = 0, 0, 0, 0
+	origOwnGaps, origServiceGaps := pcbOwnLevelGaps, pcbServiceLevelGaps
+	origMaxInFlight, origBudget := pcbMaxInFlight, pcbFallbackBudget
+	pcbMinGap, pcbThrottledGap, pcbThrottlePause = 0, 0, 0
+	pcbIdleReset = time.Hour
 	pcbRetryDelays = []time.Duration{0, 0}
+	pcbOwnLevelGaps = []time.Duration{0, 0, 0, 0}
+	pcbServiceLevelGaps = []time.Duration{0, 0, 0, 0}
 
 	pcbGateMu.Lock()
 	pcbNextAllowed, pcbLastReqAt = time.Time{}, time.Time{}
@@ -34,6 +41,8 @@ func resetPcbPacing(t *testing.T) {
 	t.Cleanup(func() {
 		pcbMinGap, pcbThrottledGap, pcbThrottlePause = origMin, origThrottled, origPause
 		pcbIdleReset, pcbRetryDelays = origIdle, origRetry
+		pcbOwnLevelGaps, pcbServiceLevelGaps = origOwnGaps, origServiceGaps
+		pcbMaxInFlight, pcbFallbackBudget = origMaxInFlight, origBudget
 	})
 }
 
@@ -1075,6 +1084,449 @@ func TestPcbParseThrottle(t *testing.T) {
 	}
 	if pcbParseThrottle("").reported() {
 		t.Error("empty header: want nothing reported")
+	}
+	// Unknown colors and garbage are skipped rather than read as a level
+	if r := pcbParseThrottle("Request Count status: Purple (5%), Service status: ??? (x%), <html>"); r.reported() {
+		t.Errorf("malformed header: want nothing reported, got %+v", r)
+	}
+}
+
+// pcbGateSnapshot reads the shared gate's in-flight count and current limit
+func pcbGateSnapshot() (inFlight, limit int) {
+	pcbGateMu.Lock()
+	defer pcbGateMu.Unlock()
+	return pcbInFlight, pcbGateLimit()
+}
+
+type pcbFailingBody struct{}
+
+func (pcbFailingBody) Read([]byte) (int, error) { return 0, errors.New("connection reset mid-body") }
+func (pcbFailingBody) Close() error             { return nil }
+
+// Every way out of pcbExecute gives its gate spot back. A lost spot is never
+// recovered, and once all are lost every fallback call stalls
+func TestPcbExecuteReleasesSpotOnEveryExit(t *testing.T) {
+	cidReq := func() (*http.Request, error) { return pcbCIDPropertyRequest(context.Background(), []string{"180"}) }
+	cases := []struct {
+		name      string
+		transport func(cancel context.CancelFunc) func(*http.Request) (*http.Response, error)
+		buildReq  func() (*http.Request, error)
+	}{
+		{"found", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
+			return func(*http.Request) (*http.Response, error) { return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180}`)), nil }
+		}, cidReq},
+		{"build error", nil, func() (*http.Request, error) { return nil, errors.New("bad request") }},
+		{"panic while building", nil, func() (*http.Request, error) { panic("boom") }},
+		{"budget expires mid-flight", func(cancel context.CancelFunc) func(*http.Request) (*http.Response, error) {
+			return func(*http.Request) (*http.Response, error) { cancel(); return pcbResp(http.StatusOK, "{}"), nil }
+		}, cidReq},
+		{"transport error until the breaker trips", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
+			return func(*http.Request) (*http.Response, error) { return nil, errors.New("connection refused") }
+		}, cidReq},
+		{"body read error", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
+			return func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: pcbFailingBody{}, Header: make(http.Header)}, nil
+			}
+		}, cidReq},
+		{"throttled until giving up", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
+			return func(*http.Request) (*http.Response, error) { return pcbResp(http.StatusServiceUnavailable, ""), nil }
+		}, cidReq},
+		{"server error until giving up", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
+			return func(*http.Request) (*http.Response, error) { return pcbResp(http.StatusBadGateway, ""), nil }
+		}, cidReq},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resetPcbPacing(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if c.transport != nil {
+				withMockPCBTransport(t, c.transport(cancel))
+			}
+			func() {
+				defer func() { recover() }()
+				pcbExecute(ctx, &pcbBreaker{}, 1, c.buildReq)
+			}()
+			if inFlight, _ := pcbGateSnapshot(); inFlight != 0 {
+				t.Errorf("want the gate spot released, %d still in flight", inFlight)
+			}
+		})
+	}
+}
+
+// Our own Yellow drops the gate to one in flight, a reply without the header
+// leaves that alone, and a Green reading lifts it again
+func TestPcbSettlePacingStressFollowsHeader(t *testing.T) {
+	resetPcbPacing(t)
+	steps := []struct {
+		header    string
+		wantLimit int
+	}{
+		{"Request Count status: Yellow (55%), Request Time status: Green (0%), Service status: Green (10%)", 1},
+		{"", 1},
+		{"Request Count status: Green (5%), Request Time status: Green (0%), Service status: Yellow (60%)", pcbMaxInFlight},
+		{"Request Count status: Green (5%), Request Time status: Green (0%), Service status: Black (900%)", 1},
+		{"Request Count status: Green (5%), Request Time status: Green (0%), Service status: Green (10%)", pcbMaxInFlight},
+	}
+	for i, s := range steps {
+		if err := pcbWaitTurn(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		pcbSettlePacing(true, false, s.header)
+		if _, limit := pcbGateSnapshot(); limit != s.wantLimit {
+			t.Errorf("step %d (%q): want limit %d, got %d", i, s.header, s.wantLimit, limit)
+		}
+	}
+}
+
+// A throttle drops the gate to one in flight until the penalty has halved away
+func TestPcbSettlePacingThrottlePenaltyDecays(t *testing.T) {
+	resetPcbPacing(t)
+	pcbMinGap, pcbThrottledGap = 10*time.Millisecond, 80*time.Millisecond
+
+	settle := func(ok, throttled bool) int {
+		if err := pcbWaitTurn(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		pcbSettlePacing(ok, throttled, "")
+		_, limit := pcbGateSnapshot()
+		return limit
+	}
+	if limit := settle(false, true); limit != 1 {
+		t.Fatalf("after a throttle: want limit 1, got %d", limit)
+	}
+	// 80ms halves to 40, 20, then 10, which is still at pcbMinGap
+	for i := range 3 {
+		if limit := settle(true, false); limit != 1 {
+			t.Fatalf("clean answer %d: want limit 1 while the penalty remains, got %d", i+1, limit)
+		}
+	}
+	if limit := settle(true, false); limit != pcbMaxInFlight {
+		t.Errorf("once the penalty drops under pcbMinGap: want limit %d, got %d", pcbMaxInFlight, limit)
+	}
+}
+
+// A caller waiting for a spot wakes as soon as one is settled
+func TestPcbWaitTurnWakesWhenSpotFrees(t *testing.T) {
+	resetPcbPacing(t)
+	pcbMaxInFlight = 1
+	if err := pcbWaitTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- pcbWaitTurn(context.Background()) }()
+
+	select {
+	case <-done:
+		t.Fatal("second caller got past the gate while the only spot was taken")
+	case <-time.After(30 * time.Millisecond):
+	}
+	pcbSettlePacing(true, false, "")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second caller never woke after the spot was freed")
+	}
+	pcbSettlePacing(true, false, "")
+}
+
+// A context ending while the caller waits for its start slot gives the spot back
+func TestPcbWaitTurnCancelWhileWaitingForSlotReleasesSpot(t *testing.T) {
+	resetPcbPacing(t)
+	pcbGateMu.Lock()
+	pcbNextAllowed = time.Now().Add(time.Second)
+	pcbGateMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := pcbWaitTurn(ctx); err == nil {
+		t.Fatal("want the wait to end with the context")
+	}
+	if inFlight, _ := pcbGateSnapshot(); inFlight != 0 {
+		t.Errorf("want the spot released, %d still in flight", inFlight)
+	}
+}
+
+// A slot claimed before a throttle is not used, the caller queues again behind the pause
+func TestPcbWaitTurnRequeuesSlotsClaimedBeforeThrottle(t *testing.T) {
+	resetPcbPacing(t)
+	pcbMinGap, pcbThrottlePause = 40*time.Millisecond, 150*time.Millisecond
+
+	if err := pcbWaitTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan time.Time, 1)
+	go func() {
+		if err := pcbWaitTurn(context.Background()); err != nil {
+			t.Error(err)
+		}
+		started <- time.Now()
+	}()
+	// Let the second caller claim its slot 40ms out, then throttle before it comes
+	time.Sleep(10 * time.Millisecond)
+	throttledAt := time.Now()
+	pcbSettlePacing(false, true, "")
+
+	if waited := (<-started).Sub(throttledAt); waited < 120*time.Millisecond {
+		t.Errorf("want the second caller held until the 150ms pause ends, it started after %s", waited)
+	}
+	pcbSettlePacing(true, false, "")
+}
+
+// After an idle stretch with nothing in flight, stress and penalty from an old throttle are dropped
+func TestPcbWaitTurnIdleResetClearsStress(t *testing.T) {
+	resetPcbPacing(t)
+	pcbIdleReset = 50 * time.Millisecond
+	setStale := func(lastReq time.Time) {
+		pcbGateMu.Lock()
+		pcbStressed, pcbPenalty, pcbLastReqAt = true, time.Second, lastReq
+		pcbGateMu.Unlock()
+	}
+
+	setStale(time.Now())
+	if err := pcbWaitTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, limit := pcbGateSnapshot(); limit != 1 {
+		t.Errorf("recent traffic: want stress kept (limit 1), got limit %d", limit)
+	}
+	pcbSettlePacing(false, false, "")
+
+	setStale(time.Now().Add(-time.Second))
+	if err := pcbWaitTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, limit := pcbGateSnapshot(); limit != pcbMaxInFlight {
+		t.Errorf("after idling: want limit %d, got %d", pcbMaxInFlight, limit)
+	}
+	pcbSettlePacing(true, false, "")
+}
+
+// A healthy answer never pulls the next start earlier than slots already handed out
+func TestPcbSettlePacingNeverMovesNextEarlier(t *testing.T) {
+	resetPcbPacing(t)
+	if err := pcbWaitTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Second)
+	pcbGateMu.Lock()
+	pcbNextAllowed = later
+	pcbGateMu.Unlock()
+
+	pcbSettlePacing(true, false, "")
+	pcbGateMu.Lock()
+	defer pcbGateMu.Unlock()
+	if !pcbNextAllowed.Equal(later) {
+		t.Errorf("want pcbNextAllowed left at %s, got %s", later.Format(time.StampMilli), pcbNextAllowed.Format(time.StampMilli))
+	}
+}
+
+// --- Busy PubChem simulation ---
+
+// pcbFakeBusyPubChem stands in for PubChem under load. It counts calls in a
+// sliding window, reports that load in X-Throttling-Control the way PubChem
+// does, and answers 503 ServerBusy at or over its limit. Every CID asked for
+// is found otherwise
+type pcbFakeBusyPubChem struct {
+	window     time.Duration
+	busyAt     int // calls in the window that read Yellow
+	limit      int // calls in the window that get a 503
+	latency    time.Duration
+	alwaysBusy bool
+
+	mu          sync.Mutex
+	recent      []time.Time
+	inFlight    int
+	maxInFlight int
+	busy        int // answers that read Yellow or worse
+	throttled   int
+}
+
+func (f *pcbFakeBusyPubChem) roundTrip(req *http.Request) (*http.Response, error) {
+	f.mu.Lock()
+	now := time.Now()
+	kept := f.recent[:0]
+	for _, at := range f.recent {
+		if now.Sub(at) < f.window {
+			kept = append(kept, at)
+		}
+	}
+	f.recent = append(kept, now)
+	load := len(f.recent)
+	f.inFlight++
+	f.maxInFlight = max(f.maxInFlight, f.inFlight)
+	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		f.inFlight--
+		f.mu.Unlock()
+	}()
+
+	select {
+	case <-time.After(f.latency):
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+
+	level := "Green"
+	switch {
+	case f.alwaysBusy || load >= f.limit:
+		level = "Black"
+	case load >= f.busyAt:
+		level = "Yellow"
+	}
+	header := fmt.Sprintf("Request Count status: %s (%d%%), Request Time status: Green (0%%), Service status: Green (10%%)",
+		level, load*100/f.limit)
+	f.mu.Lock()
+	if level != "Green" {
+		f.busy++
+	}
+	if level == "Black" {
+		f.throttled++
+	}
+	f.mu.Unlock()
+
+	var resp *http.Response
+	if level == "Black" {
+		resp = pcbResp(http.StatusServiceUnavailable, `{"Fault":{"Code":"PUGREST.ServerBusy"}}`)
+	} else {
+		_, rest, _ := strings.Cut(req.URL.Path, "/cid/")
+		list, _, _ := strings.Cut(rest, "/")
+		var props []string
+		for _, c := range strings.Split(list, ",") {
+			props = append(props, fmt.Sprintf(`{"CID":%s}`, c))
+		}
+		resp = pcbResp(http.StatusOK, pcbPropertyJSON(props...))
+	}
+	resp.Header.Set("X-Throttling-Control", header)
+	return resp, nil
+}
+
+// pcbRunFallbacks runs one fallback per context at the same time, each for
+// perRequest distinct CIDs, and returns each request's results
+func pcbRunFallbacks(t *testing.T, ctxs []context.Context, perRequest, firstCID int) [][]*model.SingleResult {
+	t.Helper()
+	all := make([][]*model.SingleResult, len(ctxs))
+	var wg sync.WaitGroup
+	for i, ctx := range ctxs {
+		var cids []string
+		for j := range perRequest {
+			cids = append(cids, strconv.Itoa(firstCID+i*perRequest+j))
+		}
+		pcbClearCache(t, "pubchem_id", cids...)
+		for _, c := range cids {
+			all[i] = append(all[i], missResult("pubchem_id", c))
+		}
+		wg.Add(1)
+		go func(i int, ctx context.Context) {
+			defer wg.Done()
+			resolvePubChemFallback(ctx, all[i], true)
+		}(i, ctx)
+	}
+	wg.Wait()
+	return all
+}
+
+func pcbBackgroundContexts(n int) []context.Context {
+	ctxs := make([]context.Context, n)
+	for i := range ctxs {
+		ctxs[i] = context.Background()
+	}
+	return ctxs
+}
+
+// PubChem turns busy under a burst of concurrent requests. The gate backs off,
+// never exceeds its in-flight limit, and with enough budget every value is answered
+func TestResolvePubChemFallbackRidesOutBusyPubChem(t *testing.T) {
+	resetPcbPacing(t)
+	pcbMinGap, pcbThrottledGap, pcbThrottlePause = 2*time.Millisecond, 20*time.Millisecond, 30*time.Millisecond
+	pcbOwnLevelGaps = []time.Duration{0, 10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
+	pcbFallbackBudget = 10 * time.Second
+	fake := &pcbFakeBusyPubChem{window: 100 * time.Millisecond, busyAt: 4, limit: 8, latency: 5 * time.Millisecond}
+	withMockPCBTransport(t, fake.roundTrip)
+
+	for i, results := range pcbRunFallbacks(t, pcbBackgroundContexts(12), 3, 910000) {
+		for _, r := range results {
+			if !r.MatchFound {
+				t.Errorf("request %d, CID %s: want found once PubChem recovers, got %q", i, r.Query, r.ErrMsg)
+			}
+		}
+	}
+	if fake.busy == 0 {
+		t.Error("the fake never reported load, so this test did not exercise a busy PubChem")
+	}
+	if fake.maxInFlight > pcbMaxInFlight {
+		t.Errorf("want at most %d calls in flight, PubChem saw %d", pcbMaxInFlight, fake.maxInFlight)
+	}
+	if inFlight, _ := pcbGateSnapshot(); inFlight != 0 {
+		t.Errorf("want the gate drained, %d still in flight", inFlight)
+	}
+}
+
+// PubChem stays saturated past the budget. Unanswered values come back
+// unavailable, and the request itself still returns on time
+func TestResolvePubChemFallbackBusyPastBudgetMarksUnavailable(t *testing.T) {
+	resetPcbPacing(t)
+	pcbThrottlePause, pcbFallbackBudget = 30*time.Millisecond, 150*time.Millisecond
+	fake := &pcbFakeBusyPubChem{window: time.Second, limit: 1, latency: time.Millisecond, alwaysBusy: true}
+	withMockPCBTransport(t, fake.roundTrip)
+
+	start := time.Now()
+	all := pcbRunFallbacks(t, pcbBackgroundContexts(4), 2, 920000)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("want every request back shortly after the 150ms budget, took %s", elapsed)
+	}
+	for i, results := range all {
+		for _, r := range results {
+			if r.MatchFound || r.ErrMsg != "No local match; PubChem live lookup unavailable" {
+				t.Errorf("request %d, CID %s: want unavailable, got found=%v %q", i, r.Query, r.MatchFound, r.ErrMsg)
+			}
+		}
+	}
+	if inFlight, _ := pcbGateSnapshot(); inFlight != 0 {
+		t.Errorf("want the gate drained, %d still in flight", inFlight)
+	}
+}
+
+// A request whose client goes away while queued at the gate stops waiting and
+// frees nothing it does not hold, while the request ahead of it still completes
+func TestResolvePubChemFallbackCancelledWhileQueuedLeavesOthersRunning(t *testing.T) {
+	resetPcbPacing(t)
+	pcbMaxInFlight = 1
+	fake := &pcbFakeBusyPubChem{window: time.Second, busyAt: 1000, limit: 1000, latency: 150 * time.Millisecond}
+	withMockPCBTransport(t, fake.roundTrip)
+
+	first := []*model.SingleResult{missResult("pubchem_id", "930001")}
+	queued := []*model.SingleResult{missResult("pubchem_id", "930002")}
+	pcbClearCache(t, "pubchem_id", "930001", "930002")
+
+	firstDone := make(chan struct{})
+	go func() {
+		resolvePubChemFallback(context.Background(), first, true)
+		close(firstDone)
+	}()
+	time.Sleep(10 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	resolvePubChemFallback(ctx, queued, true)
+	if waited := time.Since(start); waited > 100*time.Millisecond {
+		t.Errorf("want the queued request to give up with its client, it waited %s", waited)
+	}
+	if queued[0].ErrMsg != "No local match; PubChem live lookup unavailable" {
+		t.Errorf("queued request: want unavailable, got %q", queued[0].ErrMsg)
+	}
+
+	<-firstDone
+	if !first[0].MatchFound {
+		t.Errorf("first request: want found, got %q", first[0].ErrMsg)
+	}
+	if inFlight, _ := pcbGateSnapshot(); inFlight != 0 {
+		t.Errorf("want the gate drained, %d still in flight", inFlight)
 	}
 }
 
