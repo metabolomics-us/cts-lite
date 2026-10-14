@@ -375,6 +375,20 @@ func TestPcbResolveKindCachedNegativeIsConfirmedMissing(t *testing.T) {
 	}
 }
 
+func TestPcbCacheSweepRemovesOnlyExpired(t *testing.T) {
+	pcbClearCache(t, "cid", "sweep-expired", "sweep-fresh")
+	pcbCache.Store(pcbCacheKey("cid", "sweep-expired"), pcbCacheEntry{expires: time.Now().Add(-time.Minute)})
+	pcbCacheStore("cid", "sweep-fresh", nil)
+
+	pcbCacheSweep(time.Now())
+	if _, ok := pcbCache.Load(pcbCacheKey("cid", "sweep-expired")); ok {
+		t.Error("expected the expired entry to be swept")
+	}
+	if _, ok := pcbCacheLookup("cid", "sweep-fresh"); !ok {
+		t.Error("expected the unexpired entry to survive the sweep")
+	}
+}
+
 // fastformula answers are cached too, so a repeated formula (hit or miss)
 // never makes a second fastformula call
 func TestFetchFormulaCIDsCachesAnswers(t *testing.T) {

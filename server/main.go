@@ -89,6 +89,7 @@ func main() {
 
 	// Status check of the live PubChem fallback backend (observability only)
 	api.StartPubChemHealthCheck(context.Background())
+	api.StartPubChemCacheSweeper(context.Background())
 
 	// Endpoint for matching against database
 	matchHandler := corsMiddleware(func(w http.ResponseWriter, r *http.Request) {

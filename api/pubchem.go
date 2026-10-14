@@ -552,6 +552,36 @@ func pcbFormulaCacheStore(formula string, cids []string) {
 	pcbCache.Store(pcbCacheKey("formula", formula), pcbCacheEntry{cids: cids, expires: time.Now().Add(pcbCacheTTL)})
 }
 
+// pcbCacheSweep deletes every entry expired
+const pcbCacheSweepInterval = time.Hour
+func pcbCacheSweep(now time.Time) int {
+	removed := 0
+	pcbCache.Range(func(key, v any) bool {
+		if !now.Before(v.(pcbCacheEntry).expires) {
+			pcbCache.Delete(key)
+			removed++
+		}
+		return true
+	})
+	return removed
+}
+
+// StartPubChemCacheSweeper clears expired cache entries periodically
+func StartPubChemCacheSweeper(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(pcbCacheSweepInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pcbCacheSweep(time.Now())
+			}
+		}
+	}()
+}
+
 // PubChem response parsing
 type pcbProperty struct {
 	CID                 int     `json:"CID"`
