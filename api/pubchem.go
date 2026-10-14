@@ -508,30 +508,48 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 	}
 }
 
-// Cache
 type pcbCacheEntry struct {
 	compounds []*model.Compound
-	expires   time.Time
+	cids    []string // for formula entries
+	expires time.Time
 }
 
 var pcbCache sync.Map
 func pcbCacheKey(kind, value string) string { return kind + "|" + value }
 
+// pcbCacheLoad returns the unexpired entry for a value, dropping an expired one
+func pcbCacheLoad(kind, value string) (pcbCacheEntry, bool) {
+	key := pcbCacheKey(kind, value)
+	if v, ok := pcbCache.Load(key); ok {
+		entry := v.(pcbCacheEntry)
+		if time.Now().Before(entry.expires) {
+			return entry, true
+		}
+		pcbCache.Delete(key)
+	}
+	return pcbCacheEntry{}, false
+}
+
 // pcbCacheLookup returns (nil, true) for a cached "not found" outcome, and
 // (compounds, true) for a cached hit; ok is false on a cache miss
 func pcbCacheLookup(kind, value string) ([]*model.Compound, bool) {
-	if v, ok := pcbCache.Load(pcbCacheKey(kind, value)); ok {
-		entry := v.(pcbCacheEntry)
-		if time.Now().Before(entry.expires) {
-			return entry.compounds, true
-		}
-		pcbCache.Delete(pcbCacheKey(kind, value))
-	}
-	return nil, false
+	entry, ok := pcbCacheLoad(kind, value)
+	return entry.compounds, ok
 }
 
 func pcbCacheStore(kind, value string, compounds []*model.Compound) {
 	pcbCache.Store(pcbCacheKey(kind, value), pcbCacheEntry{compounds: compounds, expires: time.Now().Add(pcbCacheTTL)})
+}
+
+// pcbFormulaCacheLookup returns (nil, true) for a formula fastformula denied,
+// and (cids, true) for one it returned candidates for
+func pcbFormulaCacheLookup(formula string) ([]string, bool) {
+	entry, ok := pcbCacheLoad("formula", formula)
+	return entry.cids, ok
+}
+
+func pcbFormulaCacheStore(formula string, cids []string) {
+	pcbCache.Store(pcbCacheKey("formula", formula), pcbCacheEntry{cids: cids, expires: time.Now().Add(pcbCacheTTL)})
 }
 
 // PubChem response parsing
@@ -787,10 +805,28 @@ func fetchFormulaCIDs(ctx context.Context, br *pcbBreaker, formulas []string) (b
 	byFormula = make(map[string][]string, len(formulas))
 	confirmedMissing = make(map[string]bool)
 	seen := make(map[string]bool)
+	addCandidates := func(f string, strCIDs []string) {
+		for _, s := range strCIDs {
+			if !seen[s] {
+				seen[s] = true
+				allCIDs = append(allCIDs, s)
+			}
+		}
+		byFormula[f] = strCIDs
+	}
 	var sent []string
 	for _, f := range formulas {
+		// A cached answer settles the formula without a fastformula call
+		if cached, ok := pcbFormulaCacheLookup(f); ok {
+			if cached == nil {
+				confirmedMissing[f] = true
+			} else {
+				addCandidates(f, cached)
+			}
+			continue
+		}
 		if ctx.Err() != nil {
-			break
+			continue
 		}
 		if pcbCanSend(ctx, br) {
 			sent = append(sent, f)
@@ -798,6 +834,7 @@ func fetchFormulaCIDs(ctx context.Context, br *pcbBreaker, formulas []string) (b
 		body, outcome := pcbExecute(ctx, br, 1, func() (*http.Request, error) { return pcbFastFormulaRequest(ctx, f) })
 		if outcome == pcbNotFound {
 			confirmedMissing[f] = true
+			pcbFormulaCacheStore(f, nil)
 			continue
 		}
 		if outcome != pcbFound {
@@ -810,6 +847,7 @@ func fetchFormulaCIDs(ctx context.Context, br *pcbBreaker, formulas []string) (b
 		}
 		if len(cids) == 0 {
 			confirmedMissing[f] = true
+			pcbFormulaCacheStore(f, nil)
 			continue
 		}
 		if len(cids) > pcbFormulaCIDFetchCap {
@@ -817,14 +855,10 @@ func fetchFormulaCIDs(ctx context.Context, br *pcbBreaker, formulas []string) (b
 		}
 		strCIDs := make([]string, len(cids))
 		for i, c := range cids {
-			s := strconv.Itoa(c)
-			strCIDs[i] = s
-			if !seen[s] {
-				seen[s] = true
-				allCIDs = append(allCIDs, s)
-			}
+			strCIDs[i] = strconv.Itoa(c)
 		}
-		byFormula[f] = strCIDs
+		pcbFormulaCacheStore(f, strCIDs)
+		addCandidates(f, strCIDs)
 	}
 
 	// A formula counts as found once fastformula returns candidates for it

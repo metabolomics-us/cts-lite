@@ -375,6 +375,34 @@ func TestPcbResolveKindCachedNegativeIsConfirmedMissing(t *testing.T) {
 	}
 }
 
+// fastformula answers are cached too, so a repeated formula (hit or miss)
+// never makes a second fastformula call
+func TestFetchFormulaCIDsCachesAnswers(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "formula", "C031490", "C2H6O")
+	calls := 0
+	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
+		calls++
+		if strings.Contains(r.URL.Path, "C031490") {
+			return pcbResp(http.StatusNotFound, ""), nil
+		}
+		return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[702]}}`), nil
+	})
+
+	formulas := []string{"C031490", "C2H6O"}
+	fetchFormulaCIDs(context.Background(), &pcbBreaker{}, formulas)
+	byFormula, allCIDs, missing := fetchFormulaCIDs(context.Background(), &pcbBreaker{}, formulas)
+	if calls != 2 {
+		t.Errorf("expected 2 fastformula calls across both passes, got %d", calls)
+	}
+	if !missing["C031490"] {
+		t.Error("expected the cached negative to be confirmed missing")
+	}
+	if !slices.Equal(byFormula["C2H6O"], []string{"702"}) || !slices.Equal(allCIDs, []string{"702"}) {
+		t.Errorf("expected cached candidates [702], got byFormula=%v allCIDs=%v", byFormula, allCIDs)
+	}
+}
+
 // --- Formula scoring/ranking ---
 
 func TestPcbBuildFormulaResultsSortsByScoreAndAppliesTopHitOnly(t *testing.T) {
@@ -677,6 +705,7 @@ func TestPcbFastFormulaRequestStripsCharge(t *testing.T) {
 func TestResolvePubChemFallbackOnFormulaMiss(t *testing.T) {
 	resetPcbPacing(t)
 	formula := "C6H12O6"
+	pcbClearCache(t, "formula", formula)
 	pcbClearCache(t, "pubchem_id", "5793", "64689")
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Path, "fastformula") {
@@ -705,6 +734,7 @@ func TestResolvePubChemFallbackOnFormulaMiss(t *testing.T) {
 func TestResolvePubChemFallbackFormulaTopHitOnlyFalseReturnsAll(t *testing.T) {
 	resetPcbPacing(t)
 	formula := "C6H12O6"
+	pcbClearCache(t, "formula", formula)
 	pcbClearCache(t, "pubchem_id", "5793", "64689")
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Path, "fastformula") {
@@ -764,6 +794,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaPrefersSmiles(t *testing.T) {
 func TestResolvePubChemFallbackSmilesOrFormulaFallsBackToFormula(t *testing.T) {
 	resetPcbPacing(t)
 	value := "C6H12O6"
+	pcbClearCache(t, "formula", value)
 	pcbClearCache(t, "smiles", value)
 	pcbClearCache(t, "pubchem_id", "5793")
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
@@ -942,6 +973,7 @@ func TestResolvePubChemFallbackServiceDownSetsUnavailableMessage(t *testing.T) {
 func TestResolvePubChemFallbackConfirmedMissingSurvivesBreakerTrip(t *testing.T) {
 	resetPcbPacing(t)
 	pcbClearCache(t, "pubchem_id", "999999998")
+	pcbClearCache(t, "formula", "C9H9")
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Path, "fastformula") {
 			return pcbResp(http.StatusInternalServerError, ""), nil
@@ -969,6 +1001,7 @@ func TestResolvePubChemFallbackConfirmedMissingSurvivesBreakerTrip(t *testing.T)
 func TestResolvePubChemFallbackConfirmedMissingSurvivesBudgetExpiry(t *testing.T) {
 	resetPcbPacing(t)
 	pcbClearCache(t, "pubchem_id", "999999997")
+	pcbClearCache(t, "formula", "C9H8")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
