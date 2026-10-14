@@ -649,8 +649,7 @@ func parseCIDListResponse(body []byte) ([]int, error) {
 // --- Request builders ---
 
 func pcbCIDPropertyRequest(ctx context.Context, cids []string) (*http.Request, error) {
-	u := fmt.Sprintf("%s/compound/cid/%s/property/%s/JSON", pcbBaseURL, strings.Join(cids, ","), pcbPropertyList)
-	return http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	return pcbFormEncodedRequest(ctx, "compound/cid", "cid", strings.Join(cids, ","))
 }
 
 func pcbFormEncodedRequest(ctx context.Context, path, field, value string) (*http.Request, error) {

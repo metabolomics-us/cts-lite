@@ -716,6 +716,32 @@ func TestPcbFastFormulaRequestStripsCharge(t *testing.T) {
 	}
 }
 
+func TestPcbCIDPropertyRequestPostsFullBatch(t *testing.T) {
+	cids := make([]string, pcbCIDBatchSize)
+	for i := range cids {
+		cids[i] = strconv.Itoa(100_000_000 + i)
+	}
+	req, err := pcbCIDPropertyRequest(context.Background(), cids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Method != http.MethodPost {
+		t.Errorf("method: want POST, got %s", req.Method)
+	}
+	if n := len(req.URL.String()); n > 500 {
+		t.Errorf("URL is %d chars, the CIDs should not be in it", n)
+	}
+	if err := req.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Split(req.PostForm.Get("cid"), ","); len(got) != len(cids) {
+		t.Errorf("body: want %d CIDs, got %d", len(cids), len(got))
+	}
+	if label := pcbEndpointLabel(req.URL.Path); label != "cid" {
+		t.Errorf("endpoint label: want cid, got %q", label)
+	}
+}
+
 func TestResolvePubChemFallbackOnFormulaMiss(t *testing.T) {
 	resetPcbPacing(t)
 	formula := "C6H12O6"
@@ -1440,10 +1466,11 @@ func (f *pcbFakeBusyPubChem) roundTrip(req *http.Request) (*http.Response, error
 	if level == "Black" {
 		resp = pcbResp(http.StatusServiceUnavailable, `{"Fault":{"Code":"PUGREST.ServerBusy"}}`)
 	} else {
-		_, rest, _ := strings.Cut(req.URL.Path, "/cid/")
-		list, _, _ := strings.Cut(rest, "/")
+		if err := req.ParseForm(); err != nil {
+			return nil, err
+		}
 		var props []string
-		for _, c := range strings.Split(list, ",") {
+		for _, c := range strings.Split(req.PostForm.Get("cid"), ",") {
 			props = append(props, fmt.Sprintf(`{"CID":%s}`, c))
 		}
 		resp = pcbResp(http.StatusOK, pcbPropertyJSON(props...))
