@@ -468,7 +468,7 @@ function displayResults(data, outputElement, offset = 0) {
           <div class="match-item">
             <div class="match-header">
               MATCH${result.matches.length > 1 ? ` ${i + 1}` : ""} &mdash;
-              <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}#Known+Use+Information=" target="_blank" style="text-decoration:underline;color:#1a3e68">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
+              <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}" target="_blank" style="text-decoration:underline;color:#1a3e68">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
             </div>
             <hr>
             <div class="match-details">
@@ -581,6 +581,7 @@ function formatQueryType(queryType) {
     case "smiles_or_formula": return "SMILES/Mol. Formula";
     case "bad_inchi":         return "Malformed InChI";
     case "bad_inchikey":      return "Malformed InChIKey";
+    case "bad_pubchem_id":    return "Invalid PubChem CID";
     case "unidentified":      return "Unidentified";
     default:                  return queryType;
   }

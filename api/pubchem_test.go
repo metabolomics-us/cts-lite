@@ -199,6 +199,56 @@ func TestPcbExecuteTerminalNotFoundDoesNotRetry(t *testing.T) {
 	}
 }
 
+// A 414 (or another 4xx) cannot succeed on a resend, and PubChem did answer, so
+// it is neither retried nor counted toward the breaker
+func TestPcbExecuteClientErrorDoesNotRetry(t *testing.T) {
+	resetPcbPacing(t)
+	calls := 0
+	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
+		calls++
+		return pcbResp(http.StatusRequestURITooLong, "Submitted URI too large!"), nil
+	})
+
+	br := &pcbBreaker{}
+	_, outcome := pcbExecute(context.Background(), br, 1, func() (*http.Request, error) {
+		return pcbCIDPropertyRequest(context.Background(), []string{"180"})
+	})
+	if outcome != pcbFailed {
+		t.Fatalf("outcome: want pcbFailed, got %v", outcome)
+	}
+	if calls != 1 {
+		t.Errorf("expected exactly 1 call for a 414, got %d", calls)
+	}
+	if br.tripped || br.downStreak != 0 {
+		t.Error("a 414 should not count toward the circuit breaker")
+	}
+}
+
+// A 200 whose body is empty or lacks its table says nothing about the values, so
+// none may be confirmed missing (that would cache them as missing for 24h)
+func TestPcbMalformedOKConfirmsNothingMissing(t *testing.T) {
+	for _, body := range []string{"", "{}", `{"Fault":{"Code":"PUGREST.ServerError"}}`} {
+		resetPcbPacing(t)
+		withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
+			return pcbResp(http.StatusOK, body), nil
+		})
+
+		res := fetchCIDsBatched(context.Background(), &pcbBreaker{}, []string{"180", "181"})
+		if len(res.found) != 0 || len(res.confirmedMissing) != 0 {
+			t.Errorf("CID batch, body %q: want nothing settled, got found %v missing %v", body, res.found, res.confirmedMissing)
+		}
+
+		pcbClearCache(t, "formula", "C9H9N9O9")
+		byFormula, _, missing := fetchFormulaCIDs(context.Background(), &pcbBreaker{}, []string{"C9H9N9O9"})
+		if len(byFormula) != 0 || missing["C9H9N9O9"] {
+			t.Errorf("fastformula, body %q: want nothing settled, got candidates %v missing %v", body, byFormula, missing)
+		}
+		if _, cached := pcbFormulaCacheLookup("C9H9N9O9"); cached {
+			t.Errorf("fastformula, body %q: want nothing cached", body)
+		}
+	}
+}
+
 // fastformula reports a malformed/unrecognized formula (bad element symbols,
 // invalid syntax) as a 500 with this specific diagnostic body, unlike the
 // property endpoints' plain 400/404

@@ -301,7 +301,7 @@ type PubChemEvent struct {
 	Event      string // retrying, gave_up, recovered, breaker_tripped, budget_exhausted
 	Endpoint   string // cid, inchikey, fastformula
 	Path       string // request path, trimmed of the property list
-	Reason     string // throttled, http_error, transport_error, read_error, build_error
+	Reason     string // throttled, rejected, http_error, transport_error, read_error, build_error
 	StatusCode int
 	Attempt    int
 	Delay      time.Duration

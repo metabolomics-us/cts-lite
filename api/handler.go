@@ -37,6 +37,20 @@ func isAllDigits(s string) bool {
 	return len(s) > 0
 }
 
+// maxPubChemID is the highest CID possible with plenty of wiggle room.
+// As of 2026, there compounds with a CID of ~180 million
+const maxPubChemID = 500_000_000
+
+// isValidPubChemID reports whether an all-digit query can be a real CID
+func isValidPubChemID(s string) bool {
+	// reject leading zeroes or 0 itself
+	if s == "" || s[0] == '0' {
+		return false
+	}
+	n, err := strconv.ParseUint(s, 10, 64)
+	return err == nil && n <= maxPubChemID
+}
+
 // smilesPunctuation is the set of characters that appear in SMILES but never in a
 // molecular formula, so any query containing one is unambiguously SMILES.
 // Plus (+) and minus (-) are left out because formulas carry them as a charge suffix
@@ -243,8 +257,11 @@ func parseQueryType(q string) string {
 	case len(q) >= 6 && strings.EqualFold(q[:6], "inchi="):
 		return "bad_inchi"
 
-	case isAllDigits(q):
+	case isAllDigits(q) && isValidPubChemID(q):
 		return "pubchem_id"
+
+	case isAllDigits(q):
+		return "bad_pubchem_id"
 
 	case strings.ContainsAny(q, smilesPunctuation):
 		return "smiles"
@@ -443,6 +460,10 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		case "bad_inchikey":
 			result.MatchFound = false
 			result.ErrMsg = "Malformed InChIKey, see documentation"
+
+		case "bad_pubchem_id":
+			result.MatchFound = false
+			result.ErrMsg = "Invalid PubChem CID, see documentation"
 
 		case "unidentified":
 			result.MatchFound = false

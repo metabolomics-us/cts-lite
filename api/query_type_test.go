@@ -74,6 +74,15 @@ func TestParseQueryTypeClassification(t *testing.T) {
 		{"other_inchikey", "MYFAKEINCHIKEY-ISRIGHTHER-E", "inchikey"},
 		{"other_bad_inchikey", "myfakeinchikey-isrighther-e", "bad_inchikey"},
 		{"other_pubchem_id", "2244", "pubchem_id"},
+
+		// PubChem rejects a whole batch over one CID it cannot accept, so these stop here
+		{"pubchem_id_lowest", "1", "pubchem_id"},
+		{"pubchem_id_highest", "500000000", "pubchem_id"},
+		{"bad_pubchem_id_zero", "0", "bad_pubchem_id"},
+		{"bad_pubchem_id_zeros", "000", "bad_pubchem_id"},
+		{"bad_pubchem_id_leading_zero", "00702", "bad_pubchem_id"},
+		{"bad_pubchem_id_over_max", "500000001", "bad_pubchem_id"},
+		{"bad_pubchem_id_overflow", "99999999999999999999999", "bad_pubchem_id"},
 	}
 
 	for _, tc := range cases {

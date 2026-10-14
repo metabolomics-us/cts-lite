@@ -339,8 +339,8 @@ func pcbEndpointLabel(path string) string {
 }
 
 // pcbExecute performs one gated, retried HTTP round trip and returns the raw
-// response body on a terminal 200. A 404/400 is terminal-not-found (ok data,
-// just nothing there), not an error
+// response body on a terminal 200. A 404/400 is terminal-not-found, not an error. 
+// Any other 4xx (e.g. 414 URI too large) is a terminal failure
 func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq func() (*http.Request, error)) ([]byte, pcbOutcome) {
 	if br.tripped {
 		return nil, pcbFailed
@@ -488,6 +488,18 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			}
 			continue
 
+		// 414, 413, 403 etc. where retrying the same request won't help.
+		case resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout:
+			record("rejected")
+			br.downStreak = 0
+			settle(true, false, throttleHeader)
+			ev.Event = "gave_up"
+			ev.Reason = "rejected"
+			ev.StatusCode = resp.StatusCode
+			ev.Attempt = attempt + 1
+			pcbLogEvent(ctx, ev, "%s rejected the request (%d), not retrying", label, resp.StatusCode)
+			return nil, pcbFailed
+
 		default: // 500, 502, 504, etc.
 			if resp.StatusCode == http.StatusInternalServerError && bytes.Contains(respBody, []byte("Search status indicates failure")) {
 				record("not_found")
@@ -596,8 +608,9 @@ type pcbProperty struct {
 	MolecularFormula    string  `json:"MolecularFormula"`
 }
 
+// The tables are pointers so a 200 without one reads as malformed, not as empty
 type pcbPropertyResponse struct {
-	PropertyTable struct {
+	PropertyTable *struct {
 		Properties []pcbProperty `json:"Properties"`
 	} `json:"PropertyTable"`
 }
@@ -620,28 +633,34 @@ func (p pcbProperty) toCompound() *model.Compound {
 
 func parsePropertyResponse(body []byte) ([]pcbProperty, error) {
 	if len(body) == 0 {
-		return nil, nil
+		return nil, errors.New("empty PubChem property response")
 	}
 	var pr pcbPropertyResponse
 	if err := json.Unmarshal(body, &pr); err != nil {
 		return nil, fmt.Errorf("decoding PubChem property response: %w", err)
 	}
+	if pr.PropertyTable == nil {
+		return nil, errors.New("PubChem property response has no PropertyTable")
+	}
 	return pr.PropertyTable.Properties, nil
 }
 
 type pcbCIDListResponse struct {
-	IdentifierList struct {
+	IdentifierList *struct {
 		CID []int `json:"CID"`
 	} `json:"IdentifierList"`
 }
 
 func parseCIDListResponse(body []byte) ([]int, error) {
 	if len(body) == 0 {
-		return nil, nil
+		return nil, errors.New("empty PubChem CID list response")
 	}
 	var lr pcbCIDListResponse
 	if err := json.Unmarshal(body, &lr); err != nil {
 		return nil, fmt.Errorf("decoding PubChem CID list response: %w", err)
+	}
+	if lr.IdentifierList == nil {
+		return nil, errors.New("PubChem CID list response has no IdentifierList")
 	}
 	return lr.IdentifierList.CID, nil
 }
@@ -984,11 +1003,7 @@ type pcbMiss struct {
 	value  string
 }
 
-// collectPubChemMisses gathers every locally-missed result eligible for
-// fallback. bad_inchi/bad_inchikey/unidentified are deliberately excluded.
-// A local DB error ("Internal server error", set by matchPubChemID/matchInchi/etc. in
-// api/match.go) is also excluded: that means the local lookup itself failed,
-// not that the compound is absent
+// collectPubChemMisses gathers every locally-missed result eligible for fallback.
 func collectPubChemMisses(results []*model.SingleResult) []pcbMiss {
 	var misses []pcbMiss
 	for _, r := range results {
