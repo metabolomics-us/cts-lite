@@ -615,6 +615,11 @@ type pcbPropertyResponse struct {
 	} `json:"PropertyTable"`
 }
 
+// Used to confirm CID responses that are empty
+func (p pcbProperty) hasStructure() bool {
+	return p.InChIKey != "" || p.SMILES != "" || p.MolecularFormula != ""
+}
+
 func (p pcbProperty) toCompound() *model.Compound {
 	mass, _ := strconv.ParseFloat(p.ExactMass, 64)
 	return &model.Compound{
@@ -754,6 +759,10 @@ func fetchCIDsBatched(ctx context.Context, br *pcbBreaker, cids []string) pcbFet
 			}
 			seen := make(map[string]bool, len(props))
 			for _, p := range props {
+				// Skip CID that came back with no structure
+				if !p.hasStructure() {
+					continue
+				}
 				cid := strconv.Itoa(p.CID)
 				res.found[cid] = p.toCompound()
 				seen[cid] = true

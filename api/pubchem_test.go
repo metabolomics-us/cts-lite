@@ -113,7 +113,7 @@ func TestPcbExecuteRetriesThenSucceeds(t *testing.T) {
 		if attempts < 3 {
 			return pcbResp(http.StatusInternalServerError, ""), nil
 		}
-		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180,"Title":"Acetone"}`)), nil
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180,"Title":"Acetone","MolecularFormula":"C3H6O"}`)), nil
 	})
 
 	br := &pcbBreaker{}
@@ -221,6 +221,24 @@ func TestPcbExecuteClientErrorDoesNotRetry(t *testing.T) {
 	}
 	if br.tripped || br.downStreak != 0 {
 		t.Error("a 414 should not count toward the circuit breaker")
+	}
+}
+
+// An empty compound response should be treated as compound not found
+func TestFetchCIDsBatchedStubIsMissing(t *testing.T) {
+	resetPcbPacing(t)
+	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
+		return pcbResp(http.StatusOK, pcbPropertyJSON(
+			`{"CID":2244,"InChIKey":"BSYNRYMUTXBXSQ-UHFFFAOYSA-N","MolecularFormula":"C9H8O4","Title":"Aspirin"}`,
+			`{"CID":342806516,"PatentCount":0,"LiteratureCount":0,"AnnotationTypeCount":0}`)), nil
+	})
+
+	res := fetchCIDsBatched(context.Background(), &pcbBreaker{}, []string{"2244", "342806516"})
+	if res.found["2244"] == nil {
+		t.Error("2244: want found")
+	}
+	if res.found["342806516"] != nil || !res.confirmedMissing["342806516"] {
+		t.Errorf("342806516: want confirmed missing, got found=%v missing=%v", res.found["342806516"], res.confirmedMissing["342806516"])
 	}
 }
 
@@ -356,7 +374,7 @@ func TestPcbExecuteThrottleRetriesThenSucceeds(t *testing.T) {
 		if attempts < 2 {
 			return pcbResp(http.StatusTooManyRequests, ""), nil
 		}
-		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180}`)), nil
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180,"MolecularFormula":"C3H6O"}`)), nil
 	})
 
 	br := &pcbBreaker{}
@@ -519,7 +537,7 @@ func TestResolvePubChemFallbackNeverAttemptsMalformedQueryTypes(t *testing.T) {
 	calls := 0
 	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
 		calls++
-		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":1}`)), nil
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":1,"MolecularFormula":"C9H17NO4"}`)), nil
 	})
 
 	results := []*model.SingleResult{
@@ -563,7 +581,7 @@ func TestResolvePubChemFallbackDedupsRepeatedCIDMisses(t *testing.T) {
 	calls := 0
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
 		calls++
-		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180,"Title":"Acetone"}`)), nil
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180,"Title":"Acetone","MolecularFormula":"C3H6O"}`)), nil
 	})
 
 	results := []*model.SingleResult{
@@ -802,8 +820,8 @@ func TestResolvePubChemFallbackOnFormulaMiss(t *testing.T) {
 			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[5793,64689]}}`), nil
 		}
 		return pcbResp(http.StatusOK, pcbPropertyJSON(
-			`{"CID":5793,"Title":"D-Glucose","LiteratureCount":100,"PatentCount":10}`,
-			`{"CID":64689,"Title":"Beta-D-Glucose","LiteratureCount":5,"PatentCount":1}`,
+			`{"CID":5793,"Title":"D-Glucose","MolecularFormula":"C6H12O6","LiteratureCount":100,"PatentCount":10}`,
+			`{"CID":64689,"Title":"Beta-D-Glucose","MolecularFormula":"C6H12O6","LiteratureCount":5,"PatentCount":1}`,
 		)), nil
 	})
 
@@ -831,8 +849,8 @@ func TestResolvePubChemFallbackFormulaTopHitOnlyFalseReturnsAll(t *testing.T) {
 			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[5793,64689]}}`), nil
 		}
 		return pcbResp(http.StatusOK, pcbPropertyJSON(
-			`{"CID":5793,"Title":"D-Glucose","LiteratureCount":100,"PatentCount":10}`,
-			`{"CID":64689,"Title":"Beta-D-Glucose","LiteratureCount":5,"PatentCount":1}`,
+			`{"CID":5793,"Title":"D-Glucose","MolecularFormula":"C6H12O6","LiteratureCount":100,"PatentCount":10}`,
+			`{"CID":64689,"Title":"Beta-D-Glucose","MolecularFormula":"C6H12O6","LiteratureCount":5,"PatentCount":1}`,
 		)), nil
 	})
 
@@ -897,7 +915,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaFallsBackToFormula(t *testing.T) {
 		if strings.Contains(r.URL.Path, "fastformula") {
 			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[5793]}}`), nil
 		}
-		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":5793,"Title":"D-Glucose"}`)), nil
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":5793,"Title":"D-Glucose","MolecularFormula":"C6H12O6"}`)), nil
 	})
 
 	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
@@ -973,7 +991,7 @@ func TestResolvePubChemFallbackSmilesOrFormulaUsesFormulaWhenRDKitCannot(t *test
 		if strings.Contains(r.URL.Path, "fastformula") {
 			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[5359596]}}`), nil
 		}
-		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":5359596,"Title":"Diboron dibromide"}`)), nil
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":5359596,"Title":"Diboron dibromide","MolecularFormula":"B2Br2"}`)), nil
 	})
 
 	results := []*model.SingleResult{missResult("smiles_or_formula", value)}
@@ -1236,7 +1254,7 @@ func TestPcbExecuteReleasesSpotOnEveryExit(t *testing.T) {
 		buildReq  func() (*http.Request, error)
 	}{
 		{"found", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
-			return func(*http.Request) (*http.Response, error) { return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180}`)), nil }
+			return func(*http.Request) (*http.Response, error) { return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":180,"MolecularFormula":"C3H6O"}`)), nil }
 		}, cidReq},
 		{"build error", nil, func() (*http.Request, error) { return nil, errors.New("bad request") }},
 		{"panic while building", nil, func() (*http.Request, error) { panic("boom") }},
@@ -1521,7 +1539,7 @@ func (f *pcbFakeBusyPubChem) roundTrip(req *http.Request) (*http.Response, error
 		}
 		var props []string
 		for _, c := range strings.Split(req.PostForm.Get("cid"), ",") {
-			props = append(props, fmt.Sprintf(`{"CID":%s}`, c))
+			props = append(props, fmt.Sprintf(`{"CID":%s,"MolecularFormula":"C1H4"}`, c))
 		}
 		resp = pcbResp(http.StatusOK, pcbPropertyJSON(props...))
 	}
