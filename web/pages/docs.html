@@ -293,8 +293,8 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                     Enable ClassyFire by adding the <code class="inline-code">classyfire=true</code> parameter to an API request.
                 </p>
                 <p>
-                    You can stream ClassyFire results by adding the <code class="inline-code">stream=true</code> parameter. 
-                    Instead of a single JSON array upon completion, the server returns live NDJSON results. This may help with timeouts of large requests.
+                    You can stream results by adding the <code class="inline-code">stream=true</code> parameter.
+                    Instead of a single JSON array upon completion, the server returns live NDJSON results: local matches first, then each PubChem Live result and ClassyFire classification as it finishes. This may help with timeouts of large requests.
                 </p>
                 <p>
                     JSON responses include a <code class="inline-code">classyfire</code>

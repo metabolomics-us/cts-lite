@@ -86,7 +86,7 @@ async function initClassyfireStatus() {
 }
 
 // Read NDJSON stream, dispatching each message by type
-async function consumeMatchStream(response, { onMatches, onClassyfire, onDone }) {
+async function consumeMatchStream(response, { onMatches, onPubchem, onClassifying, onClassyfire, onDone }) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -95,6 +95,8 @@ async function consumeMatchStream(response, { onMatches, onClassyfire, onDone })
     if (!text) return;
     const msg = JSON.parse(text);
     if (msg.type === "matches") onMatches(msg);
+    else if (msg.type === "pubchem") onPubchem(msg);
+    else if (msg.type === "classifying") onClassifying(msg);
     else if (msg.type === "classyfire") onClassyfire(msg);
     else if (msg.type === "done") onDone();
   };
@@ -274,8 +276,10 @@ document.addEventListener("DOMContentLoaded", () => {
       url += "&first_block_matches=false";
     }
     if (classyfireEnabled) {
-      url += "&classyfire=true&stream=true";
+      url += "&classyfire=true";
     }
+
+    url += "&stream=true"; // Always stream frontend results for pubchem fallback
 
     if (activeController) {
       console.log("New request received. Aborting previous request.");
@@ -296,7 +300,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }, 5000);
 
-    const finalizeHeader = () => {
+    const updateHeader = () => {
       const numMatches = countNumMatches(allData);
       outputLabel.innerHTML = `Results &mdash; ${numMatches} / ${allData.length} ${allData.length === 1 ? "match" : "matches"}`;
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
@@ -320,7 +324,8 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(`Server returned ${response.status} - ${await response.text()}`);
       }
 
-      if (classyfireEnabled) {
+      // A server without flushing support falls back to a plain JSON array
+      if ((response.headers.get("Content-Type") || "").includes("application/x-ndjson")) {
         clearTimeout(slowTimer);
 
         let inchikeyIndex = new Map(); // inchikey -> [match, ...] for O(1) live updates
@@ -330,31 +335,43 @@ document.addEventListener("DOMContentLoaded", () => {
         const scheduleRender = () => {
           if (rafScheduled) return;
           rafScheduled = true;
-          requestAnimationFrame(() => { rafScheduled = false; renderPage(); });
+          requestAnimationFrame(() => { rafScheduled = false; renderPage(); updateHeader(); });
+        };
+        const buildInchikeyIndex = () => {
+          inchikeyIndex = new Map();
+          allData.forEach(r => (r.matches || []).forEach(m => {
+            // Matches beyond the top three cap already carry a note; don't queue
+            // them for live updates or a streamed line would overwrite it
+            if (m.classyfire) return;
+            if (!inchikeyIndex.has(m.inchikey)) inchikeyIndex.set(m.inchikey, []);
+            inchikeyIndex.get(m.inchikey).push(m);
+          }));
+        };
+        const startCfProgress = (msg) => {
+          totalUnique = msg.unique || 0;
+          classified = 0;
+          buildInchikeyIndex();
+          if (totalUnique > 0) showCfProgress(0, totalUnique);
+          updateCfQueue(msg.queue || 0);
         };
 
         await consumeMatchStream(response, {
           onMatches: (msg) => {
             allData = msg.results || [];
-            totalUnique = msg.unique || 0;
-            classified = 0;
             currentPage = 1;
-            inchikeyIndex = new Map();
-            allData.forEach(r => (r.matches || []).forEach(m => {
-              // Matches beyond the top three cap already carry a note; don't queue
-              // them for live updates or a streamed line would overwrite it
-              if (m.classyfire) return;
-              if (!inchikeyIndex.has(m.inchikey)) inchikeyIndex.set(m.inchikey, []);
-              inchikeyIndex.get(m.inchikey).push(m);
-            }));
             output.textContent = "";
             downloadButtons.style.display = "flex";
             setDownloadsLoading(true);
             renderPage();
-            finalizeHeader();
-            if (totalUnique > 0) showCfProgress(0, totalUnique);
-            updateCfQueue(msg.queue || 0);
+            updateHeader();
+            // With PubChem lookups still running, the classifying line brings the final count
+            if (classyfireEnabled && !allData.some(r => r.pending)) startCfProgress(msg);
           },
+          onPubchem: (msg) => {
+            allData[msg.index] = msg.result;
+            scheduleRender();
+          },
+          onClassifying: startCfProgress,
           onClassyfire: (msg) => {
             const matches = inchikeyIndex.get(msg.inchikey);
             if (matches) matches.forEach(m => { m.classyfire = msg.info; });
@@ -365,6 +382,7 @@ document.addEventListener("DOMContentLoaded", () => {
           },
           onDone: () => {
             renderPage();
+            updateHeader();
             hideCfProgress();
             setDownloadsLoading(false);
           },
@@ -378,7 +396,7 @@ document.addEventListener("DOMContentLoaded", () => {
         output.textContent = "";
         downloadButtons.style.display = "flex";
         renderPage();
-        finalizeHeader();
+        updateHeader();
       }
 
     } catch (err) {
@@ -458,7 +476,8 @@ function getPaginationRange(current, total) {
 
 function displayResults(data, outputElement, offset = 0) {
   data.forEach((result, index) => {
-    const errorHtml = result.error_message
+    // A pending row still carries the local miss message, which the PubChem answer will replace
+    const errorHtml = result.error_message && !result.pending
       ? `<div class="error-message">${escapeHtml(result.error_message).replace("see documentation", '<a href="/docs#query-types" target="_blank">see documentation</a>')}</div>`
       : "";
 
@@ -519,7 +538,7 @@ function displayResults(data, outputElement, offset = 0) {
         </div>
         <div class="query-details">
           ${queryTypeBubble}
-          <span class="match-status ${matchStatus.className}">${matchStatus.text}</span>
+          <span class="match-status ${matchStatus.className}">${matchStatus.text}${result.pending ? '<span class="inline-spinner" aria-hidden="true"></span>' : ""}</span>
         </div>
       </div>
       <div class="result-body">
@@ -558,6 +577,7 @@ function escapeHtml(text) {
 
 // Classifies a result once and returns both the badge text and its CSS class
 function getMatchStatus(result) {
+  if (result.pending) return { text: "Using PubChem Live lookup", className: "pending-lookup" };
   if (!result.found_match) return { text: "✗ No match", className: "no-match" };
   const level = (result.match_level || "").toLowerCase();
   if (level.startsWith("pubchem live:")) {

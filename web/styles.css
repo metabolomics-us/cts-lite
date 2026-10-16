@@ -448,6 +448,21 @@ button:disabled {
   border: 1px solid #a0d1d9;
 }
 
+/* While waiting on the PubChem fallback */
+.match-status.pending-lookup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background-color: #eef1f5;
+  color: #3b4a5c;
+  border: 1px solid #d3dae3;
+}
+
+.match-status.pending-lookup .inline-spinner {
+  width: 12px;
+  height: 12px;
+}
+
 .query-type-expandable-wrapper {
   display: inline-flex;
   flex-direction: column;
