@@ -494,36 +494,41 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Always attempt a live PubChem lookup for anything that missed locally (except unidentified queries)
-	pcb := resolvePubChemFallback(r.Context(), results, topHitOnly)
-	if pcb.attempted+pcb.unparseable+pcb.skipped > 0 {
-		log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d unparseable (not sent), %d skipped (due to limit reached)",
-			pcb.attempted, pcb.found, pcb.notFound, pcb.failed, pcb.unparseable, pcb.skipped)
-	}
-
-	for _, result := range results {
-		if result.MatchFound {
-			matchCount++
+	// Attempt a live PubChem lookup for anything that missed locally (except unidentified queries of course)
+	// onSettled hears about each result as soon as its lookup is over, nil when not streaming
+	fallback := func(onSettled func(index int)) {
+		pcb := resolvePubChemFallbackStream(r.Context(), results, topHitOnly, onSettled)
+		if pcb.attempted+pcb.unparseable+pcb.skipped > 0 {
+			log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d unparseable (not sent), %d skipped (due to limit reached)",
+				pcb.attempted, pcb.found, pcb.notFound, pcb.failed, pcb.unparseable, pcb.skipped)
 		}
-	}
 
-	duration := time.Since(timeStart)
-	log.Printf("%d matches found from %d queries in %s\n", matchCount, len(queries), time.Since(timeStart).Round(time.Millisecond))
-	telemetry.RecordMatch(r, results, matchCount, duration, telemetry.MatchOptions{
-		TopHitOnly:             topHitOnly,
-		AllowFirstBlockMatches: allowFirstBlockMatches,
-		ClassyFireEnabled:      classyfireEnabled,
-	})
+		for _, result := range results {
+			if result.MatchFound {
+				matchCount++
+			}
+		}
+
+		duration := time.Since(timeStart)
+		log.Printf("%d matches found from %d queries in %s\n", matchCount, len(queries), time.Since(timeStart).Round(time.Millisecond))
+		telemetry.RecordMatch(r, results, matchCount, duration, telemetry.MatchOptions{
+			TopHitOnly:             topHitOnly,
+			AllowFirstBlockMatches: allowFirstBlockMatches,
+			ClassyFireEnabled:      classyfireEnabled,
+		})
+	}
 
 	csvRequested := (r.Header.Get("Accept") == "text/csv") || (r.URL.Query().Get("format") == "csv")
 
-	// Emit matches immediately, and classifications as they come. Not possible for CSV
-	if stream && classyfireEnabled && !csvRequested {
-		streamMatchResults(w, r, results)
+	// Emit local matches immediately, then PubChem fallback results and
+	// ClassyFire results as they come. Not possible for CSV
+	if stream && !csvRequested {
+		streamMatchResults(w, r, results, classyfireEnabled, fallback)
 		return
 	}
 
-	// Non-streaming, write full response once ClassyFire is done
+	// Non-streaming, write full response once the fallback and ClassyFire are done
+	fallback(nil)
 	if classyfireEnabled {
 		enrichWithClassyFire(r.Context(), results)
 	}
@@ -544,11 +549,15 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 }
 
-// streamMatchResults writes the response as NDJSON
-func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model.SingleResult) {
+// streamMatchResults writes the response as NDJSON: first the local matches, a
+// pubchem line per fallback result as it settles, then ClassyFire if enabled
+func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model.SingleResult, classyfireEnabled bool, fallback func(onSettled func(index int))) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		enrichWithClassyFire(r.Context(), results)
+		fallback(nil)
+		if classyfireEnabled {
+			enrichWithClassyFire(r.Context(), results)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(results); err != nil &&
 			!errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
@@ -573,21 +582,47 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 		return true
 	}
 
-	keys := classifiableKeys(results)
-
-	// Count toward the shared-gate queue depth
-	if len(keys) > 0 {
-		cfbEnterQueue()
-		defer cfbLeaveQueue()
+	// Rows still waiting on PubChem, each is replaced by a pubchem line once its answer is in
+	for _, m := range collectPubChemMisses(results) {
+		m.result.Pending = true
 	}
 
-	if !writeLine(map[string]any{"type": "matches", "results": results, "unique": len(keys), "queue": cfbQueueDepth()}) {
+	matches := map[string]any{"type": "matches", "results": results}
+	if classyfireEnabled {
+		// Local hits only, the final count comes in the classifying line
+		matches["unique"] = len(classifiableKeys(results))
+	}
+	if !writeLine(matches) {
 		return
 	}
 
-	streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
-		writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
+	fallback(func(index int) {
+		result := results[index]
+		result.Pending = false
+		if classyfireEnabled {
+			// Attaches the top 3 cap note before the line goes out, as the matches line had
+			classifiableKeys([]*model.SingleResult{result})
+		}
+		writeLine(map[string]any{"type": "pubchem", "index": index, "result": result})
 	})
+
+	if classyfireEnabled {
+		keys := classifiableKeys(results)
+
+		// Count toward the shared-gate queue depth
+		if len(keys) > 0 {
+			cfbEnterQueue()
+			defer cfbLeaveQueue()
+		}
+
+		if !writeLine(map[string]any{"type": "classifying", "unique": len(keys), "queue": cfbQueueDepth()}) {
+			return
+		}
+
+		streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
+			writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
+		})
+	}
 
 	writeLine(map[string]any{"type": "done"})
 }

@@ -298,7 +298,7 @@ const maxLoggedPathLen = 200
 
 // PubChemEvent is one notable step of a PubChem fallback call
 type PubChemEvent struct {
-	Event      string // retrying, gave_up, recovered, breaker_tripped, budget_exhausted
+	Event      string // retrying, gave_up, recovered, breaker_tripped, cancelled
 	Endpoint   string // cid, inchikey, fastformula
 	Path       string // request path, trimmed of the property list
 	Reason     string // throttled, rejected, http_error, transport_error, read_error, build_error
@@ -309,16 +309,16 @@ type PubChemEvent struct {
 }
 
 // LogPubChemEvent emits a PubChemEvent as an OTel log record whose body is
-// message. Severity follows the event: recovered is Info, retrying is Warn,
-// and anything that ends a call without an answer is Error
+// message. Severity follows the event: 'recovered' and 'cancelled' are Info,
+// retrying is Warn, and a PubChem call ending without an answer is Error
 func LogPubChemEvent(ctx context.Context, ev PubChemEvent, message string) {
 	initInstruments()
 
 	severity, severityText := log.SeverityWarn, "WARN"
 	switch ev.Event {
-	case "recovered":
+	case "recovered", "cancelled":
 		severity, severityText = log.SeverityInfo, "INFO"
-	case "gave_up", "breaker_tripped", "budget_exhausted":
+	case "gave_up", "breaker_tripped":
 		severity, severityText = log.SeverityError, "ERROR"
 	}
 
@@ -371,7 +371,7 @@ type PubChemFallbackSummary struct {
 	Calls           int // HTTP round trips to PubChem, retries included
 	Retries         int
 	BreakerTripped  bool
-	BudgetExhausted bool
+	Cancelled       bool // the client went away before every lookup finished
 	Duration        time.Duration
 }
 
@@ -380,7 +380,7 @@ func LogPubChemFallbackSummary(ctx context.Context, s PubChemFallbackSummary) {
 	initInstruments()
 
 	severity, severityText := log.SeverityInfo, "INFO"
-	if s.BreakerTripped || s.BudgetExhausted {
+	if s.BreakerTripped {
 		severity, severityText = log.SeverityWarn, "WARN"
 	}
 
@@ -401,7 +401,7 @@ func LogPubChemFallbackSummary(ctx context.Context, s PubChemFallbackSummary) {
 		log.Int("calls", s.Calls),
 		log.Int("retries", s.Retries),
 		log.Bool("breaker_tripped", s.BreakerTripped),
-		log.Bool("budget_exhausted", s.BudgetExhausted),
+		log.Bool("cancelled", s.Cancelled),
 		log.Float64("duration_ms", float64(s.Duration.Microseconds())/1000.0),
 	)
 	matchLogger.Emit(ctx, record)

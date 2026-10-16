@@ -25,7 +25,7 @@ func resetPcbPacing(t *testing.T) {
 	origMin, origThrottled, origPause := pcbMinGap, pcbThrottledGap, pcbThrottlePause
 	origIdle, origRetry := pcbIdleReset, pcbRetryDelays
 	origOwnGaps, origServiceGaps := pcbOwnLevelGaps, pcbServiceLevelGaps
-	origMaxInFlight, origBudget := pcbMaxInFlight, pcbFallbackBudget
+	origMaxInFlight := pcbMaxInFlight
 	pcbMinGap, pcbThrottledGap, pcbThrottlePause = 0, 0, 0
 	pcbIdleReset = time.Hour
 	pcbRetryDelays = []time.Duration{0, 0}
@@ -42,7 +42,7 @@ func resetPcbPacing(t *testing.T) {
 		pcbMinGap, pcbThrottledGap, pcbThrottlePause = origMin, origThrottled, origPause
 		pcbIdleReset, pcbRetryDelays = origIdle, origRetry
 		pcbOwnLevelGaps, pcbServiceLevelGaps = origOwnGaps, origServiceGaps
-		pcbMaxInFlight, pcbFallbackBudget = origMaxInFlight, origBudget
+		pcbMaxInFlight = origMaxInFlight
 	})
 }
 
@@ -341,9 +341,8 @@ func TestPcbExecuteLogsWhyACallFailed(t *testing.T) {
 	}
 }
 
-// The case behind a 20s request that reported nothing but "1 failed": the
-// budget expired mid-flight, which should not look like a PubChem fault
-func TestPcbExecuteLogsBudgetExhaustion(t *testing.T) {
+// The client going away mid-flight should cancel the request
+func TestPcbExecuteLogsCancellation(t *testing.T) {
 	resetPcbPacing(t)
 	var logged bytes.Buffer
 	log.SetOutput(&logged)
@@ -351,7 +350,7 @@ func TestPcbExecuteLogsBudgetExhaustion(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
-		cancel() // the budget runs out while this call is in flight
+		cancel() // the client leaving
 		return pcbResp(http.StatusOK, "{}"), nil
 	})
 
@@ -361,8 +360,8 @@ func TestPcbExecuteLogsBudgetExhaustion(t *testing.T) {
 	if outcome != pcbFailed {
 		t.Fatalf("outcome: want pcbFailed, got %v", outcome)
 	}
-	if !strings.Contains(logged.String(), "budget") {
-		t.Errorf("log should name the budget as the cause, got:\n%s", logged.String())
+	if !strings.Contains(logged.String(), "cancelled") {
+		t.Errorf("log should name the cancellation as the cause, got:\n%s", logged.String())
 	}
 }
 
@@ -416,10 +415,14 @@ func TestPcbResolveKindSkipsNetworkOnCacheHit(t *testing.T) {
 	pcbCacheStore("cid", "cached-cid", []*model.Compound{{Identifier: "cached-cid", CompoundName: "Cached"}})
 
 	calls := 0
-	res := pcbResolveKind("cid", []string{"cached-cid"}, func(vs []string) pcbFetchResult {
+	res, done := newPcbFetchResult(), map[string]bool{}
+	pcbResolveKind("cid", []string{"cached-cid"}, res, done, func(vs []string) pcbFetchResult {
 		calls++
 		return newPcbFetchResult()
-	})
+	}, func() {})
+	if !done["cached-cid"] {
+		t.Error("a cache hit should mark its lookup done")
+	}
 	if calls != 0 {
 		t.Errorf("expected 0 fetch calls for an all-cache-hit request, got %d", calls)
 	}
@@ -434,10 +437,11 @@ func TestPcbResolveKindCachedNegativeIsConfirmedMissing(t *testing.T) {
 	pcbClearCache(t, "cid", "cached-missing")
 	pcbCacheStore("cid", "cached-missing", nil)
 
-	res := pcbResolveKind("cid", []string{"cached-missing"}, func(vs []string) pcbFetchResult {
+	res := newPcbFetchResult()
+	pcbResolveKind("cid", []string{"cached-missing"}, res, map[string]bool{}, func(vs []string) pcbFetchResult {
 		t.Errorf("expected no fetch for a cached negative, got %v", vs)
 		return newPcbFetchResult()
-	})
+	}, func() {})
 	if !res.confirmedMissing["cached-missing"] {
 		t.Error("expected a cached negative to be reported as confirmed missing")
 	}
@@ -1036,6 +1040,45 @@ func TestResolvePubChemFallbackDirectCIDsDoNotWaitOnFormulaLookups(t *testing.T)
 	}
 }
 
+// Each miss is reported exactly once, and a CID's result 
+// goes out before the formula lookup is even sent
+func TestResolvePubChemFallbackStreamSettlesEachMissOnce(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "2244")
+	pcbClearCache(t, "formula", "C9H8O4")
+
+	settled := map[int]int{}
+	cidSentFirst := false
+	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "fastformula") {
+			cidSentFirst = settled[0] == 1
+			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[2244]}}`), nil
+		}
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":2244,"InChIKey":"BSYNRYMUTXBXSQ-UHFFFAOYSA-N","MolecularFormula":"C9H8O4"}`)), nil
+	})
+
+	results := []*model.SingleResult{
+		missResult("pubchem_id", "2244"),
+		missResult("formula", "C9H8O4"),
+		missResult("pubchem_id", "2244"),
+	}
+	resolvePubChemFallbackStream(context.Background(), results, true, func(i int) {
+		settled[i]++
+		if !results[i].MatchFound {
+			t.Errorf("result %d reported before it was filled in: %q", i, results[i].ErrMsg)
+		}
+	})
+
+	for i := range results {
+		if settled[i] != 1 {
+			t.Errorf("result %d: want reported once, got %d", i, settled[i])
+		}
+	}
+	if !cidSentFirst {
+		t.Error("the CID result should be reported before the formula lookup is sent")
+	}
+}
+
 func TestResolvePubChemFallbackNotFoundSetsMessage(t *testing.T) {
 	resetPcbPacing(t)
 	pcbClearCache(t, "pubchem_id", "999999999")
@@ -1105,8 +1148,8 @@ func TestResolvePubChemFallbackConfirmedMissingSurvivesBreakerTrip(t *testing.T)
 	}
 }
 
-// Same guarantee when the budget (here a cancelled context) ends the request
-func TestResolvePubChemFallbackConfirmedMissingSurvivesBudgetExpiry(t *testing.T) {
+// Previously missing compounds are still answered when the client cancels the request
+func TestResolvePubChemFallbackConfirmedMissingSurvivesCancellation(t *testing.T) {
 	resetPcbPacing(t)
 	pcbClearCache(t, "pubchem_id", "999999997")
 	pcbClearCache(t, "formula", "C9H8")
@@ -1114,7 +1157,7 @@ func TestResolvePubChemFallbackConfirmedMissingSurvivesBudgetExpiry(t *testing.T
 	t.Cleanup(cancel)
 	withMockPCBTransport(t, func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Path, "fastformula") {
-			cancel() // the budget runs out during the formula lookup
+			cancel() // the client leaves
 			return pcbResp(http.StatusOK, `{"IdentifierList":{"CID":[1]}}`), nil
 		}
 		return pcbResp(http.StatusOK, `{"PropertyTable":{"Properties":[]}}`), nil
@@ -1258,7 +1301,7 @@ func TestPcbExecuteReleasesSpotOnEveryExit(t *testing.T) {
 		}, cidReq},
 		{"build error", nil, func() (*http.Request, error) { return nil, errors.New("bad request") }},
 		{"panic while building", nil, func() (*http.Request, error) { panic("boom") }},
-		{"budget expires mid-flight", func(cancel context.CancelFunc) func(*http.Request) (*http.Response, error) {
+		{"client cancels mid-flight", func(cancel context.CancelFunc) func(*http.Request) (*http.Response, error) {
 			return func(*http.Request) (*http.Response, error) { cancel(); return pcbResp(http.StatusOK, "{}"), nil }
 		}, cidReq},
 		{"transport error until the breaker trips", func(context.CancelFunc) func(*http.Request) (*http.Response, error) {
@@ -1581,12 +1624,11 @@ func pcbBackgroundContexts(n int) []context.Context {
 }
 
 // PubChem turns busy under a burst of concurrent requests. The gate backs off,
-// never exceeds its in-flight limit, and with enough budget every value is answered
+// never exceeds its in-flight limit, and every value is answered
 func TestResolvePubChemFallbackRidesOutBusyPubChem(t *testing.T) {
 	resetPcbPacing(t)
 	pcbMinGap, pcbThrottledGap, pcbThrottlePause = 2*time.Millisecond, 20*time.Millisecond, 30*time.Millisecond
 	pcbOwnLevelGaps = []time.Duration{0, 10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
-	pcbFallbackBudget = 10 * time.Second
 	fake := &pcbFakeBusyPubChem{window: 100 * time.Millisecond, busyAt: 4, limit: 8, latency: 5 * time.Millisecond}
 	withMockPCBTransport(t, fake.roundTrip)
 
@@ -1608,18 +1650,18 @@ func TestResolvePubChemFallbackRidesOutBusyPubChem(t *testing.T) {
 	}
 }
 
-// PubChem stays saturated past the budget. Unanswered values come back
-// unavailable, and the request itself still returns on time
-func TestResolvePubChemFallbackBusyPastBudgetMarksUnavailable(t *testing.T) {
+// PubChem stays saturated through every throttle retry. Unanswered values come
+// back unavailable, and the request ends with its retries rather than hanging
+func TestResolvePubChemFallbackBusyThroughRetriesMarksUnavailable(t *testing.T) {
 	resetPcbPacing(t)
-	pcbThrottlePause, pcbFallbackBudget = 30*time.Millisecond, 150*time.Millisecond
+	pcbThrottlePause = 5 * time.Millisecond
 	fake := &pcbFakeBusyPubChem{window: time.Second, limit: 1, latency: time.Millisecond, alwaysBusy: true}
 	withMockPCBTransport(t, fake.roundTrip)
 
 	start := time.Now()
 	all := pcbRunFallbacks(t, pcbBackgroundContexts(4), 2, 920000)
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Errorf("want every request back shortly after the 150ms budget, took %s", elapsed)
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("want every request back once its retries run out, took %s", elapsed)
 	}
 	for i, results := range all {
 		for _, r := range results {

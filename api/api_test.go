@@ -1090,7 +1090,7 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
 	w := httptest.NewRecorder()
-	streamMatchResults(w, req, results)
+	streamMatchResults(w, req, results, true, func(func(int)) {})
 
 	type streamMsg struct {
 		Type    string                `json:"type"`
@@ -1133,6 +1133,54 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 		if cf == nil || cf.Error != cfbCappedNote {
 			t.Errorf("match[%d]: expected capped note, got %+v", i, cf)
 		}
+	}
+}
+
+// the stream sends local matches first, marks the
+// fallback row pending, then replaces it with the pubchem result
+func TestMatchStreamingPubChemFallback(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "2244")
+	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":2244,"InChIKey":"BSYNRYMUTXBXSQ-UHFFFAOYSA-N","MolecularFormula":"C9H8O4"}`)), nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?stream=true", strings.NewReader(`{"queries":"1 2244"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	if ct := w.Result().Header.Get("Content-Type"); ct != "application/x-ndjson" {
+		t.Fatalf("expected NDJSON content type, got %q", ct)
+	}
+
+	type streamMsg struct {
+		Type    string                `json:"type"`
+		Results []*model.SingleResult `json:"results"`
+		Index   int                   `json:"index"`
+		Result  *model.SingleResult   `json:"result"`
+	}
+	var msgs []streamMsg
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		var m streamMsg
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		msgs = append(msgs, m)
+	}
+
+	if len(msgs) != 3 || msgs[0].Type != "matches" || msgs[1].Type != "pubchem" || msgs[2].Type != "done" {
+		t.Fatalf("want matches, pubchem, done lines, got %+v", msgs)
+	}
+	local, waiting := msgs[0].Results[0], msgs[0].Results[1]
+	if !local.MatchFound || local.Pending {
+		t.Errorf("local hit should arrive found and not pending: %+v", local)
+	}
+	if !waiting.Pending {
+		t.Error("the fallback row should be pending in the matches line")
+	}
+	if msgs[1].Index != 1 || msgs[1].Result == nil || !msgs[1].Result.MatchFound || msgs[1].Result.Pending {
+		t.Errorf("pubchem line should carry the found, settled result at index 1: %+v", msgs[1])
 	}
 }
 

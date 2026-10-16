@@ -34,14 +34,15 @@ type Compound struct {
 }
 
 type SingleResult struct {
-	Query          string      `json:"query"`
-	QueryType      string      `json:"query_type"`
-	ConvertedQuery string      `json:"converted_query,omitempty"`
-	MatchFound     bool        `json:"found_match"`
-	MatchLevel     string      `json:"match_level"`
-	Matches        []*Compound `json:"matches"`
-	ErrMsg         string      `json:"error_message"`
-	DerivedInChIKey string `json:"-"`
+	Query           string      `json:"query"`
+	QueryType       string      `json:"query_type"`
+	ConvertedQuery  string      `json:"converted_query,omitempty"`
+	MatchFound      bool        `json:"found_match"`
+	MatchLevel      string      `json:"match_level"`
+	Matches         []*Compound `json:"matches"`
+	ErrMsg          string      `json:"error_message"`
+	Pending         bool        `json:"pending,omitempty"` // true while the fallback request is in flight
+	DerivedInChIKey string      `json:"-"`
 }
 
 // PubChemIndex wraps an SQLite database and prepared statements for each lookup type

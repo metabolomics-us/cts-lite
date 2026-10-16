@@ -35,13 +35,13 @@ const pcbCIDBatchSize = 1000
 // result contributes before batched property-fetching
 const pcbFormulaCIDFetchCap = 50
 
-// pcbFallbackBudget is the belt-and-suspenders wall-clock backstop
+// Per-request lookup limits. Max of 100 batch calls and 100 formula calls
 const pcbMaxBatchedValues = 100000
-const pcbMaxFormulaLookups = 50
-var pcbFallbackBudget = 20 * time.Second // is a var so tests can shorten it
+const pcbMaxFormulaLookups = 100
 
-// TODO:
-// test values - revisit once there is real traffic data against PubChem.
+// pcbFormulaGroupSize is how many formulas share one candidate CID call, then stream the results 
+const pcbFormulaGroupSize = 5
+
 var (
 	pcbMinGap        = 250 * time.Millisecond
 	pcbThrottledGap  = 1500 * time.Millisecond
@@ -319,8 +319,8 @@ func pcbRetryAfterFailure(ctx context.Context, br *pcbBreaker, attempt int, ev t
 	pcbLogEvent(ctx, ev, "%s %s on attempt %d, retrying in %s", ev.Endpoint, what, ev.Attempt, ev.Delay)
 	br.retries++
 	if pcbSleep(ctx, ev.Delay) != nil {
-		pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Endpoint: ev.Endpoint, Path: ev.Path},
-			"%s retry abandoned, the request budget ran out", ev.Endpoint)
+		pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "cancelled", Endpoint: ev.Endpoint, Path: ev.Path},
+			"%s retry abandoned, the request was cancelled", ev.Endpoint)
 		return false
 	}
 	return true
@@ -363,7 +363,7 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 			settle(false, false, "")
 		}
 		if err := pcbWaitTurn(ctx); err != nil {
-			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Err: err},
+			pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "cancelled", Err: err},
 				"gave up waiting for a pacing slot: %v", err)
 			return nil, pcbFailed
 		}
@@ -400,13 +400,13 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 		br.calls++
 		resp, err := pcbHTTPClient.Do(req)
 		if ctx.Err() != nil {
-			// Usually the fallback budget expiring mid-flight
-			ev.Event = "budget_exhausted"
+			// The client disconnected
+			ev.Event = "cancelled"
 			ev.Attempt = attempt + 1
 			ev.Err = ctx.Err()
-			pcbLogEvent(ctx, ev, "%s aborted after the request budget ran out: %v", label, ctx.Err())
+			pcbLogEvent(ctx, ev, "%s aborted after the request was cancelled: %v", label, ctx.Err())
 			record("aborted")
-			telemetry.AddSpanEvent(ctx, "pubchem.budget_exhausted", attribute.String("endpoint", endpoint))
+			telemetry.AddSpanEvent(ctx, "pubchem.cancelled", attribute.String("endpoint", endpoint))
 			throttleHeader := ""
 			if resp != nil {
 				throttleHeader = resp.Header.Get("X-Throttling-Control")
@@ -482,8 +482,8 @@ func pcbExecute(ctx context.Context, br *pcbBreaker, batchSize int, buildReq fun
 				attribute.Int("attempt", attempt+1))
 			br.retries++
 			if pcbSleep(ctx, pcbThrottlePause) != nil {
-				pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "budget_exhausted", Endpoint: label, Path: endpoint},
-					"%s retry abandoned, the request budget ran out", label)
+				pcbLogEvent(ctx, telemetry.PubChemEvent{Event: "cancelled", Endpoint: label, Path: endpoint},
+					"%s retry abandoned, the request was cancelled", label)
 				return nil, pcbFailed
 			}
 			continue
@@ -1008,20 +1008,21 @@ func StartPubChemHealthCheck(ctx context.Context) {
 // pcbMiss is one (result, kind, value) triple awaiting a PubChem attempt
 type pcbMiss struct {
 	result *model.SingleResult
-	kind   string // "pubchem_id" | "inchi" | "inchikey" | "smiles" | "formula" | "smiles_or_formula"
+	index  int    // position of result in the request, so a streamed update can name it
+	kind   string // query type
 	value  string
 }
 
 // collectPubChemMisses gathers every locally-missed result eligible for fallback.
 func collectPubChemMisses(results []*model.SingleResult) []pcbMiss {
 	var misses []pcbMiss
-	for _, r := range results {
+	for i, r := range results {
 		if r.MatchFound || r.ErrMsg == "Internal server error" {
 			continue
 		}
 		switch r.QueryType {
 		case "pubchem_id", "inchi", "inchikey", "smiles", "formula", "smiles_or_formula":
-			misses = append(misses, pcbMiss{result: r, kind: r.QueryType, value: r.Query})
+			misses = append(misses, pcbMiss{result: r, index: i, kind: r.QueryType, value: r.Query})
 		}
 	}
 	return misses
@@ -1043,11 +1044,42 @@ type pcbResolutionContext struct {
 	cidMissing      map[string]bool
 	inchikeyMissing map[string]bool
 	formulaMissing  map[string]bool
+
+	// Values whose lookup is over, answered or not, so nothing more can change them
+	cidDone      map[string]bool
+	inchikeyDone map[string]bool
+	formulaDone  map[string]bool
+}
+
+// pcbLookupDone reports whether every lookup (kind, value) depends on is over,
+// so its result is final and can be sent. Mirrors pcbConfirmedMissing
+func pcbLookupDone(kind, value string, rc pcbResolutionContext) bool {
+	switch kind {
+	case "pubchem_id":
+		return rc.cidDone[value]
+	case "inchikey":
+		return rc.inchikeyDone[value]
+	case "inchi":
+		// A value RDKit could not convert is never sent, so it is done already
+		key, converted := rc.inchiToKey[value]
+		return !converted || rc.inchikeyDone[key]
+	case "smiles":
+		key, converted := rc.smilesToKey[value]
+		return !converted || rc.inchikeyDone[key]
+	case "formula":
+		return rc.formulaDone[value]
+	case "smiles_or_formula":
+		if key, converted := rc.smilesToKey[value]; converted {
+			return rc.inchikeyDone[key]
+		}
+		return rc.formulaDone[value]
+	}
+	return true
 }
 
 // pcbConfirmedMissing reports whether PubChem itself said (kind, value) has no
 // match. It separates a real not_found from a value whose lookup was cut off by
-// the breaker or budget
+// the breaker or a cancellation
 func pcbConfirmedMissing(kind, value string, rc pcbResolutionContext) bool {
 	switch kind {
 	case "pubchem_id":
@@ -1115,8 +1147,9 @@ func resolveOne(kind, value string, rc pcbResolutionContext) (compounds []*model
 }
 
 // pcbResolveKind checks the cache first before sending cache misses to PubChem
-func pcbResolveKind(kind string, values []string, fetchFn func([]string) pcbFetchResult) pcbFetchResult {
-	res := newPcbFetchResult()
+// one batch at a time. Answers go into res, done marks each value once its
+// lookup is over, and settled runs after every step so finished values go out early
+func pcbResolveKind(kind string, values []string, res pcbFetchResult, done map[string]bool, fetchFn func([]string) pcbFetchResult, settled func()) {
 	var toFetch []string
 	for _, v := range values {
 		if compounds, ok := pcbCacheLookup(kind, v); ok {
@@ -1125,12 +1158,14 @@ func pcbResolveKind(kind string, values []string, fetchFn func([]string) pcbFetc
 			} else {
 				res.confirmedMissing[v] = true
 			}
+			done[v] = true
 			continue
 		}
 		toFetch = append(toFetch, v)
 	}
-	if len(toFetch) > 0 {
-		fetched := fetchFn(toFetch)
+	settled()
+	for _, part := range pcbChunk(toFetch, pcbCIDBatchSize) {
+		fetched := fetchFn(part)
 		for v, c := range fetched.found {
 			res.found[v] = c
 			pcbCacheStore(kind, v, []*model.Compound{c})
@@ -1139,8 +1174,11 @@ func pcbResolveKind(kind string, values []string, fetchFn func([]string) pcbFetc
 			res.confirmedMissing[v] = true
 			pcbCacheStore(kind, v, nil)
 		}
+		for _, v := range part {
+			done[v] = true
+		}
+		settled()
 	}
-	return res
 }
 
 // pcbFallbackCounts tallies the terminal outcome of each local miss
@@ -1150,17 +1188,25 @@ type pcbFallbackCounts struct {
 
 // resolvePubChemFallback attempts a live PubChem lookup for every local miss
 func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, topHitOnly bool) (counts pcbFallbackCounts) {
+	return resolvePubChemFallbackStream(ctx, results, topHitOnly, nil)
+}
+
+// resolvePubChemFallbackStream is resolvePubChemFallback that calls onSettled
+// with a result's index once its outcome is final, exactly once per local miss.
+// There is no time limit, the lookups end when they are answered, the breaker
+// trips, or the client goes away
+func resolvePubChemFallbackStream(ctx context.Context, results []*model.SingleResult, topHitOnly bool, onSettled func(index int)) (counts pcbFallbackCounts) {
 	misses := collectPubChemMisses(results)
 	if len(misses) == 0 {
 		return counts
+	}
+	if onSettled == nil {
+		onSettled = func(int) {}
 	}
 
 	start := time.Now()
 	ctx, span := telemetry.StartSpan(ctx, "pubchem_fallback")
 	defer span.End()
-
-	ctx, cancel := context.WithTimeout(ctx, pcbFallbackBudget)
-	defer cancel()
 
 	included := make(map[string]bool)
 	batchedUsed, formulaUsed := 0, 0
@@ -1208,6 +1254,7 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		}
 		typeCounts(m).skipped++
 		m.result.ErrMsg = "No local match; PubChem live lookup limit reached"
+		onSettled(m.index)
 	}
 
 	// Group deduplicated values by kind.
@@ -1272,67 +1319,25 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		unparseable["inchi|"+v] = true
 	}
 
-	// Batch calls run before the per-value formula calls
-	cid := pcbResolveKind("pubchem_id", byKind["pubchem_id"], func(vs []string) pcbFetchResult {
-		return fetchCIDsBatched(ctx, br, vs)
-	})
-
-	inchikey := pcbResolveKind("inchikey", byKind["inchikey"], func(vs []string) pcbFetchResult {
-		return fetchInChIKeysBatched(ctx, br, vs)
-	})
-
-	// fastformula answers with CIDs rather than compounds, so formulas need a
-	// second pass over the CID endpoint once their candidates are known
-	byFormulaCIDs, allFormulaCIDs, formulaMissing := map[string][]string{}, []string{}, map[string]bool{}
-	if len(byKind["formula"]) > 0 && ctx.Err() == nil {
-		byFormulaCIDs, allFormulaCIDs, formulaMissing = fetchFormulaCIDs(ctx, br, byKind["formula"])
-	}
-
-	// Second CID batch after formula resolution so the real CID queries don't have to wait
-	if len(allFormulaCIDs) > 0 {
-		formulaCID := pcbResolveKind("pubchem_id", allFormulaCIDs, func(vs []string) pcbFetchResult {
-			return fetchCIDsBatched(ctx, br, vs)
-		})
-		for c, compound := range formulaCID.found {
-			cid.found[c] = compound
-		}
-		for c := range formulaCID.confirmedMissing {
-			cid.confirmedMissing[c] = true
-		}
-	}
-
-	formulaResolved := pcbBuildFormulaResults(byFormulaCIDs, cid.found, topHitOnly)
-
-	// A formula whose candidates (CIDs) were not found by PubChem is as settled as
-	// one fastformula denied outright
-	for f, cids := range byFormulaCIDs {
-		if len(formulaResolved[f]) > 0 {
-			continue
-		}
-		allMissing := true
-		for _, c := range cids {
-			if !cid.confirmedMissing[c] {
-				allMissing = false
-				break
-			}
-		}
-		if allMissing {
-			formulaMissing[f] = true
-		}
-	}
-
+	// Filled in as lookups finish, so each miss can be settled as soon as its own answer is in
+	cid, inchikey := newPcbFetchResult(), newPcbFetchResult()
 	rc := pcbResolutionContext{
 		cid:             cid.found,
 		inchikey:        inchikey.found,
-		formula:         formulaResolved,
+		formula:         map[string][]*model.Compound{},
 		smilesToKey:     smilesToKey,
 		inchiToKey:      inchiToKey,
 		cidMissing:      cid.confirmedMissing,
 		inchikeyMissing: inchikey.confirmedMissing,
-		formulaMissing:  formulaMissing,
+		formulaMissing:  map[string]bool{},
+		cidDone:         map[string]bool{},
+		inchikeyDone:    map[string]bool{},
+		formulaDone:     map[string]bool{},
 	}
 
-	for _, m := range eligible {
+	// settle writes the final outcome onto its result and reports it
+	settle := func(m pcbMiss) {
+		defer onSettled(m.index)
 		compounds, level, convType, convQuery, ok := resolveOne(m.kind, m.value, rc)
 		if !ok {
 			switch {
@@ -1346,13 +1351,13 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 				c.notFound++
 				m.result.ErrMsg = "No compound found (including PubChem live lookup)"
 			default:
-				// No answer from PubChem: breaker, budget, or a call that gave up
+				// No answer from PubChem: breaker, cancellation, or a call that gave up
 				c := typeCounts(m)
 				c.attempted++
 				c.failed++
 				m.result.ErrMsg = "No local match; PubChem live lookup unavailable"
 			}
-			continue
+			return
 		}
 		m.result.MatchFound = true
 		m.result.ErrMsg = ""
@@ -1374,6 +1379,81 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		c.found++
 	}
 
+	// settleReady settles every miss whose lookups are all over
+	waiting := append([]pcbMiss(nil), eligible...)
+	settleReady := func() {
+		still := waiting[:0]
+		for _, m := range waiting {
+			if pcbLookupDone(m.kind, m.value, rc) {
+				settle(m)
+			} else {
+				still = append(still, m)
+			}
+		}
+		waiting = still
+	}
+	// Values RDKit could not read are final already
+	settleReady()
+
+	// Batch calls run before the per-value formula calls
+	pcbResolveKind("pubchem_id", byKind["pubchem_id"], cid, rc.cidDone, func(vs []string) pcbFetchResult {
+		return fetchCIDsBatched(ctx, br, vs)
+	}, settleReady)
+
+	pcbResolveKind("inchikey", byKind["inchikey"], inchikey, rc.inchikeyDone, func(vs []string) pcbFetchResult {
+		return fetchInChIKeysBatched(ctx, br, vs)
+	}, settleReady)
+
+	// fastformula answers with CIDs rather than compounds, so formulas need a
+	// second pass over the CID endpoint once their candidates are known 
+	for _, group := range pcbChunk(byKind["formula"], pcbFormulaGroupSize) {
+		if ctx.Err() == nil {
+			byFormulaCIDs, groupCIDs, formulaMissing := fetchFormulaCIDs(ctx, br, group)
+			for f := range formulaMissing {
+				rc.formulaMissing[f] = true
+			}
+
+			// Candidates already known (an earlier group or a direct CID query) come from the cache
+			if len(groupCIDs) > 0 {
+				pcbResolveKind("pubchem_id", groupCIDs, cid, rc.cidDone, func(vs []string) pcbFetchResult {
+					return fetchCIDsBatched(ctx, br, vs)
+				}, func() {})
+			}
+
+			formulaResolved := pcbBuildFormulaResults(byFormulaCIDs, cid.found, topHitOnly)
+			for f, compounds := range formulaResolved {
+				rc.formula[f] = compounds
+			}
+
+			// A formula whose candidates (CIDs) were not found by PubChem is as settled as
+			// one fastformula denied outright
+			for f, cids := range byFormulaCIDs {
+				if len(formulaResolved[f]) > 0 {
+					continue
+				}
+				allMissing := true
+				for _, c := range cids {
+					if !cid.confirmedMissing[c] {
+						allMissing = false
+						break
+					}
+				}
+				if allMissing {
+					rc.formulaMissing[f] = true
+				}
+			}
+		}
+		for _, f := range group {
+			rc.formulaDone[f] = true
+		}
+		settleReady()
+	}
+
+	// Every lookup has ended by now, this only guards the exactly-once promise to onSettled
+	for _, m := range waiting {
+		settle(m)
+	}
+
 	for queryType, c := range perType {
 		telemetry.RecordPubChemFallbackOutcomes(ctx, queryType, c.found, c.notFound, c.unparseable, c.failed, c.skipped)
 		counts.attempted += c.attempted
@@ -1384,7 +1464,8 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		counts.skipped += c.skipped
 	}
 
-	budgetExhausted := errors.Is(ctx.Err(), context.DeadlineExceeded)
+	// The client disconnected. Not an error
+	cancelled := ctx.Err() != nil
 	span.SetAttributes(
 		attribute.Int("pubchem.misses", len(misses)),
 		attribute.Int("pubchem.found", counts.found),
@@ -1393,13 +1474,10 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		attribute.Int("pubchem.failed", counts.failed),
 		attribute.Int("pubchem.skipped", counts.skipped),
 		attribute.Bool("pubchem.breaker_tripped", br.tripped),
-		attribute.Bool("pubchem.budget_exhausted", budgetExhausted),
+		attribute.Bool("pubchem.cancelled", cancelled),
 	)
-	switch {
-	case br.tripped:
+	if br.tripped {
 		span.SetStatus(codes.Error, "PubChem circuit breaker tripped")
-	case budgetExhausted:
-		span.SetStatus(codes.Error, "PubChem fallback budget exhausted")
 	}
 
 	telemetry.LogPubChemFallbackSummary(ctx, telemetry.PubChemFallbackSummary{
@@ -1413,7 +1491,7 @@ func resolvePubChemFallback(ctx context.Context, results []*model.SingleResult, 
 		Calls:           br.calls,
 		Retries:         br.retries,
 		BreakerTripped:  br.tripped,
-		BudgetExhausted: budgetExhausted,
+		Cancelled:       cancelled,
 		Duration:        time.Since(start),
 	})
 
