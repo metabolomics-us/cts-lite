@@ -600,7 +600,7 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 		result := results[index]
 		result.Pending = false
 		if classyfireEnabled {
-			// Attaches the top 3 cap note before the line goes out, as the matches line had
+			// Attaches the top hit cap note before the line goes out, as the matches line had
 			classifiableKeys([]*model.SingleResult{result})
 		}
 		writeLine(map[string]any{"type": "pubchem", "index": index, "result": result})

@@ -1126,7 +1126,7 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 		t.Errorf("last line: want done, got %q", msgs[len(msgs)-1].Type)
 	}
 
-	// Matches beyond the top 3 must carry the capped note in the initial matches line
+	// Matches beyond the top hit must carry the capped note in the initial matches line
 	streamed := msgs[0].Results[0].Matches
 	for i := cfbMaxMatchesPerQuery; i < len(streamed); i++ {
 		cf := streamed[i].ClassyFire

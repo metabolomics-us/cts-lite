@@ -355,10 +355,10 @@ func fetchOnce(ctx context.Context, key string) (res cfbFetch, ok bool) {
 	return res, true
 }
 
-const cfbMaxMatchesPerQuery = 3
-const cfbCappedNote = "Only the top 3 hits of each query are classified for latency considerations"
+const cfbMaxMatchesPerQuery = 1
+const cfbCappedNote = "Only the top hit of each query is classified for latency considerations"
 
-// Determine the list of InChIKeys to be classified. Ignore matches past the top 3 of a single query (attach capped note)
+// Determine the list of InChIKeys to be classified. Ignore matches past the top hit of a single query (attach capped note)
 func classifiableKeys(results []*model.SingleResult) []string {
 	seen := make(map[string]bool)
 	var keys []string

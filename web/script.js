@@ -340,7 +340,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const buildInchikeyIndex = () => {
           inchikeyIndex = new Map();
           allData.forEach(r => (r.matches || []).forEach(m => {
-            // Matches beyond the top three cap already carry a note; don't queue
+            // Matches beyond the top hit cap already carry a note; don't queue
             // them for live updates or a streamed line would overwrite it
             if (m.classyfire) return;
             if (!inchikeyIndex.has(m.inchikey)) inchikeyIndex.set(m.inchikey, []);
@@ -504,7 +504,7 @@ function displayResults(data, outputElement, offset = 0) {
               ${classyfireRequested ? `
               <div class="match-field classyfire-heading"><label>Chemical Classification</label></div>
               ${!match.classyfire ? `<div class="match-field cf-queued"><span>Queued</span><span class="inline-spinner" aria-hidden="true"></span></div>`
-              : match.classyfire.error ? `<div class="match-field"><label>${match.classyfire.error.startsWith("Only the top") ? "Skipped:" : "Error:"}</label><span class="monospace small-text">${escapeHtml(match.classyfire.error)}</span></div>`
+              : match.classyfire.error ? `<div class="match-field"><label>${match.classyfire.error.startsWith("Only the top") ? "Skipped:" : "Error:"}</label><span class="monospace small-text" style="word-break: normal;">${escapeHtml(match.classyfire.error)}</span></div>`
               : (match.classyfire.kingdom || match.classyfire.superclass || match.classyfire.class || match.classyfire.subclass || match.classyfire.direct_parent || match.classyfire.description) ? `
               ${match.classyfire.kingdom ? `<div class="match-field"><label>Kingdom:</label><span class="monospace">${escapeHtml(match.classyfire.kingdom)}</span></div>` : ""}
               ${match.classyfire.superclass ? `<div class="match-field"><label>Superclass:</label><span class="monospace">${escapeHtml(match.classyfire.superclass)}</span></div>` : ""}

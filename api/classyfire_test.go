@@ -586,10 +586,8 @@ func TestEnrichWithClassyFirePacesByCacheHeader(t *testing.T) {
 	t.Cleanup(func() { classyFireFetcher = orig })
 
 	results := []*model.SingleResult{
-		{MatchFound: true, Matches: []*model.Compound{
-			{InChIKey: "AAAAAAAAAAAAAA-BBBBBBBBBB-A"}, // MISS first
-			{InChIKey: "CCCCCCCCCCCCCC-DDDDDDDDDD-B"}, // HIT second
-		}},
+		{MatchFound: true, Matches: []*model.Compound{{InChIKey: "AAAAAAAAAAAAAA-BBBBBBBBBB-A"}}}, // MISS first
+		{MatchFound: true, Matches: []*model.Compound{{InChIKey: "CCCCCCCCCCCCCC-DDDDDDDDDD-B"}}}, // HIT second
 	}
 
 	start := time.Now()

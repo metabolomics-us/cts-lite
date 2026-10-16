@@ -6,7 +6,7 @@ const fs = require('fs');
 // "Mid-stream" UI states are observed as stable end states by deliberately
 // omitting the trailing `done` line or a key's `classyfire` line.
 
-const CAPPED_NOTE = 'Only the top 3 hits of each query are classified for latency considerations';
+const CAPPED_NOTE = 'Only the top hit of each query is classified for latency considerations';
 
 const CF = {
   kingdom: 'Organic compounds',
@@ -84,15 +84,15 @@ test('classyfire service-down error is shown on the card', async ({ page }) => {
   await expect(card).toContainText('ClassyFire is currently unavailable');
 });
 
-// Matches past the top 3 carry a "Skipped" warning instead of a classification
-test('matches beyond the top 3 show the capped warning', async ({ page }) => {
+// Matches past the top hit carry a "Skipped" warning instead of a classification
+test('matches beyond the top hit show the capped warning', async ({ page }) => {
   const keys = ['AAAAAAAAAAAAAA-AAAAAAAAAA-A', 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', 'CCCCCCCCCCCCCC-CCCCCCCCCC-C', 'DDDDDDDDDDDDDD-DDDDDDDDDD-D'];
   const matches = keys.map((k, i) =>
-    i < 3 ? match({ inchikey: k }) : match({ inchikey: k, classyfire: { error: CAPPED_NOTE } }));
+    i < 1 ? match({ inchikey: k }) : match({ inchikey: k, classyfire: { error: CAPPED_NOTE } }));
 
   await mockMatch(page, nd(
-    { type: 'matches', results: [result(matches)], unique: 3, queue: 1 },
-    ...keys.slice(0, 3).map((k) => ({ type: 'classyfire', inchikey: k, info: CF, queue: 1 })),
+    { type: 'matches', results: [result(matches)], unique: 1, queue: 1 },
+    ...keys.slice(0, 1).map((k) => ({ type: 'classyfire', inchikey: k, info: CF, queue: 1 })),
     { type: 'done' },
   ));
 
