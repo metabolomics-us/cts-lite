@@ -549,6 +549,12 @@ func pcbCacheLookup(kind, value string) ([]*model.Compound, bool) {
 	return entry.compounds, ok
 }
 
+// pcbCopyCompound returns a shallow copy of a cached compound
+func pcbCopyCompound(c *model.Compound) *model.Compound {
+	cp := *c
+	return &cp
+}
+
 func pcbCacheStore(kind, value string, compounds []*model.Compound) {
 	pcbCache.Store(pcbCacheKey(kind, value), pcbCacheEntry{compounds: compounds, expires: time.Now().Add(pcbCacheTTL)})
 }
@@ -1154,7 +1160,7 @@ func pcbResolveKind(kind string, values []string, res pcbFetchResult, done map[s
 	for _, v := range values {
 		if compounds, ok := pcbCacheLookup(kind, v); ok {
 			if len(compounds) > 0 {
-				res.found[v] = compounds[0]
+				res.found[v] = pcbCopyCompound(compounds[0])
 			} else {
 				res.confirmedMissing[v] = true
 			}
@@ -1167,7 +1173,7 @@ func pcbResolveKind(kind string, values []string, res pcbFetchResult, done map[s
 	for _, part := range pcbChunk(toFetch, pcbCIDBatchSize) {
 		fetched := fetchFn(part)
 		for v, c := range fetched.found {
-			res.found[v] = c
+			res.found[v] = pcbCopyCompound(c)
 			pcbCacheStore(kind, v, []*model.Compound{c})
 		}
 		for v := range fetched.confirmedMissing {

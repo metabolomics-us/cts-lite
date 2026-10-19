@@ -431,6 +431,28 @@ func TestPcbResolveKindSkipsNetworkOnCacheHit(t *testing.T) {
 	}
 }
 
+// Writing to a resolved compound (cap note, ClassyFire info) must not reach the
+// cache, or later requests would see it. Covers both the cached and fetched paths
+func TestPcbResolveKindReturnsCopies(t *testing.T) {
+	pcbClearCache(t, "cid", "copy-cached")
+	pcbClearCache(t, "cid", "copy-fetched")
+	pcbCacheStore("cid", "copy-cached", []*model.Compound{{Identifier: "copy-cached"}})
+
+	res := newPcbFetchResult()
+	pcbResolveKind("cid", []string{"copy-cached", "copy-fetched"}, res, map[string]bool{}, func(vs []string) pcbFetchResult {
+		fetched := newPcbFetchResult()
+		fetched.found["copy-fetched"] = &model.Compound{Identifier: "copy-fetched"}
+		return fetched
+	}, func() {})
+
+	for _, v := range []string{"copy-cached", "copy-fetched"} {
+		res.found[v].ClassyFire = &model.ClassyFireInfo{Error: cfbCappedNote}
+		if cached, _ := pcbCacheLookup("cid", v); cached[0].ClassyFire != nil {
+			t.Errorf("%s: write to the resolved compound reached the cache: %+v", v, cached[0].ClassyFire)
+		}
+	}
+}
+
 // A cached negative is PubChem's earlier answer, so it must count as
 // confirmed missing rather than as a value that never got an answer
 func TestPcbResolveKindCachedNegativeIsConfirmedMissing(t *testing.T) {
