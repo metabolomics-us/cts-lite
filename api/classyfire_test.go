@@ -350,7 +350,7 @@ func TestStreamClassyFireLogsClientDisconnect(t *testing.T) {
 		"CYYVLZVUVIJVGH-UHFFFAOYSA-N",
 	}
 	var got int
-	streamClassyFire(ctx, keys, func(key string, info *model.ClassyFireInfo) {
+	streamClassyFire(ctx, cfbKeyChan(keys), func(key string, info *model.ClassyFireInfo) {
 		got++
 		cancel() // client disconnects after the first result resolves
 	})
@@ -358,7 +358,7 @@ func TestStreamClassyFireLogsClientDisconnect(t *testing.T) {
 	if got != 1 {
 		t.Errorf("expected to stop after 1 result, processed %d", got)
 	}
-	if want := "ClassyFire request cancelled by client; stopping after 1 of 3 compounds"; !strings.Contains(logBuf.String(), want) {
+	if want := "ClassyFire request cancelled by client; stopping after 1 compounds"; !strings.Contains(logBuf.String(), want) {
 		t.Errorf("expected log to contain %q, got: %q", want, logBuf.String())
 	}
 }
@@ -612,7 +612,7 @@ func TestStreamClassyFireCancels(t *testing.T) {
 	cancel() // already cancelled
 
 	var emitted int
-	streamClassyFire(ctx, []string{"A", "B", "C"}, func(key string, info *model.ClassyFireInfo) {
+	streamClassyFire(ctx, cfbKeyChan([]string{"A", "B", "C"}), func(key string, info *model.ClassyFireInfo) {
 		emitted++
 	})
 
@@ -647,8 +647,8 @@ func TestStreamClassyFireInterleavesConcurrentBatches(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); streamClassyFire(context.Background(), keys, record("A")) }()
-	go func() { defer wg.Done(); streamClassyFire(context.Background(), keys, record("B")) }()
+	go func() { defer wg.Done(); streamClassyFire(context.Background(), cfbKeyChan(keys), record("A")) }()
+	go func() { defer wg.Done(); streamClassyFire(context.Background(), cfbKeyChan(keys), record("B")) }()
 	wg.Wait()
 
 	// Assign when the first B was classified vs the last A

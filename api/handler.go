@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -571,7 +572,10 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	enc := json.NewEncoder(w)
+	var writeMu sync.Mutex // ClassyFire lines come from its own goroutine
 	writeLine := func(v any) bool {
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		if err := enc.Encode(v); err != nil {
 			if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
 				log.Printf("Failed to write stream message: %v", err)
@@ -583,46 +587,83 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 	}
 
 	// Rows still waiting on PubChem, each is replaced by a pubchem line once its answer is in
-	for _, m := range collectPubChemMisses(results) {
+	misses := collectPubChemMisses(results)
+	for _, m := range misses {
 		m.result.Pending = true
 	}
 
+	var localKeys []string
 	matches := map[string]any{"type": "matches", "results": results}
 	if classyfireEnabled {
-		// Local hits only, the final count comes in the classifying line
-		matches["unique"] = len(classifiableKeys(results))
+		// Local hits only, each classifying line brings the running count
+		localKeys = classifiableKeys(results)
+		matches["unique"] = len(localKeys)
 	}
 	if !writeLine(matches) {
 		return
 	}
 
-	fallback(func(index int) {
-		result := results[index]
-		result.Pending = false
-		if classyfireEnabled {
-			// Attaches the top hit cap note before the line goes out, as the matches line had
-			classifiableKeys([]*model.SingleResult{result})
+	if !classyfireEnabled {
+		fallback(func(index int) {
+			results[index].Pending = false
+			writeLine(map[string]any{"type": "pubchem", "index": index, "result": results[index]})
+		})
+		writeLine(map[string]any{"type": "done"})
+		return
+	}
+
+	// ClassyFire runs alongside the fallback: local keys start now and PubChem
+	// hits join the same worker as they settle
+	keys := make(chan string, len(localKeys)+len(misses)*cfbMaxMatchesPerQuery)
+	seen := make(map[string]bool, len(localKeys))
+	inQueue := false
+	enqueue := func(newKeys []string) {
+		var fresh []string
+		for _, k := range newKeys {
+			if !seen[k] {
+				seen[k] = true
+				fresh = append(fresh, k)
+			}
 		}
-		writeLine(map[string]any{"type": "pubchem", "index": index, "result": result})
-	})
-
-	if classyfireEnabled {
-		keys := classifiableKeys(results)
-
-		// Count toward the shared-gate queue depth
-		if len(keys) > 0 {
-			cfbEnterQueue()
-			defer cfbLeaveQueue()
-		}
-
-		if !writeLine(map[string]any{"type": "classifying", "unique": len(keys), "queue": cfbQueueDepth()}) {
+		if len(fresh) == 0 {
 			return
 		}
+		// Count toward the shared-gate queue depth
+		if !inQueue {
+			inQueue = true
+			cfbEnterQueue()
+		}
+		// The new total goes out before any classyfire line for these keys
+		writeLine(map[string]any{"type": "classifying", "unique": len(seen), "queue": cfbQueueDepth()})
+		for _, k := range fresh {
+			keys <- k
+		}
+	}
+	defer func() {
+		if inQueue {
+			cfbLeaveQueue()
+		}
+	}()
 
+	cfDone := make(chan struct{})
+	go func() {
+		defer close(cfDone)
 		streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
 			writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
 		})
-	}
+	}()
+
+	enqueue(localKeys)
+	fallback(func(index int) {
+		result := results[index]
+		result.Pending = false
+		// Attaches the top hit cap note before the line goes out
+		hitKeys := classifiableKeys([]*model.SingleResult{result})
+		writeLine(map[string]any{"type": "pubchem", "index": index, "result": result})
+		enqueue(hitKeys)
+	})
+	close(keys)
+	<-cfDone
 
 	writeLine(map[string]any{"type": "done"})
 }

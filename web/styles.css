@@ -178,6 +178,25 @@ button:disabled {
   margin: 0.25rem 0 0.75rem 0;
 }
 
+/* PubChem fallback progress indicator */
+#pcb-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.75rem 0;
+  font-size: 0.85rem;
+  color: #444444;
+}
+
+#pcb-progress[hidden] {
+  display: none;
+}
+
+#pcb-progress .inline-spinner {
+  width: 14px;
+  height: 14px;
+}
+
 .cf-progress-track {
   width: 100%;
   height: 14px;

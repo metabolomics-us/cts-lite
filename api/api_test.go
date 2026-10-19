@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1076,7 +1077,7 @@ func TestClassyFireCSVNoMatchRowHasEmptyColumns(t *testing.T) {
 	}
 }
 
-// Streaming caps a query at the top 3 hits: extras carry the cap note and only 3 are classified
+// Streaming caps a query at the top hit: extras carry the cap note and only the top hit is classified
 func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
 		return cfbFetch{info: fakeClassyFireInfo()}, nil
@@ -1133,6 +1134,69 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 		if cf == nil || cf.Error != cfbCappedNote {
 			t.Errorf("match[%d]: expected capped note, got %+v", i, cf)
 		}
+	}
+}
+
+// ClassyFire starts on local hits while the fallback is still running, and the
+// PubChem hits join the same stream once each of them settles
+func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
+	localKey, liveKey := "AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N"
+	localClassified := make(chan struct{})
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		if inchikey == localKey {
+			close(localClassified)
+		}
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	results := []*model.SingleResult{
+		{Query: localKey, QueryType: "inchikey", MatchFound: true, Matches: []*model.Compound{{InChIKey: localKey}}},
+		{Query: liveKey, QueryType: "inchikey"},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
+	w := httptest.NewRecorder()
+	streamMatchResults(w, req, results, true, func(onSettled func(int)) {
+		// Simulate the fallback settling after the local key was classified
+		select {
+		case <-localClassified:
+		case <-time.After(2 * time.Second):
+			t.Error("ClassyFire did not start before the fallback settled")
+		}
+		results[1].MatchFound = true
+		results[1].Matches = []*model.Compound{{InChIKey: liveKey}}
+		onSettled(1)
+	})
+
+	var types []string
+	var uniques []int
+	classified := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		var m struct {
+			Type     string `json:"type"`
+			Unique   int    `json:"unique"`
+			InChIKey string `json:"inchikey"`
+		}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		types = append(types, m.Type)
+		if m.Type == "classifying" {
+			uniques = append(uniques, m.Unique)
+		}
+		if m.Type == "classyfire" {
+			classified[m.InChIKey] = true
+		}
+	}
+
+	if !classified[localKey] || !classified[liveKey] {
+		t.Errorf("expected both keys classified, got %v", classified)
+	}
+	if !slices.Equal(uniques, []int{1, 2}) {
+		t.Errorf("classifying totals: want [1 2], got %v", uniques)
+	}
+	if types[len(types)-1] != "done" {
+		t.Errorf("last line: want done, got %v", types)
 	}
 }
 

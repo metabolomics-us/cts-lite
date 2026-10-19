@@ -377,17 +377,28 @@ func classifiableKeys(results []*model.SingleResult) []string {
 	return keys
 }
 
-// Perform requests for each InChIKey in keys
-func streamClassyFire(ctx context.Context, keys []string, onResult func(key string, info *model.ClassyFireInfo)) {
+// cfbKeyChan feeds a fixed key list to streamClassyFire
+func cfbKeyChan(keys []string) <-chan string {
+	ch := make(chan string, len(keys))
+	for _, k := range keys {
+		ch <- k
+	}
+	close(ch)
+	return ch
+}
+
+// Perform requests for each InChIKey received on keys until the channel is closed
+func streamClassyFire(ctx context.Context, keys <-chan string, onResult func(key string, info *model.ClassyFireInfo)) {
 	start := time.Now()
 	ctx, span := telemetry.StartSpan(ctx, "classyfire")
 	br := &cfbBreaker{}
-	var completed, misses, failures int
+	var received, completed, misses, failures int
+	cancelled := false
 	// Deferred so outcomes are still counted when the client cancels mid-request
 	defer func() {
 		telemetry.RecordClassyFireOutcomes(ctx, completed, misses, failures)
 		span.SetAttributes(
-			attribute.Int("classyfire.keys", len(keys)),
+			attribute.Int("classyfire.keys", received),
 			attribute.Int("classyfire.classified", completed),
 			attribute.Int("classyfire.not_found", misses),
 			attribute.Int("classyfire.failed", failures),
@@ -398,10 +409,15 @@ func streamClassyFire(ctx context.Context, keys []string, onResult func(key stri
 		}
 		span.End()
 	}()
-	for i, key := range keys {
+	for key := range keys {
+		received++
+		// Keep draining after a cancel so a producer still sending never blocks
 		if ctx.Err() != nil {
-			log.Printf("ClassyFire request cancelled by client; stopping after %d of %d compounds", i, len(keys))
-			return
+			if !cancelled {
+				cancelled = true
+				log.Printf("ClassyFire request cancelled by client; stopping after %d compounds", received-1)
+			}
+			continue
 		}
 
 		info, outcome := classifyKey(ctx, key, br)
@@ -540,7 +556,7 @@ func enrichWithClassyFire(ctx context.Context, results []*model.SingleResult) {
 
 	// Stream results into map and wait until completed before returning result
 	cfMap := make(map[string]*model.ClassyFireInfo, len(keys))
-	streamClassyFire(ctx, keys, func(key string, info *model.ClassyFireInfo) {
+	streamClassyFire(ctx, cfbKeyChan(keys), func(key string, info *model.ClassyFireInfo) {
 		cfMap[key] = info
 	})
 

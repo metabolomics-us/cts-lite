@@ -21,7 +21,17 @@ function showCfProgress(done, total) {
   const pct = Math.round((done / total) * 100);
   wrap.querySelector(".cf-progress-fill").style.width = pct + "%";
   wrap.querySelector(".cf-progress-label").textContent =
-    `Classifying with ClassyFire… ${done} / ${total}`;
+    `Classifying with ClassyFire: ${done} / ${total}`;
+}
+
+// Update the PubChem Live status line
+function showPcbProgress(done, total) {
+  const wrap = document.getElementById("pcb-progress");
+  if (!wrap) return;
+  if (total <= 0 || done >= total) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  wrap.querySelector(".pcb-progress-label").textContent =
+    `PubChem Live lookups: ${done} / ${total} done`;
 }
 
 // Hide the ClassyFire progress bar (i.e. when classification is done)
@@ -230,6 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
     downloadButtons.style.display = "none";
     setDownloadsLoading(false);
     hideCfProgress();
+    showPcbProgress(0, 0);
     paginationControls.style.display = "none";
 
     // Bare quotes are dropped by the API, so a query of only those counts as blank
@@ -329,31 +340,25 @@ document.addEventListener("DOMContentLoaded", () => {
         clearTimeout(slowTimer);
 
         let inchikeyIndex = new Map(); // inchikey -> [match, ...] for O(1) live updates
+        const cfInfo = new Map(); // inchikey -> info already streamed, for PubChem rows that arrive later
         let totalUnique = 0;
         let classified = 0;
+        let pcbTotal = 0;
+        let pcbDone = 0;
         let rafScheduled = false;
         const scheduleRender = () => {
           if (rafScheduled) return;
           rafScheduled = true;
           requestAnimationFrame(() => { rafScheduled = false; renderPage(); updateHeader(); });
         };
-        const buildInchikeyIndex = () => {
-          inchikeyIndex = new Map();
-          allData.forEach(r => (r.matches || []).forEach(m => {
-            // Matches beyond the top hit cap already carry a note; don't queue
-            // them for live updates or a streamed line would overwrite it
-            if (m.classyfire) return;
-            if (!inchikeyIndex.has(m.inchikey)) inchikeyIndex.set(m.inchikey, []);
-            inchikeyIndex.get(m.inchikey).push(m);
-          }));
-        };
-        const startCfProgress = (msg) => {
-          totalUnique = msg.unique || 0;
-          classified = 0;
-          buildInchikeyIndex();
-          if (totalUnique > 0) showCfProgress(0, totalUnique);
-          updateCfQueue(msg.queue || 0);
-        };
+        const indexMatches = (r) => (r.matches || []).forEach(m => {
+          // Matches beyond the top hit cap already carry a note; don't overwrite them
+          if (m.classyfire) return;
+          // A key the stream already classified for another row won't get a second line
+          if (cfInfo.has(m.inchikey)) { m.classyfire = cfInfo.get(m.inchikey); return; }
+          if (!inchikeyIndex.has(m.inchikey)) inchikeyIndex.set(m.inchikey, []);
+          inchikeyIndex.get(m.inchikey).push(m);
+        });
 
         await consumeMatchStream(response, {
           onMatches: (msg) => {
@@ -362,19 +367,35 @@ document.addEventListener("DOMContentLoaded", () => {
             output.textContent = "";
             downloadButtons.style.display = "flex";
             setDownloadsLoading(true);
+            if (classyfireEnabled) {
+              allData.forEach(indexMatches);
+              totalUnique = msg.unique || 0;
+              if (totalUnique > 0) showCfProgress(0, totalUnique);
+              updateCfQueue(msg.queue || 0);
+            }
+            pcbTotal = allData.filter(r => r.pending).length;
+            showPcbProgress(0, pcbTotal);
             renderPage();
             updateHeader();
-            // With PubChem lookups still running, the classifying line brings the final count
-            if (classyfireEnabled && !allData.some(r => r.pending)) startCfProgress(msg);
           },
           onPubchem: (msg) => {
             allData[msg.index] = msg.result;
+            if (classyfireEnabled) indexMatches(msg.result);
+            pcbDone++;
+            showPcbProgress(pcbDone, pcbTotal);
             scheduleRender();
           },
-          onClassifying: startCfProgress,
+          // ClassyFire runs alongside the fallback, so the total grows as PubChem hits join
+          onClassifying: (msg) => {
+            totalUnique = msg.unique || 0;
+            if (totalUnique > 0) showCfProgress(classified, totalUnique);
+            updateCfQueue(msg.queue || 0);
+          },
           onClassyfire: (msg) => {
+            cfInfo.set(msg.inchikey, msg.info);
             const matches = inchikeyIndex.get(msg.inchikey);
             if (matches) matches.forEach(m => { m.classyfire = msg.info; });
+            inchikeyIndex.delete(msg.inchikey);
             classified++;
             showCfProgress(classified, totalUnique);
             updateCfQueue(msg.queue || 0);
@@ -384,6 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderPage();
             updateHeader();
             hideCfProgress();
+            showPcbProgress(0, 0);
             setDownloadsLoading(false);
           },
         });
@@ -402,6 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       clearTimeout(slowTimer);
       hideCfProgress();
+      showPcbProgress(0, 0);
       setDownloadsLoading(false);
       if (err.name !== "AbortError") {
         output.textContent = `Error: ${err.message}`;
