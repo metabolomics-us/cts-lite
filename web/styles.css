@@ -197,6 +197,15 @@ button:disabled {
   height: 14px;
 }
 
+.pcb-progress-note {
+  color: #6b7785;
+  font-style: italic;
+}
+
+.pcb-progress-note[hidden] {
+  display: none;
+}
+
 .cf-progress-track {
   width: 100%;
   height: 14px;
