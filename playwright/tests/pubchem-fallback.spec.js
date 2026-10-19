@@ -114,7 +114,7 @@ test('a pending PubChem row updates in place when its answer streams in', async 
   await expect(page.locator('.match-status.pending-lookup')).toHaveText('Using PubChem Live lookup');
   await expect(page.locator('.error-message')).toHaveCount(0);
   await expect(page.locator('#output-label')).toContainText('0 / 1');
-  await expect(page.locator('#pcb-progress')).toHaveText('PubChem Live lookups: 0 / 1 done');
+  await expect(page.locator('#pcb-progress')).toHaveText('PubChem Live lookups: 0 / 1');
 
   await push({ type: 'pubchem', index: 0, result: result('PubChem Live: Exact InChIKey') });
   await expect(page.locator('.match-status.pubchem-live-match')).toHaveText('✓ Match Found: PubChem Live');

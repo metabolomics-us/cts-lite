@@ -32,7 +32,7 @@ function showPcbProgress(done, total) {
   if (total <= 0 || done >= total) { wrap.hidden = true; return; }
   wrap.hidden = false;
   wrap.querySelector(".pcb-progress-label").textContent =
-    `PubChem Live lookups: ${done} / ${total} done`;
+    `PubChem Live lookups: ${done} / ${total}`;
 }
 
 // Hide the ClassyFire progress bar (i.e. when classification is done)
