@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -648,6 +649,12 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 	cfDone := make(chan struct{})
 	go func() {
 		defer close(cfDone)
+		// A panic here would take down the server without this defer
+		defer func() {
+			if p := recover(); p != nil {
+				log.Printf("ClassyFire stream panicked: %v\n%s", p, debug.Stack())
+			}
+		}()
 		streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
 			writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
 		})
