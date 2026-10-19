@@ -593,31 +593,19 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 		m.result.Pending = true
 	}
 
+	// ClassyFire runs alongside the fallback
 	var localKeys []string
-	matches := map[string]any{"type": "matches", "results": results}
-	if classyfireEnabled {
-		// Local hits only, each classifying line brings the running count
-		localKeys = classifiableKeys(results)
-		matches["unique"] = len(localKeys)
-	}
-	if !writeLine(matches) {
-		return
-	}
-
-	if !classyfireEnabled {
-		fallback(func(index int) {
-			results[index].Pending = false
-			writeLine(map[string]any{"type": "pubchem", "index": index, "result": results[index]})
-		})
-		writeLine(map[string]any{"type": "done"})
-		return
-	}
-
-	// ClassyFire runs alongside the fallback: local keys start now and PubChem
-	// hits join the same worker as they settle
-	keys := make(chan string, len(localKeys)+len(misses)*cfbMaxMatchesPerQuery)
-	seen := make(map[string]bool, len(localKeys))
+	var keys chan string
+	var cfDone chan struct{}
+	seen := map[string]bool{}
+	remaining := len(misses)
 	inQueue := false
+
+	// Upper bound on the # of compounds this request might classify (decreases with misses)
+	bound := func() int { return len(seen) + remaining*cfbMaxMatchesPerQuery }
+	lastBound := 0
+
+	// enqueue sends the bound when it changes
 	enqueue := func(newKeys []string) {
 		var fresh []string
 		for _, k := range newKeys {
@@ -626,16 +614,16 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 				fresh = append(fresh, k)
 			}
 		}
-		if len(fresh) == 0 {
-			return
-		}
-		// Count toward the shared-gate queue depth
-		if !inQueue {
-			inQueue = true
+		// Frontend sees the queue depth before the first classification
+		joined := false
+		if len(fresh) > 0 && !inQueue {
+			inQueue, joined = true, true
 			cfbEnterQueue()
 		}
-		// The new total goes out before any classyfire line for these keys
-		writeLine(map[string]any{"type": "classifying", "unique": len(seen), "queue": cfbQueueDepth()})
+		if b := bound(); b != lastBound || joined {
+			lastBound = b
+			writeLine(map[string]any{"type": "classifying", "unique": b, "queue": cfbQueueDepth()})
+		}
 		for _, k := range fresh {
 			keys <- k
 		}
@@ -646,32 +634,55 @@ func streamMatchResults(w http.ResponseWriter, r *http.Request, results []*model
 		}
 	}()
 
-	cfDone := make(chan struct{})
-	go func() {
-		defer close(cfDone)
-		// A panic here would take down the server without this defer
-		defer func() {
-			if p := recover(); p != nil {
-				log.Printf("ClassyFire stream panicked: %v\n%s", p, debug.Stack())
-			}
-		}()
-		streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
-			writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
-		})
-	}()
+	matches := map[string]any{"type": "matches", "results": results}
+	if classyfireEnabled {
+		// Already deduplicated, so this is the bound enqueue(localKeys) will send
+		localKeys = classifiableKeys(results)
+		lastBound = len(localKeys) + remaining*cfbMaxMatchesPerQuery
+		matches["unique"] = lastBound
+	}
+	if !writeLine(matches) {
+		return
+	}
 
-	enqueue(localKeys)
+	if classyfireEnabled {
+		// Room for every key this request can produce, so a send never stalls the fallback
+		keys = make(chan string, len(localKeys)+remaining*cfbMaxMatchesPerQuery)
+		cfDone = make(chan struct{})
+		go func() {
+			defer close(cfDone)
+			// A panic here would take down the server without this defer
+			defer func() {
+				if p := recover(); p != nil {
+					log.Printf("ClassyFire stream panicked: %v\n%s", p, debug.Stack())
+				}
+			}()
+			streamClassyFire(r.Context(), keys, func(key string, info *model.ClassyFireInfo) {
+				writeLine(map[string]any{"type": "classyfire", "inchikey": key, "info": info, "queue": cfbQueueDepth()})
+			})
+		}()
+		enqueue(localKeys)
+	}
+
 	fallback(func(index int) {
 		result := results[index]
 		result.Pending = false
-		// Attaches the top hit cap note before the line goes out
-		hitKeys := classifiableKeys([]*model.SingleResult{result})
+		var hitKeys []string
+		if classyfireEnabled {
+			// Attaches the top hit cap note before the line goes out
+			hitKeys = classifiableKeys([]*model.SingleResult{result})
+		}
 		writeLine(map[string]any{"type": "pubchem", "index": index, "result": result})
-		enqueue(hitKeys)
+		if classyfireEnabled {
+			remaining--
+			enqueue(hitKeys)
+		}
 	})
-	close(keys)
-	<-cfDone
 
+	if classyfireEnabled {
+		close(keys)
+		<-cfDone
+	}
 	writeLine(map[string]any{"type": "done"})
 }
 

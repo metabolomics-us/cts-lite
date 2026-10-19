@@ -1138,9 +1138,10 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 }
 
 // ClassyFire starts on local hits while the fallback is still running, and the
-// PubChem hits join the same stream once each of them settles
+// PubChem hits join the same stream once each of them settles. The total starts
+// as an upper bound counting every pending row and shrinks when one misses
 func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
-	localKey, liveKey := "AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N"
+	localKey, liveKey, missKey := "AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N"
 	localClassified := make(chan struct{})
 	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
 		if inchikey == localKey {
@@ -1152,6 +1153,7 @@ func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
 	results := []*model.SingleResult{
 		{Query: localKey, QueryType: "inchikey", MatchFound: true, Matches: []*model.Compound{{InChIKey: localKey}}},
 		{Query: liveKey, QueryType: "inchikey"},
+		{Query: missKey, QueryType: "inchikey"},
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
@@ -1163,9 +1165,10 @@ func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Error("ClassyFire did not start before the fallback settled")
 		}
+		onSettled(2) // PubChem has no match, so the bound drops
 		results[1].MatchFound = true
 		results[1].Matches = []*model.Compound{{InChIKey: liveKey}}
-		onSettled(1)
+		onSettled(1) // a hit with a new key keeps the bound, no new classifying line
 	})
 
 	var types []string
@@ -1181,7 +1184,7 @@ func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
 			t.Fatalf("invalid NDJSON line %q: %v", line, err)
 		}
 		types = append(types, m.Type)
-		if m.Type == "classifying" {
+		if m.Type == "matches" || m.Type == "classifying" {
 			uniques = append(uniques, m.Unique)
 		}
 		if m.Type == "classyfire" {
@@ -1192,11 +1195,77 @@ func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
 	if !classified[localKey] || !classified[liveKey] {
 		t.Errorf("expected both keys classified, got %v", classified)
 	}
-	if !slices.Equal(uniques, []int{1, 2}) {
-		t.Errorf("classifying totals: want [1 2], got %v", uniques)
+	// matches, then the queue join, then the miss
+	if !slices.Equal(uniques, []int{3, 3, 2}) {
+		t.Errorf("totals: want [3 3 2], got %v", uniques)
 	}
 	if types[len(types)-1] != "done" {
 		t.Errorf("last line: want done, got %v", types)
+	}
+}
+
+// streamTotals runs streamMatchResults with ClassyFire on and returns every
+// matches/classifying total in order plus how many keys were classified
+func streamTotals(t *testing.T, results []*model.SingleResult, fallback func(func(int))) (totals []int, classified int) {
+	t.Helper()
+	mockClassyFire(t, func(string) (cfbFetch, error) { return cfbFetch{info: fakeClassyFireInfo()}, nil })
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
+	w := httptest.NewRecorder()
+	streamMatchResults(w, req, results, true, fallback)
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		var m struct {
+			Type   string `json:"type"`
+			Unique int    `json:"unique"`
+		}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		switch m.Type {
+		case "matches", "classifying":
+			totals = append(totals, m.Unique)
+		case "classyfire":
+			classified++
+		}
+	}
+	return totals, classified
+}
+
+// With every query matched locally there is nothing pending, so the total is exact from the start
+func TestStreamMatchResultsAllLocalTotalIsExact(t *testing.T) {
+	var results []*model.SingleResult
+	for _, k := range []string{"AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N"} {
+		results = append(results, &model.SingleResult{Query: k, QueryType: "inchikey", MatchFound: true, Matches: []*model.Compound{{InChIKey: k}}})
+	}
+
+	totals, classified := streamTotals(t, results, func(func(int)) {})
+
+	// matches, then the queue join
+	if !slices.Equal(totals, []int{3, 3}) {
+		t.Errorf("totals: want [3 3], got %v", totals)
+	}
+	if classified != 3 {
+		t.Errorf("expected 3 classyfire lines, got %d", classified)
+	}
+}
+
+// When no query matches locally or on PubChem the bound shrinks to 0 and nothing is classified
+func TestStreamMatchResultsNoMatchesShrinksToZero(t *testing.T) {
+	var results []*model.SingleResult
+	for _, k := range []string{"AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N"} {
+		results = append(results, &model.SingleResult{Query: k, QueryType: "inchikey"})
+	}
+
+	totals, classified := streamTotals(t, results, func(onSettled func(int)) {
+		for i := range results {
+			onSettled(i)
+		}
+	})
+
+	if !slices.Equal(totals, []int{3, 2, 1, 0}) {
+		t.Errorf("totals: want [3 2 1 0], got %v", totals)
+	}
+	if classified != 0 {
+		t.Errorf("expected no classyfire lines, got %d", classified)
 	}
 }
 

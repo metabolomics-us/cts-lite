@@ -12,8 +12,9 @@ function setDownloadsLoading(loading) {
   buttons.querySelectorAll(".download-btn").forEach(b => { b.disabled = loading; });
 }
 
-// Update the ClassyFire progress bar
-function showCfProgress(done, total) {
+// Update the ClassyFire progress bar. While PubChem rows are pending the total is
+// an upper bound that shrinks as they settle, so it reads "up to"
+function showCfProgress(done, total, upperBound = false) {
   const wrap = document.getElementById("cf-progress");
   if (!wrap) return;
   if (total <= 0) { wrap.hidden = true; return; }
@@ -21,7 +22,7 @@ function showCfProgress(done, total) {
   const pct = Math.round((done / total) * 100);
   wrap.querySelector(".cf-progress-fill").style.width = pct + "%";
   wrap.querySelector(".cf-progress-label").textContent =
-    `Classifying with ClassyFire: ${done} / ${total}`;
+    `Classifying with ClassyFire: ${done} / ${upperBound ? "up to " : ""}${total}`;
 }
 
 // Update the PubChem Live status line
@@ -351,6 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
           rafScheduled = true;
           requestAnimationFrame(() => { rafScheduled = false; renderPage(); updateHeader(); });
         };
+        const refreshCfProgress = () => showCfProgress(classified, totalUnique, pcbDone < pcbTotal);
         const indexMatches = (r) => (r.matches || []).forEach(m => {
           // Matches beyond the top hit cap already carry a note; don't overwrite them
           if (m.classyfire) return;
@@ -367,28 +369,32 @@ document.addEventListener("DOMContentLoaded", () => {
             output.textContent = "";
             downloadButtons.style.display = "flex";
             setDownloadsLoading(true);
+            pcbTotal = allData.filter(r => r.pending).length;
+            showPcbProgress(0, pcbTotal);
             if (classyfireEnabled) {
               allData.forEach(indexMatches);
               totalUnique = msg.unique || 0;
-              if (totalUnique > 0) showCfProgress(0, totalUnique);
+              refreshCfProgress();
               updateCfQueue(msg.queue || 0);
             }
-            pcbTotal = allData.filter(r => r.pending).length;
-            showPcbProgress(0, pcbTotal);
             renderPage();
             updateHeader();
           },
           onPubchem: (msg) => {
             allData[msg.index] = msg.result;
-            if (classyfireEnabled) indexMatches(msg.result);
             pcbDone++;
             showPcbProgress(pcbDone, pcbTotal);
+            if (classyfireEnabled) {
+              indexMatches(msg.result);
+              // The last settled row makes the total exact even when it did not change
+              refreshCfProgress();
+            }
             scheduleRender();
           },
-          // ClassyFire runs alongside the fallback, so the total grows as PubChem hits join
+          // The total is an upper bound while PubChem rows are pending and only shrinks
           onClassifying: (msg) => {
             totalUnique = msg.unique || 0;
-            if (totalUnique > 0) showCfProgress(classified, totalUnique);
+            refreshCfProgress();
             updateCfQueue(msg.queue || 0);
           },
           onClassyfire: (msg) => {
@@ -397,7 +403,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (matches) matches.forEach(m => { m.classyfire = msg.info; });
             inchikeyIndex.delete(msg.inchikey);
             classified++;
-            showCfProgress(classified, totalUnique);
+            refreshCfProgress();
             updateCfQueue(msg.queue || 0);
             scheduleRender();
           },

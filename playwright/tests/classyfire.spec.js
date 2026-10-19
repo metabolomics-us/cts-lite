@@ -167,6 +167,72 @@ test('progress bar counts unique inchikeys', async ({ page }) => {
   await expect(page.locator('.cf-progress-label')).not.toContainText('/ 4');
 });
 
+// While a PubChem row is pending the total is an upper bound, so the bar never fills early
+test('progress total reads "up to" while PubChem lookups are pending', async ({ page }) => {
+  const pending = result(null, { query: 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', found_match: false, pending: true });
+  await mockMatch(page, nd(
+    { type: 'matches', results: [result([match()]), pending], unique: 2 },
+    { type: 'classyfire', inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', info: CF, queue: 1 },
+    // no pubchem line: the row stays pending
+  ));
+
+  await enableClassyFireAndSubmit(page);
+
+  await expect(page.locator('.cf-progress-label')).toHaveText('Classifying with ClassyFire: 1 / up to 2');
+});
+
+// A PubChem miss shrinks the bound, and the last settled row makes the total exact
+test('progress total shrinks and drops "up to" once PubChem lookups settle', async ({ page }) => {
+  const pending = result(null, { query: 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', found_match: false, pending: true });
+  await mockMatch(page, nd(
+    { type: 'matches', results: [result([match()]), pending], unique: 2 },
+    { type: 'classyfire', inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', info: CF, queue: 1 },
+    { type: 'pubchem', index: 1, result: { ...pending, pending: false, error_message: 'No compound found' } },
+    { type: 'classifying', unique: 1, queue: 1 },
+    // no done: the bar stays visible
+  ));
+
+  await enableClassyFireAndSubmit(page);
+
+  await expect(page.locator('.cf-progress-label')).toHaveText('Classifying with ClassyFire: 1 / 1');
+});
+
+// Every query matched locally, so nothing is pending and the total is exact from the first line
+test('progress total is exact when every query matches locally', async ({ page }) => {
+  const keys = ['AAAAAAAAAAAAAA-AAAAAAAAAA-A', 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', 'CCCCCCCCCCCCCC-CCCCCCCCCC-C'];
+  await mockMatch(page, nd(
+    { type: 'matches', results: keys.map((k) => result([match({ inchikey: k })], { query: k })), unique: 3 },
+    { type: 'classifying', unique: 3, queue: 1 },
+    { type: 'classyfire', inchikey: keys[0], info: CF, queue: 1 },
+    // no done: the bar stays visible
+  ));
+
+  await enableClassyFireAndSubmit(page);
+
+  await expect(page.locator('.cf-progress-label')).toHaveText('Classifying with ClassyFire: 1 / 3');
+  await expect(page.locator('.cf-progress-label')).not.toContainText('up to');
+});
+
+// No query matched locally or on PubChem, so the bound shrinks to 0 and the bar goes away
+test('progress bar hides when no query matches locally or on PubChem', async ({ page }) => {
+  const keys = ['AAAAAAAAAAAAAA-AAAAAAAAAA-A', 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', 'CCCCCCCCCCCCCC-CCCCCCCCCC-C'];
+  const pending = keys.map((k) => result(null, { query: k, found_match: false, pending: true }));
+  await mockMatch(page, nd(
+    { type: 'matches', results: pending, unique: 3 },
+    ...pending.flatMap((r, i) => [
+      { type: 'pubchem', index: i, result: { ...r, pending: false, error_message: 'No compound found' } },
+      { type: 'classifying', unique: 2 - i, queue: 0 },
+    ]),
+    // no done: only the bound reaching 0 hides the bar
+  ));
+
+  await enableClassyFireAndSubmit(page);
+
+  await expect(page.locator('#pcb-progress')).toBeHidden();
+  await expect(page.locator('#cf-progress')).toBeHidden();
+  await expect(page.locator('.cf-queued')).toHaveCount(0);
+});
+
 // The queue indicator appears when more than one request is contending
 test('queue indicator shows when multiple requests are queued', async ({ page }) => {
   await mockMatch(page, nd(
