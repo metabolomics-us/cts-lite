@@ -299,11 +299,18 @@
                 Enable ClassyFire chemical classification:
                 </p>
                 <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true"</strong></code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true</strong>"</code>
+                </div>
+
+                <p style="margin-bottom: -10px">
+                Enable NDJSON response streaming (helps prevent timeouts, CSV-incompatible):
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?stream=true</strong>"</code>
                 </div>
 
                 <h4 class="doc-subheading" id="response-formats">Response Formats</h4>
-                <p>Example request (2 queries): <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
+                <p>Example request with default parameters (2 queries): <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>
                 <div class="code-block">
                     <pre><code>[
