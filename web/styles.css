@@ -184,6 +184,8 @@ button:disabled {
   align-items: center;
   gap: 0.5rem;
   margin: 0.25rem 0 0.75rem 0;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #dee2e6; /* separates the PubChem line from the ClassyFire block */
   font-size: 0.85rem;
   color: #444444;
 }
@@ -197,12 +199,24 @@ button:disabled {
   height: 14px;
 }
 
-.pcb-progress-note {
-  color: #6b7785;
+/* ClassyFire label above the bar, the asterisk note goes below it */
+.cf-progress-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.cf-progress-note {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  color: #4B535D;
   font-style: italic;
 }
 
-.pcb-progress-note[hidden] {
+.cf-progress-note[hidden] {
   display: none;
 }
 
@@ -223,8 +237,6 @@ button:disabled {
 }
 
 .cf-progress-label {
-  display: block;
-  margin-top: 0.3rem;
   font-size: 0.85rem;
   color: #444444;
 }

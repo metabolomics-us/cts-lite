@@ -168,7 +168,7 @@ test('progress bar counts unique inchikeys', async ({ page }) => {
 });
 
 // While a PubChem row is pending the total is an upper bound, so the bar never fills early.
-// The asterisk marks it, explained by the note on the PubChem line
+// The asterisk marks it, explained by the note below the PubChem line
 test('progress total carries an asterisk while PubChem lookups are pending', async ({ page }) => {
   const pending = result(null, { query: 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', found_match: false, pending: true });
   await mockMatch(page, nd(
@@ -180,7 +180,7 @@ test('progress total carries an asterisk while PubChem lookups are pending', asy
   await enableClassyFireAndSubmit(page);
 
   await expect(page.locator('.cf-progress-label')).toHaveText('Classifying with ClassyFire: 1 / 2*');
-  await expect(page.locator('.pcb-progress-note')).toHaveText('* ClassyFire total may shrink');
+  await expect(page.locator('.cf-progress-note')).toHaveText('* ClassyFire total may shrink');
 });
 
 // A PubChem miss shrinks the bound, and the last settled row makes the total exact
@@ -214,7 +214,7 @@ test('progress total is exact when every query matches locally', async ({ page }
 
   await expect(page.locator('.cf-progress-label')).toHaveText('Classifying with ClassyFire: 1 / 3');
   await expect(page.locator('.cf-progress-label')).not.toContainText('*');
-  await expect(page.locator('.pcb-progress-note')).toBeHidden();
+  await expect(page.locator('.cf-progress-note')).toBeHidden();
 });
 
 // No query matched locally or on PubChem, so the bound shrinks to 0 and the bar goes away

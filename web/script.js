@@ -14,10 +14,10 @@ function setDownloadsLoading(loading) {
 
 // Update the ClassyFire progress bar. While PubChem rows are pending the total is
 // an upper bound that shrinks as they settle, so it carries an asterisk explained
-// by the note on the PubChem line
+// by the note below the PubChem line
 function showCfProgress(done, total, upperBound = false) {
   const wrap = document.getElementById("cf-progress");
-  const note = document.querySelector("#pcb-progress .pcb-progress-note");
+  const note = document.querySelector("#cf-progress .cf-progress-note");
   if (note) note.hidden = !(upperBound && total > 0);
   if (!wrap) return;
   if (total <= 0) { wrap.hidden = true; return; }
@@ -42,7 +42,7 @@ function showPcbProgress(done, total) {
 function hideCfProgress() {
   const wrap = document.getElementById("cf-progress");
   if (wrap) wrap.hidden = true;
-  const note = document.querySelector("#pcb-progress .pcb-progress-note");
+  const note = document.querySelector("#cf-progress .cf-progress-note");
   if (note) note.hidden = true;
 }
 
