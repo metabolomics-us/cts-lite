@@ -64,12 +64,7 @@
                     <li><a href="#rdkit-conversion">RDKit Conversion</a></li>
                     <li><a href="#top-hit-only">Top Hit Only</a></li>
                     <li><a href="#anno-type-count">Anno. Type Count</a></li>
-                    <li>
-                        <a href="#classyfire">ClassyFire</a>
-                        <ul>
-                            <li><a href="#classyfire-api">API Details</a></li>
-                        </ul>
-                    </li>
+                    <li><a href="#classyfire">ClassyFire</a></li>
                     <li>
                         <a href="#rest-api">REST API</a>
                         <ul>
@@ -208,10 +203,10 @@
                 <p>
                     CTS-Lite can optionally provide chemical taxonomy classifications from
                     <a href="https://cfb.metabolomics.us/" target="_blank">ClassyFire</a>, developed by the
-                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>.
+                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>. Requests with ClassyFire enabled are <strong>limited to 1,000 entries</strong>.
                 </p>
                 <p>
-                ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API with the <code class="inline-code">classyfire=true</code> parameter. Requests with ClassyFire enabled are <strong>limited to 1,000 entries</strong>.
+                ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API with the <code class="inline-code">classyfire=true</code> parameter. The <code class="inline-code">stream=true</code> parameter is recommended for ClassyFire requests, to help avoid timeouts.
                 </p>
                 <p>
                     Each matched compound receives the following ClassyFire fields (some may be empty and therefore omitted):
@@ -236,25 +231,6 @@
                 <div class="doc-note">
                     <strong>Note:</strong> ClassyFire adds significant network latency proportional to the number of unique matched compounds in your query.
                 </div>
-                <h4 class="doc-subheading" id="classyfire-api">API Details When Using ClassyFire</h4>
-                <p>
-                    Enable ClassyFire by adding the <code class="inline-code">classyfire=true</code> parameter to an API request.
-                </p>
-                <p>
-                    You can stream results by adding the <code class="inline-code">stream=true</code> parameter.
-                    Instead of a single JSON array upon completion, the server returns live NDJSON results: local matches first, then each PubChem Live result and ClassyFire classification as it finishes. This may help with timeouts of large requests.
-                </p>
-                <p>
-                    JSON responses include a <code class="inline-code">classyfire</code>
-                    object on each matched compound.
-                </p>
-                <p>
-                    CSV outputs append seven additional columns:
-                    <div class="code-block">
-                        <pre><code>...,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error
-                        </code></pre>
-                    </div>
-                </p>
             </section>
 
             <section class="doc-section">
@@ -345,6 +321,9 @@
   }
 ]</code></pre>
                 </div>
+                <p style="color: #4B535D; margin-left: 1rem">
+                    * With ClassyFire enabled, each compound also gets a <code class="inline-code">classyfire</code> JSON object with the <a href="#classyfire">six ClassyFire fields</a> and a potential error message
+                </p>
 
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px;">CSV</p>
                 <div class="code-block">
@@ -353,6 +332,9 @@ XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHF
 will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,,
                     </code></pre>
                 </div>
+                <p style="color: #4B535D; margin-left: 1rem">
+                * With ClassyFire enabled, seven more columns are appended: the <a href="#classyfire">six ClassyFire fields</a> and a potential error message
+                </p>
             </section>
 
             <div id="copied-toast" class="copied-toast" role="status"></div>
