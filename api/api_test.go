@@ -325,23 +325,23 @@ func TestMatchErrors(t *testing.T) {
 			// fallback is disabled in this test binary so the misses all fail fast
 			name:       "inchi no match",
 			query:      "InChI=1S/NOTHING",
-			wantErrMsg: "No local match; PubChem live lookup unavailable",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			name:       "inchikey first block not found",
 			query:      "ZZZZZZZZZZZZZZ-XXXXXXXXXX-Y",
-			wantErrMsg: "No local match; PubChem live lookup unavailable",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			name:       "smiles no match",
 			query:      "CC(O)=O",
-			wantErrMsg: "No local match; PubChem live lookup unavailable",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			// A real formula shape that is absent from the test dataset
 			name:       "formula no match",
 			query:      "C99H99N99O99",
-			wantErrMsg: "No local match; PubChem live lookup unavailable",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			name:       "bad inchikey",
@@ -589,7 +589,7 @@ func TestMatchPubChemID(t *testing.T) {
 			name:       "no match for unknown PubChem ID",
 			query:      "999",
 			wantFound:  false,
-			wantErrMsg: "No local match; PubChem live lookup unavailable",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 	}
 

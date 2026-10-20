@@ -1117,7 +1117,7 @@ func TestResolvePubChemFallbackNotFoundSetsMessage(t *testing.T) {
 	if r.MatchFound {
 		t.Error("expected MatchFound to remain false")
 	}
-	if r.ErrMsg != "No compound found (including PubChem live lookup)" {
+	if r.ErrMsg != "No compound found (including PubChem Live lookup)" {
 		t.Errorf("unexpected ErrMsg: %q", r.ErrMsg)
 	}
 }
@@ -1136,7 +1136,7 @@ func TestResolvePubChemFallbackServiceDownSetsUnavailableMessage(t *testing.T) {
 	if failed != 1 {
 		t.Fatalf("expected 1 failed, got %d", failed)
 	}
-	if results[0].ErrMsg != "No local match; PubChem live lookup unavailable" {
+	if results[0].ErrMsg != "No local match; PubChem Live lookup unavailable" {
 		t.Errorf("unexpected ErrMsg: %q", results[0].ErrMsg)
 	}
 }
@@ -1162,10 +1162,10 @@ func TestResolvePubChemFallbackConfirmedMissingSurvivesBreakerTrip(t *testing.T)
 	if counts.notFound != 1 || counts.failed != 1 {
 		t.Fatalf("want 1 not found (the denied CID) and 1 failed (the formula), got %+v", counts)
 	}
-	if results[0].ErrMsg != "No compound found (including PubChem live lookup)" {
+	if results[0].ErrMsg != "No compound found (including PubChem Live lookup)" {
 		t.Errorf("denied CID: unexpected ErrMsg %q", results[0].ErrMsg)
 	}
-	if results[1].ErrMsg != "No local match; PubChem live lookup unavailable" {
+	if results[1].ErrMsg != "No local match; PubChem Live lookup unavailable" {
 		t.Errorf("formula: unexpected ErrMsg %q", results[1].ErrMsg)
 	}
 }
@@ -1687,7 +1687,7 @@ func TestResolvePubChemFallbackBusyThroughRetriesMarksUnavailable(t *testing.T) 
 	}
 	for i, results := range all {
 		for _, r := range results {
-			if r.MatchFound || r.ErrMsg != "No local match; PubChem live lookup unavailable" {
+			if r.MatchFound || r.ErrMsg != "No local match; PubChem Live lookup unavailable" {
 				t.Errorf("request %d, CID %s: want unavailable, got found=%v %q", i, r.Query, r.MatchFound, r.ErrMsg)
 			}
 		}
@@ -1723,7 +1723,7 @@ func TestResolvePubChemFallbackCancelledWhileQueuedLeavesOthersRunning(t *testin
 	if waited := time.Since(start); waited > 100*time.Millisecond {
 		t.Errorf("want the queued request to give up with its client, it waited %s", waited)
 	}
-	if queued[0].ErrMsg != "No local match; PubChem live lookup unavailable" {
+	if queued[0].ErrMsg != "No local match; PubChem Live lookup unavailable" {
 		t.Errorf("queued request: want unavailable, got %q", queued[0].ErrMsg)
 	}
 
@@ -1788,7 +1788,7 @@ func TestResolvePubChemFallbackFormulaCapSkipsExcess(t *testing.T) {
 		t.Errorf("skipped: want 1, got %d", skipped)
 	}
 	last := results[len(results)-1]
-	if last.ErrMsg != "No local match; PubChem live lookup limit reached" {
+	if last.ErrMsg != "No local match; PubChem Live lookup limit reached" {
 		t.Errorf("unexpected ErrMsg on the capped-out result: %q", last.ErrMsg)
 	}
 }

@@ -1259,7 +1259,7 @@ func resolvePubChemFallbackStream(ctx context.Context, results []*model.SingleRe
 			continue
 		}
 		typeCounts(m).skipped++
-		m.result.ErrMsg = "No local match; PubChem live lookup limit reached"
+		m.result.ErrMsg = "No local match; PubChem Live lookup limit reached"
 		onSettled(m.index)
 	}
 
@@ -1355,13 +1355,13 @@ func resolvePubChemFallbackStream(ctx context.Context, results []*model.SingleRe
 				c := typeCounts(m)
 				c.attempted++
 				c.notFound++
-				m.result.ErrMsg = "No compound found (including PubChem live lookup)"
+				m.result.ErrMsg = "No compound found (including PubChem Live lookup)"
 			default:
 				// No answer from PubChem: breaker, cancellation, or a call that gave up
 				c := typeCounts(m)
 				c.attempted++
 				c.failed++
-				m.result.ErrMsg = "No local match; PubChem live lookup unavailable"
+				m.result.ErrMsg = "No local match; PubChem Live lookup unavailable"
 			}
 			return
 		}
