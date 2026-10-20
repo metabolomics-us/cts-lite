@@ -42,6 +42,45 @@
                 </p>
             </section>
 
+            <nav class="doc-section doc-toc" aria-labelledby="toc-heading">
+                <h3 class="doc-toc-heading" id="toc-heading">Contents</h3>
+                <ol class="doc-toc-list">
+                    <li>
+                        <a href="#using-cts-lite">Using CTS-Lite</a>
+                    </li>
+                    <li>
+                        <a href="#rest-api">REST API</a>
+                        <ul>
+                            <li><a href="#request-formats">Request Formats</a></li>
+                            <li><a href="#request-parameters">Request Parameters</a></li>
+                            <li><a href="#response-formats">Response Formats</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#query-types">Query Types</a>
+                        <ul>
+                            <li><a href="#malformed-queries">Malformed Queries</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#anno-type-count">Anno. Type Count</a></li>
+                    <li><a href="#top-hit-only">Top Hit Only</a></li>
+                    <li>
+                        <a href="#match-levels">Match Levels</a>
+                        <ul>
+                            <li><a href="#first-block-matches">First Block Matches</a></li>
+                            <li><a href="#pubchem-live-matches">PubChem Live Matches</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#rdkit-conversion">RDKit Conversion</a></li>
+                    <li>
+                        <a href="#classyfire">ClassyFire</a>
+                        <ul>
+                            <li><a href="#classyfire-api">API Details</a></li>
+                        </ul>
+                    </li>
+                </ol>
+            </nav>
+
             <section class="doc-section">
                 <h3 class="doc-heading" id="using-cts-lite">Using CTS-Lite<button class="heading-anchor" onclick="copyHeadingLink(event,'using-cts-lite')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
@@ -58,7 +97,7 @@
 
             <section class="doc-section">
                 <h3 class="doc-heading" id="rest-api">REST API<button class="heading-anchor" onclick="copyHeadingLink(event,'rest-api')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <h4 class="doc-subheading">Request Formats</h4>
+                <h4 class="doc-subheading" id="request-formats">Request Formats</h4>
                 <p>
                     To make queries using the REST API, use the following formats:
                 </p>
@@ -79,7 +118,7 @@
  "cts-lite.metabolomics.us/match"</code>
                 </div>
 
-                <h4 class="doc-subheading">Request Parameters</h4>
+                <h4 class="doc-subheading" id="request-parameters">Request Parameters</h4>
                 <p style="margin-bottom: -10px">
                 Disable top hit only:
                 </p>
@@ -101,7 +140,7 @@
                     <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true"</strong></code>
                 </div>
 
-                <h4 class="doc-subheading">Response Formats</h4>
+                <h4 class="doc-subheading" id="response-formats">Response Formats</h4>
                 <p>Example query: <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>
                 <div class="code-block">
@@ -178,7 +217,7 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                     </li>
                 </ul>
 
-                <h4 class="doc-subheading">Malformed Queries</h4>
+                <h4 class="doc-subheading" id="malformed-queries">Malformed Queries</h4>
                 <p>
                     Malformed queries are identified as follows:
                 </p>
@@ -223,7 +262,7 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
 
             <section class="doc-section">
                 <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <h4 class="doc-subheading">First Block Matches</h4>
+                <h4 class="doc-subheading" id="first-block-matches">First Block Matches</h4>
                 <p>
                     Given the setting for first block matches is enabled (the default), "InChIKey" queries can match by first block if they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. "Converted SMILES" queries can also match by first block, since they are SMILES queries that were converted to InChIKey and then reattempted. The first fourteen characters of the InChIKey are the key's first block.
                 </p>
@@ -233,7 +272,7 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 <p>
                     To disable first block matching, use the settings cog in the web UI or add <code class="inline-code">first_block_matches=false</code> to the API request.
                 </p>
-                <h4 class="doc-subheading">PubChem Live Matches</h4>
+                <h4 class="doc-subheading" id="pubchem-live-matches">PubChem Live Matches</h4>
                 <p>
                     Queries that do not find a match in the local database are forwarded to PubChem itself. A live lookup is performed against all 124 million compounds of PubChem. PubChem Live queries take longer than local database matches.
                 </p>
@@ -288,7 +327,7 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 <div class="doc-note">
                     <strong>Note:</strong> ClassyFire adds significant network latency proportional to the number of unique matched compounds in your query.
                 </div>
-                <h4 class="doc-subheading">API Details When Using ClassyFire</h4>
+                <h4 class="doc-subheading" id="classyfire-api">API Details When Using ClassyFire</h4>
                 <p>
                     Enable ClassyFire by adding the <code class="inline-code">classyfire=true</code> parameter to an API request.
                 </p>
@@ -338,6 +377,47 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 });
                 block.appendChild(btn);
             });
+
+            // Smooth scroll to a section from the table of contents and keep the hash in the URL
+            document.querySelectorAll('.doc-toc-list a').forEach(function(link) {
+                link.addEventListener('click', function(e) {
+                    var id = link.getAttribute('href').slice(1);
+                    var target = document.getElementById(id);
+                    if (!target) return;
+                    e.preventDefault();
+                    history.pushState(null, '', '#' + id);
+                    target.scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+
+            // Scrollspy: highlight the current TOC section being viewed 
+            var tocLinks = Array.prototype.slice.call(document.querySelectorAll('.doc-toc-list a'));
+            var tocSections = Array.prototype.slice.call(document.querySelectorAll('.doc-toc-list > li'));
+            var tocTicking = false;
+            function updateActiveToc() {
+                tocTicking = false;
+                var current = tocLinks[0];
+                tocLinks.forEach(function(link) {
+                    var target = document.getElementById(link.getAttribute('href').slice(1));
+                    if (target && target.getBoundingClientRect().top <= 160) current = link;
+                });
+                tocLinks.forEach(function(link) {
+                    var active = link === current;
+                    link.classList.toggle('active', active);
+                    if (active) link.setAttribute('aria-current', 'true');
+                    else link.removeAttribute('aria-current');
+                });
+                tocSections.forEach(function(section) {
+                    section.classList.toggle('current-section', section.contains(current));
+                });
+            }
+            window.addEventListener('scroll', function() {
+                if (!tocTicking) {
+                    tocTicking = true;
+                    requestAnimationFrame(updateActiveToc);
+                }
+            }, { passive: true });
+            updateActiveToc();
 
             // Reveal the ClassyFire outage note only when the backend reports it down
             fetch('/classyfire/status')
