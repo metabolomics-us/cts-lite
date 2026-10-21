@@ -77,6 +77,72 @@ func parseQueryType(q string) string {
 	}
 }
 
+// Query types a client may force via the query_type request option
+var forceableQueryTypes = []string{"auto", "inchikey", "inchi", "smiles", "formula", "pubchem_id"}
+
+// resolveQueryType returns the query type to use for q, honoring a client-specified type.
+// "auto" (or empty) falls back to automatic detection
+func resolveQueryType(q string, requested string) string {
+	switch requested {
+	case "", "auto":
+		return parseQueryType(q)
+
+	case "inchikey":
+		// Must be well formed, since first-block matching slices the key
+		if !inchikeyPattern.MatchString(q) {
+			return "bad_inchikey"
+		}
+		return "inchikey"
+
+	case "inchi":
+		if !strings.HasPrefix(q, "InChI=") {
+			return "bad_inchi"
+		}
+		return "inchi"
+
+	default:
+		return requested
+	}
+}
+
+// parseRequestedQueryTypes reads the optional query_type option, which is either a single
+// type applied to every query or a list with one type per whitespace-separated query.
+// Returns nil when no type was requested (automatic detection)
+func parseRequestedQueryTypes(raw json.RawMessage, urlValue string, numQueries int) ([]string, error) {
+	var types []string
+
+	if len(raw) > 0 && string(raw) != "null" {
+		var single string
+		if err := json.Unmarshal(raw, &single); err == nil {
+			types = []string{single}
+		} else if err := json.Unmarshal(raw, &types); err != nil {
+			return nil, errors.New("query_type must be a string or a list of strings")
+		}
+	} else if urlValue != "" {
+		types = strings.Split(urlValue, ",")
+	} else {
+		return nil, nil
+	}
+
+	for i, t := range types {
+		types[i] = strings.ToLower(strings.TrimSpace(t))
+		if types[i] == "" {
+			types[i] = "auto"
+		}
+		if !slices.Contains(forceableQueryTypes, types[i]) {
+			return nil, fmt.Errorf("invalid query_type %q (allowed: %s)", t, strings.Join(forceableQueryTypes, ", "))
+		}
+	}
+
+	if len(types) == 1 {
+		return slices.Repeat(types, numQueries), nil
+	}
+	if len(types) != numQueries {
+		return nil, fmt.Errorf("query_type contains %d values but query contains %d identifiers", len(types), numQueries)
+	}
+	return types, nil
+}
+
 // writeResultsAsCSV converts the results to CSV format and writes to the response writer
 func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, classyfireEnabled bool) error {
 	writer := csv.NewWriter(w)
@@ -160,6 +226,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 // Detects the type of query and delegates it to the corresponding matching function
 func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var rawQuery string
+	var rawQueryType json.RawMessage
 
 	// Parse query according to GET or POST request (GET was the old method before moving to POST)
 	switch r.Method {
@@ -169,7 +236,8 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var request struct {
-			Queries string `json:"queries"`
+			Queries   string          `json:"queries"`
+			QueryType json.RawMessage `json:"query_type"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -178,6 +246,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		}
 
 		rawQuery = strings.TrimSpace(request.Queries)
+		rawQueryType = request.QueryType
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -210,11 +279,18 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional client-specified query types, aligned with the whitespace-separated queries
+	requestedTypes, err := parseRequestedQueryTypes(rawQueryType, r.URL.Query().Get("query_type"), len(queries))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	results := make([]*model.SingleResult, 0, len(queries))
 	var matchCount int = 0
 	timeStart := time.Now()
 
-	for _, q := range queries {
+	for i, q := range queries {
 		q = strings.TrimSpace(q)
 
 		// Remove surrounding double quotes if both present
@@ -227,9 +303,14 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		var requestedType string
+		if requestedTypes != nil {
+			requestedType = requestedTypes[i]
+		}
+
 		result := &model.SingleResult{
 			Query:     q,
-			QueryType: parseQueryType(q),
+			QueryType: resolveQueryType(q, requestedType),
 		}
 
 		switch result.QueryType {

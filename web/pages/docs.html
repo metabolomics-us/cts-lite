@@ -108,6 +108,23 @@
                     <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true"</strong></code>
                 </div>
 
+                <p style="margin-bottom: -10px">
+                Specify the query type instead of detecting it automatically (one of <code class="inline-code">auto</code>, <code class="inline-code">inchikey</code>, <code class="inline-code">inchi</code>, <code class="inline-code">smiles</code>, <code class="inline-code">formula</code>, <code class="inline-code">pubchem_id</code>):
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?query_type=formula</strong>"</code>
+                </div>
+                <p>
+                    Ambiguous queries such as <code class="inline-code">CO</code> are treated as SMILES by default; use <code class="inline-code">query_type=formula</code> to match them as molecular formulas instead.
+                    The type can also be given in the JSON body, either as a single value for all queries or as a list with one value per query (in the same order, separated the same way as the queries). A value in the body takes precedence over the URL parameter.
+                </p>
+                <div class="code-block">
+                <code>curl -X POST \
+ -H "Content-Type: application/json" \
+ -d '{"queries":"CO C1=CC=CC=C1","query_type":["formula","auto"]}' \
+ "cts-lite.metabolomics.us/match"</code>
+                </div>
+
                 <h4 class="doc-subheading">Response Formats</h4>
                 <p>Example query: <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>

@@ -1193,3 +1193,133 @@ func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
 	}
 	assertCompound(t, fakeWaterCompound(), results[0].Matches[0])
 }
+
+func TestQueryTypeOverride(t *testing.T) {
+	tests := []struct {
+		name          string
+		url           string
+		payload       string
+		wantTypes     []string
+		wantFound     []bool
+		wantCompounds []string
+	}{
+		{
+			name:          "auto prefers smiles",
+			payload:       `{"queries":"C"}`,
+			wantTypes:     []string{"smiles"},
+			wantFound:     []bool{true},
+			wantCompounds: []string{"Methane"},
+		},
+		{
+			name:      "single body type forces formula",
+			payload:   `{"queries":"C CH4","query_type":"formula"}`,
+			wantTypes: []string{"formula", "formula"},
+			wantFound: []bool{false, true},
+			// "C" is not a formula in the test data, so forcing formula skips the SMILES match
+			wantCompounds: []string{"", "Methane"},
+		},
+		{
+			name:          "url type forces formula",
+			url:           "/match?query_type=formula",
+			payload:       `{"queries":"C"}`,
+			wantTypes:     []string{"formula"},
+			wantFound:     []bool{false},
+			wantCompounds: []string{""},
+		},
+		{
+			name:          "per query list",
+			url:           "/match?rdkit_conversion=false",
+			payload:       `{"queries":"C CH4 O 1","query_type":["smiles","formula","auto","pubchem_id"]}`,
+			wantTypes:     []string{"smiles", "formula", "smiles", "pubchem_id"},
+			wantFound:     []bool{true, true, true, true},
+			wantCompounds: []string{"Methane", "Methane", "Water", "Water"},
+		},
+		{
+			name:          "case insensitive",
+			payload:       `{"queries":"CH4","query_type":"FORMULA"}`,
+			wantTypes:     []string{"formula"},
+			wantFound:     []bool{true},
+			wantCompounds: []string{"Methane"},
+		},
+		{
+			name:          "forced inchikey that is malformed",
+			payload:       `{"queries":"C","query_type":"inchikey"}`,
+			wantTypes:     []string{"bad_inchikey"},
+			wantFound:     []bool{false},
+			wantCompounds: []string{""},
+		},
+		{
+			name:          "forced inchi without prefix",
+			payload:       `{"queries":"C","query_type":"inchi"}`,
+			wantTypes:     []string{"bad_inchi"},
+			wantFound:     []bool{false},
+			wantCompounds: []string{""},
+		},
+		{
+			name:          "body type takes precedence over url",
+			url:           "/match?query_type=formula",
+			payload:       `{"queries":"C","query_type":"smiles"}`,
+			wantTypes:     []string{"smiles"},
+			wantFound:     []bool{true},
+			wantCompounds: []string{"Methane"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url := tc.url
+			if url == "" {
+				url = "/match"
+			}
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(tc.payload))
+			w := httptest.NewRecorder()
+			Match(mockIndex, w, req)
+			results := parseMatchResults(t, w.Result())
+
+			if len(results) != len(tc.wantTypes) {
+				t.Fatalf("expected %d results, got %d", len(tc.wantTypes), len(results))
+			}
+			for i, res := range results {
+				if res.QueryType != tc.wantTypes[i] {
+					t.Errorf("result %d: expected query_type %q, got %q", i, tc.wantTypes[i], res.QueryType)
+				}
+				if res.MatchFound != tc.wantFound[i] {
+					t.Errorf("result %d: expected found_match=%v, got %v (%s)", i, tc.wantFound[i], res.MatchFound, res.ErrMsg)
+				}
+				if tc.wantCompounds[i] != "" && (len(res.Matches) == 0 || res.Matches[0].CompoundName != tc.wantCompounds[i]) {
+					t.Errorf("result %d: expected compound %q, got %+v", i, tc.wantCompounds[i], res.Matches)
+				}
+			}
+		})
+	}
+}
+
+func TestQueryTypeInvalid(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		payload string
+	}{
+		{name: "unknown type", payload: `{"queries":"C","query_type":"name"}`},
+		{name: "unknown type in list", payload: `{"queries":"C O","query_type":["smiles","bogus"]}`},
+		{name: "list length mismatch", payload: `{"queries":"C O CH4","query_type":["smiles","formula"]}`},
+		{name: "wrong json type", payload: `{"queries":"C","query_type":5}`},
+		{name: "unknown url type", url: "/match?query_type=bogus", payload: `{"queries":"C"}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url := tc.url
+			if url == "" {
+				url = "/match"
+			}
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(tc.payload))
+			w := httptest.NewRecorder()
+			Match(mockIndex, w, req)
+
+			if w.Result().StatusCode != http.StatusBadRequest {
+				t.Errorf("expected 400 but got %d", w.Result().StatusCode)
+			}
+		})
+	}
+}
