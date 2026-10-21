@@ -60,6 +60,11 @@ function updateCfQueue(depth) {
   }
 }
 
+function closeSettingsPanel() {
+  document.getElementById("settings-panel").classList.remove("open");
+  document.getElementById("settings-toggle").setAttribute("aria-expanded", "false");
+}
+
 // Show the "ClassyFire is down" popup and move focus to its close button
 function showCfDownModal() {
   const m = document.getElementById("cf-down-modal");
@@ -139,10 +144,10 @@ document.addEventListener("DOMContentLoaded", () => {
     settingsToggle.setAttribute("aria-expanded", String(isOpen));
   });
   document.addEventListener("click", (e) => {
-    if (!settingsToggle.contains(e.target) && !settingsPanel.contains(e.target)) {
-      settingsPanel.classList.remove("open");
-      settingsToggle.setAttribute("aria-expanded", "false");
-    }
+    if (!settingsToggle.contains(e.target) && !settingsPanel.contains(e.target)) closeSettingsPanel();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSettingsPanel();
   });
 
   // ClassyFire availability: lock the toggle and wire the down-modal
