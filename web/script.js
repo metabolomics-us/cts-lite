@@ -3,6 +3,7 @@ let currentPage = 1;
 let pageSize = 10;
 let activeController = null;
 let classyfireRequested = false; // did this request use ClassyFire? classyfireEnabled tracks current checkbox state
+let activeFilter = "all"; // match-status class from getMatchStatus, defaults to "all"
 
 // Disable download buttons while ClassyFire is running
 function setDownloadsLoading(loading) {
@@ -170,6 +171,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if (allData.length > 0) renderPage();
   });
 
+  // Result filter menu, opened like the settings panel
+  const filterToggle = document.getElementById("filter-toggle");
+  const filterPanel = document.getElementById("filter-panel");
+  filterToggle.addEventListener("click", () => {
+    const isOpen = filterPanel.classList.toggle("open");
+    filterToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+  document.addEventListener("click", (e) => {
+    if (!filterToggle.contains(e.target) && !filterPanel.contains(e.target)) closeFilterPanel();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeFilterPanel();
+  });
+  filterPanel.querySelectorAll(".filter-option").forEach(btn => {
+    btn.addEventListener("click", () => {
+      setFilter(btn.dataset.filter);
+      closeFilterPanel();
+    });
+  });
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
     const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
@@ -248,6 +268,8 @@ document.addEventListener("DOMContentLoaded", () => {
     hideCfProgress();
     showPcbProgress(0, 0);
     paginationControls.style.display = "none";
+    document.getElementById("result-filters").hidden = true;
+    setFilterChip("all");
 
     // Bare quotes are dropped by the API, so a query of only those counts as blank
     const isBareQuote = (t) => t === '"' || t === '""' || t === '"""';
@@ -456,16 +478,73 @@ function goToPage(n) {
   window.scrollBy(0, after - before);
 }
 
+function closeFilterPanel() {
+  document.getElementById("filter-panel").classList.remove("open");
+  document.getElementById("filter-toggle").setAttribute("aria-expanded", "false");
+}
+
+// Mark a menu option as the active filter without rendering
+function setFilterChip(filter) {
+  activeFilter = filter;
+  let activeName = "";
+  document.querySelectorAll("#filter-panel .filter-option").forEach(btn => {
+    const active = btn.dataset.filter === filter;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", String(active));
+    if (active) activeName = btn.querySelector(".filter-name").textContent;
+  });
+  const toggle = document.getElementById("filter-toggle");
+  const label = filter === "all" ? "Filter results" : `Filter results (showing ${activeName})`;
+  toggle.classList.toggle("filtered", filter !== "all");
+  toggle.dataset.filter = filter;
+  toggle.title = label;
+  toggle.setAttribute("aria-label", label);
+}
+
+function setFilter(filter) {
+  setFilterChip(filter);
+  currentPage = 1;
+  renderPage();
+}
+
+// Results under the active filter, each paired with its index in allData so query numbers stay stable.
+function filteredResults() {
+  const entries = allData.map((result, i) => ({ result, i }));
+  if (activeFilter === "all") return entries;
+  return entries.filter(e => getMatchStatus(e.result).className === activeFilter);
+}
+
+// Refresh the count on every menu option and show the filter button once there are results
+function updateFilterCounts() {
+  const counts = { all: allData.length };
+  allData.forEach(r => {
+    const cls = getMatchStatus(r).className;
+    counts[cls] = (counts[cls] || 0) + 1;
+  });
+  const wrap = document.getElementById("result-filters");
+  wrap.hidden = allData.length === 0;
+  wrap.querySelectorAll(".filter-option").forEach(btn => {
+    btn.querySelector(".filter-count").textContent = counts[btn.dataset.filter] || 0;
+  });
+}
+
 function renderPage() {
   const output = document.getElementById("output-text");
   output.textContent = "";
+  const rows = filteredResults();
   const start = (currentPage - 1) * pageSize;
-  displayResults(allData.slice(start, start + pageSize), output, start);
-  updatePagination();
+  if (rows.length === 0 && allData.length > 0) {
+    output.innerHTML = "<div class='filter-empty'>No results for this filter &mdash; <button type='button' class='filter-empty-clear'>Clear filter</button></div>";
+    output.querySelector(".filter-empty-clear").addEventListener("click", () => setFilter("all"));
+  } else {
+    displayResults(rows.slice(start, start + pageSize), output);
+  }
+  updateFilterCounts();
+  updatePagination(rows.length);
 }
 
-function updatePagination() {
-  const totalPages = Math.ceil(allData.length / pageSize);
+function updatePagination(count) {
+  const totalPages = Math.ceil(count / pageSize);
   const controls = document.getElementById("pagination-controls");
 
   if (totalPages <= 1) {
@@ -508,8 +587,9 @@ function getPaginationRange(current, total) {
   return [1, "...", current - 1, current, current + 1, "...", total];
 }
 
-function displayResults(data, outputElement, offset = 0) {
-  data.forEach((result, index) => {
+// data holds { result, i } entries from filteredResults, i being the index in allData
+function displayResults(data, outputElement) {
+  data.forEach(({ result, i: queryIndex }, index) => {
     // A pending row still carries the local miss message, which the PubChem answer will replace
     const errorHtml = result.error_message && !result.pending
       ? `<div class="error-message">${escapeHtml(result.error_message).replace("see documentation", '<a href="/docs#query-types" target="_blank">see documentation</a>')}</div>`
@@ -554,7 +634,7 @@ function displayResults(data, outputElement, offset = 0) {
       : "";
 
     const isConverted = (result.query_type === "converted_smiles" || result.query_type === "converted_inchi") && result.converted_query;
-    const transId = `trans-${offset + index}`;
+    const transId = `trans-${queryIndex}`;
 
     const queryTypeBubble = isConverted
       ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
@@ -567,7 +647,7 @@ function displayResults(data, outputElement, offset = 0) {
     resultDiv.innerHTML = `
       <div class="query-section">
         <div class="query-header">
-          <h3>Query ${offset + index + 1}: ${escapeHtml(result.query)}</h3>
+          <h3>Query ${queryIndex + 1}: ${escapeHtml(result.query)}</h3>
           <button type="button" class="collapse-btn" aria-label="Toggle result"><img src="assets/chevron-icon.svg" alt=""></button>
         </div>
         <div class="query-details">

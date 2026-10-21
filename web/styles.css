@@ -173,6 +173,119 @@ button:disabled {
   margin-bottom: 5px;
 }
 
+/* Results label with the filter button */
+.results-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Dot on the filter icon of the applied filter color */
+#filter-toggle.filtered {
+  position: relative;
+  background-color: #e6f3ff;
+}
+
+#filter-toggle.filtered::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid;
+}
+
+#filter-toggle[data-filter="exact-match"]::after { background-color: #d4edda; border-color: #5a9e69; }
+#filter-toggle[data-filter="first-block-match"]::after { background-color: #fff3cd; border-color: #b8962a; }
+#filter-toggle[data-filter="pubchem-live-match"]::after { background-color: #d1ecf1; border-color: #4a98a6; }
+#filter-toggle[data-filter="no-match"]::after { background-color: #f8d7da; border-color: #c4646e; }
+
+.filter-panel-heading {
+  padding: 0.25rem 0.6rem 0.4rem;
+  font-size: 0.8rem;
+  color: #4B535D;
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  background-color: transparent;
+  color: #222222;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.filter-option:hover,
+.filter-option:focus {
+  background-color: #e9eef5;
+}
+
+.filter-option.active {
+  background-color: #1a3e68;
+  color: #ffffff;
+}
+
+.filter-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-count {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* Swatches reuse the match-status badge colors */
+.filter-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid #b8c6d8;
+  background-color: #ffffff;
+}
+
+.filter-swatch.exact-match { background-color: #d4edda; border-color: #8fc79c; }
+.filter-swatch.first-block-match { background-color: #fff3cd; border-color: #e0c565; }
+.filter-swatch.pubchem-live-match { background-color: #d1ecf1; border-color: #7fbcc7; }
+.filter-swatch.no-match { background-color: #f8d7da; border-color: #e09aa1; }
+
+.filter-empty {
+  padding: 1rem 0;
+  color: #4B535D;
+  font-style: italic;
+}
+
+/* Link styled button that resets the filter to All, in the same type as the message */
+.filter-empty-clear,
+.filter-empty-clear:hover,
+.filter-empty-clear:focus {
+  margin: 0;
+  padding: 0;
+  background-color: transparent;
+  color: #1a3e68;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: normal;
+  font-style: inherit;
+  text-decoration: underline;
+  outline-offset: 4px;
+}
+
+.filter-empty-clear:hover {
+  color: #235288;
+}
+
 /* ClassyFire streaming progress bar (top of the results) */
 #cf-progress {
   margin: 0.25rem 0 0.75rem 0;
@@ -989,6 +1102,12 @@ button:disabled {
   .match-field label {
     min-width: auto;
     font-size: 0.8rem;
+  }
+
+  /* Open the filter menu leftward on smaller screens */
+  .filter-panel {
+    left: auto;
+    right: 0;
   }
 }
 
