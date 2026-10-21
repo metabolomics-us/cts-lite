@@ -1,5 +1,5 @@
 # CTS-Lite
-A lightweight Chemical Translation Service using a curated subset of <strong>13 million compounds</strong> from the PubChem database
+A lightweight Chemical Translation Service using the PubChem database. Allows for quick and easy matching of InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs.
 
 ### Project Status
 <!-- [![CI/CD](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml/badge.svg)](https://github.com/metabolomics-us/cts-lite/actions/workflows/cicd.yml) -->
