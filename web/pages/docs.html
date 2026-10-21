@@ -146,7 +146,7 @@
                 <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <h4 class="doc-subheading" id="first-block-matches">First Block Matches</h4>
                 <p>
-                    Given the setting for first block matches is enabled (the default), "InChIKey" queries can match by first block if they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. "Converted SMILES" queries can also match by first block, since they are SMILES queries that were converted to InChIKey and then reattempted. The first fourteen characters of the InChIKey are the key's first block.
+                    Given the setting for first block matches is enabled (the default), "InChIKey" queries can match by first block if they don't find an exact match in the local database. This gives the <code class="inline-code">First Block</code> match level. "Converted SMILES" queries can also match by first block, since they are SMILES queries that were converted to InChIKey and then reattempted. The first fourteen characters of the InChIKey are the key's first block.
                 </p>
                 <p>
                     For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
@@ -156,7 +156,7 @@
                 </p>
                 <h4 class="doc-subheading" id="pubchem-live-matches">PubChem Live Matches</h4>
                 <p>
-                    Queries that do not find a match in the local database are forwarded to PubChem itself. A live lookup is performed against all 124 million compounds of PubChem. PubChem Live queries take longer than local database matches.
+                    Queries that do not find a match in the local database are forwarded to PubChem. A live lookup is performed against all 124 million compounds of PubChem. PubChem Live queries take longer than local database matches.
                 </p>
                 <p>
                     A PubChem Live match can sometimes return something slightly different to the exact query provided by the user. For example, querying <code class="inline-code">H4C</code> will return <code class="inline-code">CH4</code>, and <code class="inline-code">CH3COOH</code> will return <code class="inline-code">C2H4O2</code>. This can even occur with some SMILES queries, because RDKit is used in the background to convert SMILES queries into InChIKeys before querying PubChem.
