@@ -203,10 +203,11 @@ button:disabled {
 #filter-toggle[data-filter="pubchem-live-match"]::after { background-color: #d1ecf1; border-color: #4a98a6; }
 #filter-toggle[data-filter="no-match"]::after { background-color: #f8d7da; border-color: #c4646e; }
 
+/* Same as settings panel */
 .filter-panel-heading {
   padding: 0.25rem 0.6rem 0.4rem;
-  font-size: 0.8rem;
-  color: #4B535D;
+  font-size: 0.9rem;
+  color: #333;
 }
 
 .filter-option {
@@ -218,8 +219,9 @@ button:disabled {
   margin: 0;
   padding: 0.45rem 0.6rem;
   background-color: transparent;
-  color: #222222;
+  color: inherit;
   border-radius: 6px;
+  font-family: inherit;
   font-size: 0.95rem;
   font-weight: normal;
   white-space: nowrap;
@@ -242,7 +244,7 @@ button:disabled {
 }
 
 .filter-count {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   opacity: 0.8;
 }
 
