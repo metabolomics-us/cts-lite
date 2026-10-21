@@ -152,7 +152,7 @@
                     For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
                 </p>
                 <p>
-                    To disable first block matching, use the settings cog in the web UI or add <code class="inline-code">first_block_matches=false</code> to the API request.
+                    Since a first block match is not considered a miss, the query is not sent to PubChem Live, even if PubChem would have had an exact match. If you want exact matches only, disable first block matching using the settings cog in the web UI or by adding <code class="inline-code">first_block_matches=false</code> to the API request.
                 </p>
                 <h4 class="doc-subheading" id="pubchem-live-matches">PubChem Live Matches</h4>
                 <p>
