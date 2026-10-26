@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,47 +19,103 @@ import (
 )
 
 const cfbBaseURL = "https://cfb.metabolomics.us/entities"
-const cfbRequestTimeout = 30 * time.Second // per single GET
+const wishartBaseURL = "http://classyfire.wishartlab.com/entities"
+const cfbRequestTimeout = 30 * time.Second
 const cfbCacheTTL = 24 * time.Hour
 
-// Adaptive request pacing to adhere to rate limits
+// Request pacing mirrors Wishart's per-IP limit, 12 requests per minute
 var (
-	cfbHitDelay     = 50 * time.Millisecond   // cfb cache hit (X-Cache: HIT)
-	cfbBurstGap     = 2200 * time.Millisecond // cfb cache miss during burst
-	cfbSteadyGap    = 4500 * time.Millisecond // cfb cache miss once throttled
-	cfb429Pause     = 6 * time.Second         // pause after a 429
-	cfb429PauseLong = 15 * time.Second        // longer pause after multiple 429s
-	cfbIdleReset    = 30 * time.Second        // idle until burst refill
+	cfbHitDelay    = 50 * time.Millisecond  // after a cache hit
+	cfbMissFloor   = 500 * time.Millisecond // least time between requests that reach Wishart
+	cfbSlotCap     = 10.0                   // Wishart's allowance per IP
+	cfbSlotRefill  = 5 * time.Second        // Wishart refills one slot this often
+	cfb429Cooldown = 5 * time.Second        // no cfb requests this long after a cfb 429, its allowance refills at the same rate
 
-	cfbRetryDelays = []time.Duration{6 * time.Second, 10 * time.Second} // retry times for non-429 errors
+	cfbRetryDelays = []time.Duration{6 * time.Second, 10 * time.Second} // retry times for network errors (502/503 etc)
 )
 
-// cfb429StreakLong = number of consecutive 429s before we increase pausetime
-// cfb429MaxRetries = limits 429s before an inchikey is flagged as failed
+// 429s in a row before an inchikey is flagged as failed (direct and cfb)
 const (
-	cfb429StreakLong = 3
-	cfb429MaxRetries = 5
+	cfbDirect429MaxRetries = 3
+	cfb429MaxRetries       = 3 // When Wishart can't be reached
 )
 
-// cfbDownGiveUp = number of consecutive non-500 failures (network errors, 502/503 etc) before fast-failing remaining compounds
-// 429 or 200 resets the counter. Counter is per-request.
-var cfbDownGiveUp = 3
+// cfbDownGiveUp = number of consecutive failures (502/503 etc) before giving up.
+// cfbRouteDownFor, and a request whose lookups fail that often fast-fails its remaining compounds
+var (
+	cfbDownGiveUp   = 3
+	cfbRouteDownFor = 60 * time.Second
+)
 const cfbUnavailableNote = "ClassyFire is currently unavailable"
+const cfbNotFoundNote = "Not found in ClassyFire"
+const cfbStandardBlock = "UHFFFAOYSA" // retry key with standard block if 404
 
-// cfb500Probes = number of subsequent keys probed once each after a key exhausts its retries on HTTP 500s
-// Some InChIKeys consistently 500 even when the service is healthy, so a 500 alone does not
-// mean cfb is down. If every probe key also 500s the service is assumed down and the
-// remaining compounds fast-fail. Any non-500 outcome from a probe confirms cfb is up
-const cfb500Probes = 2
+// Some InChIKeys just 500, so check against known caffeine to see if ClassyFire is working, then finalize
+const cfbInternalErrorNote = "ClassyFire internal error (HTTP 500)"
+var cfbServiceCheckFor = 60 * time.Second
+
+// cfbCheck = answer of a known-good key check
+type cfbCheck int
+const (
+	cfbCheckUnknown cfbCheck = iota // only 429s, nothing classified
+	cfbCheckUp                      // the known-good key classified
+	cfbCheckDown                    // both routes failed outright (unreachable or 5xx)
+)
+
+var (
+	cfbCheckMu     sync.Mutex
+	cfbCheckUntil  time.Time // the last check's answer holds until this
+	cfbCheckResult cfbCheck
+)
+
+// ask Wishart directly for the known-good key to verify ClassyFire is up
+var cfbCheckProbe = func(ctx context.Context) cfbCheck {
+	cfbCache.Delete(cfbHealthProbeKey) // a cached answer would check nothing
+	a, ok := fetchOnce(ctx, cfbHealthProbeKey, true)
+	if ok && !a.unavailable && a.res.mode == cfbRetryLimited {
+		a, ok = fetchOnce(ctx, cfbHealthProbeKey, false)
+	}
+	switch {
+	case !ok:
+		return cfbCheckUnknown // client went away
+	case a.unavailable || a.res.mode == cfbRetry500 || a.res.mode == cfbRetryLimited:
+		return cfbCheckDown
+	case a.res.mode == cfbTerminal && a.res.info != nil && a.res.info.Error == "":
+		return cfbCheckUp
+	}
+	return cfbCheckUnknown // a 429, or the known-good key did not classify
+}
+
+// cfbServiceCheck runs the known-good key check (caffeine), lasts for cfbServiceCheckFor
+func cfbServiceCheck(ctx context.Context) cfbCheck {
+	cfbCheckMu.Lock()
+	defer cfbCheckMu.Unlock()
+	if time.Now().Before(cfbCheckUntil) {
+		return cfbCheckResult
+	}
+	result := cfbCheckProbe(ctx)
+	if ctx.Err() != nil {
+		return result
+	}
+	cfbCheckResult = result
+	cfbCheckUntil = time.Now().Add(cfbServiceCheckFor)
+	switch cfbCheckResult {
+	case cfbCheckUp:
+		cfbServiceUp.Store(true)
+	case cfbCheckDown:
+		cfbServiceUp.Store(false) // classyfire down
+	}
+	return cfbCheckResult
+}
 
 // cfbBreaker is the 'give-up' state of each request, passed through classifyKey()
 type cfbBreaker struct {
-	downStreak int  // consecutive non-500 failures during this request
-	tripped    bool // cfb down, remaining keys fast-fail
-	probes500  int  // single-attempt probes left after a key exhausted its retries on 500s
+	downStreak int  // consecutive non-500 failures
+	tripped    bool // cfb and Wishart down, remaining keys fast-fail
+	direct     int  // keys answered by Wishart directly, for the span and summary log
 }
 
-// Enum for the outcomes of CFB
+// Enum for the cfb outcomes
 type cfbOutcome int
 const (
 	cfbOutClassified cfbOutcome = iota // successful classification
@@ -66,29 +123,40 @@ const (
 	cfbOutFailed                       // error (unreachable, 429 give-up, 5xx, breaker)
 )
 
-// cfbTerminalOutcome maps results to cfbOutcome, failures (cfbOutFailed) are handled by the caller
+// cfbTerminalOutcome maps results to cfbOutcome, (cfbOutFailed is handled by the caller)
+// A cached 500 is a failure
 func cfbTerminalOutcome(info *model.ClassyFireInfo) cfbOutcome {
 	if info != nil && info.Error == "" {
 		return cfbOutClassified
 	}
+	if info != nil && info.Error == cfbInternalErrorNote {
+		return cfbOutFailed
+	}
 	return cfbOutNotFound
 }
 
-// cfbGate manages concurrent ClassyFire requests so that they are served in a fair, round-robin style
-// cfbNextAllowed is the next time another cfb request may start
+// cfbGate manages concurrent ClassyFire requests so that they are served in a round-robin style
 var (
-	cfbGateMu      sync.Mutex
-	cfbNextAllowed time.Time
-	cfbMissGap     = cfbBurstGap
-	cfb429Streak   int
-	cfbLastReqAt   time.Time
+	cfbGateMu        sync.Mutex
+	cfbNextAllowed   time.Time // next time a request may start
+	cfbSlots         float64   // our model of Wishart's allowance for this server's IP
+	cfbSlotsAt       time.Time // used to calculate cfbSlots, zero means full
+	cfbCooldownUntil time.Time // stop cfb requests until this, set by a cfb 429
+
+	cfbSkipUntil      time.Time // cfb looks down, stop until
+	wishartSkipUntil  time.Time // Wishart looks down, stop until
+	cfbFailStreak     int       // consecutive cfb failures (502/503 etc) across all requests
+	wishartFailStreak int       // consecutive Wishart failures (502/503 etc) across all requests
 )
 
-// The traced transport gives each classification request 
-// its own child span under the classyfire span
+// Each classification request gets its own child span under the classyfire span
 var cfbHTTPClient = &http.Client{
 	Timeout:   cfbRequestTimeout,
 	Transport: telemetry.NewHTTPTransport(http.DefaultTransport, "ClassyFire"),
+}
+var wishartHTTPClient = &http.Client{
+	Timeout:   cfbRequestTimeout,
+	Transport: telemetry.NewHTTPTransport(http.DefaultTransport, "Wishart ClassyFire"),
 }
 var cfbCache sync.Map // in-memory cache of classifications, cfbCacheTTL lifetime
 type cfbCacheEntry struct {
@@ -126,11 +194,22 @@ const (
 	cfbHealthProbeTimeout = 15 * time.Second
 )
 
-// cfbHealthProbe performs a single reachability check, it's a var so tests can mock it
+// cfbHealthProbe performs a reachability check, it's a var so tests can mock it
 var cfbHealthProbe = func() bool {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s.json", cfbBaseURL, cfbHealthProbeKey), nil)
+	return probeClassyFire(cfbBaseURL) || probeClassyFire(wishartBaseURL)
+}
+
+// probeClassyFire checks one ClassyFire endpoint
+func probeClassyFire(base string) bool {
+	status := probeStatus(base)
+	return status != 0 && status < http.StatusInternalServerError
+}
+
+// probeStatus asks base for the known-good key and returns the HTTP status, 0 when unreachable
+func probeStatus(base string) int {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s.json", base, cfbHealthProbeKey), nil)
 	if err != nil {
-		return false
+		return 0
 	}
 	// Cache-Control: no-cache forces cfb to revalidate against the real classyfire API
 	req.Header.Set("Cache-Control", "no-cache")
@@ -138,10 +217,10 @@ var cfbHealthProbe = func() bool {
 	client := &http.Client{Timeout: cfbHealthProbeTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false // network error or timeout, the service is unreachable
+		return 0 // network error or timeout, the service is unreachable
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode < http.StatusInternalServerError
+	return resp.StatusCode
 }
 
 // StartClassyFireHealthCheck probes ClassyFire on startup and then intermittently
@@ -177,8 +256,8 @@ type cfbRetryMode int
 const (
 	cfbTerminal         cfbRetryMode = iota // 200, 404, or empty -> no retry
 	cfbRetryLimited                         // network error or non-500 5xx -> bounded retries, counts toward 'down'
-	cfbRetryRateLimited                     // 429 -> pause entire queue, retry, give up after cfb429MaxRetries
-	cfbRetry500                             // HTTP 500 -> bounded retries, then probe the next keys before giving up
+	cfbRetryRateLimited                     // 429 -> from cfb ask Wishart directly, from Wishart wait for a slot and retry, give up after cfbDirect429MaxRetries
+	cfbRetry500                             // HTTP 500 -> from cfb ask Wishart directly, from both fail the key and probe the next keys
 )
 
 // cfbFetch = result of an InChIKey lookup 
@@ -204,24 +283,35 @@ type cfbAPIResponse struct {
 	Description  string   `json:"description"`
 }
 
-// classyFireFetcher is a variable so tests mock it
+// variables so tests mock them
 var classyFireFetcher = defaultClassyFireFetcher
+var wishartFetcher = defaultWishartFetcher
 
 func defaultClassyFireFetcher(ctx context.Context, inchikey string) (cfbFetch, error) {
+	return fetchClassification(ctx, cfbHTTPClient, cfbBaseURL, inchikey)
+}
+
+// Every Wishart answer counts against our allowance
+func defaultWishartFetcher(ctx context.Context, inchikey string) (cfbFetch, error) {
+	return fetchClassification(ctx, wishartHTTPClient, wishartBaseURL, inchikey)
+}
+
+// fetchClassification looks up one InChIKey at base, cfb and Wishart answer in the same format
+func fetchClassification(ctx context.Context, client *http.Client, base, inchikey string) (cfbFetch, error) {
 	// Second cache check in case the same InChIKey was fetched while we waited for the gate
 	if info, ok := cfbCacheLookup(inchikey); ok {
 		return cfbFetch{info: info, cacheHit: true}, nil
 	}
 
-	// Build the request. The context carries the classyfire 
+	// Build the request. The context carries the classyfire
 	// span and a client disconnect cancels the call
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s.json", cfbBaseURL, inchikey), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s.json", base, inchikey), nil)
 	if err != nil {
 		return cfbFetch{}, fmt.Errorf("building request: %w", err)
 	}
 
-	// Make the request to CFB
-	resp, err := cfbHTTPClient.Do(req)
+	// Make the request to cfb or Wishart
+	resp, err := client.Do(req)
 	if err != nil {
 		// network/timeout errors are transient: retry a bounded number of times
 		return cfbFetch{mode: cfbRetryLimited, errMsg: "ClassyFire service unreachable"},
@@ -233,7 +323,7 @@ func defaultClassyFireFetcher(ctx context.Context, inchikey string) (cfbFetch, e
 
 	if resp.StatusCode == http.StatusNotFound {
 		// 404 not found in ClassyFire db, terminal outcome
-		info := &model.ClassyFireInfo{Error: "Not found in ClassyFire"}
+		info := &model.ClassyFireInfo{Error: cfbNotFoundNote}
 		cfbCache.Store(inchikey, cfbCacheEntry{info, time.Now().Add(cfbCacheTTL)})
 		return cfbFetch{info: info, cacheHit: cacheHit}, nil
 	}
@@ -247,7 +337,7 @@ func defaultClassyFireFetcher(ctx context.Context, inchikey string) (cfbFetch, e
 		// Some InChIKeys consistently return HTTP 500 even when the service is healthy,
 		// so a 500 is retried per key and then confirmed by probing the next keys
 		return cfbFetch{cacheHit: cacheHit, mode: cfbRetry500,
-				errMsg: "ClassyFire internal error (HTTP 500)"},
+				errMsg: cfbInternalErrorNote},
 			fmt.Errorf("classyfire HTTP 500")
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -306,59 +396,129 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// fetchOnce performs a single gated lookup. It acquires the global cfb gate,
-// applies the adaptive pacing (resuming the fast burst pace if the queue has been
-// idle, then waiting out the gap left by the previous request), makes one
-// attempt, and sets the gap for the next request from the outcome: a cache hit
-// paces fast, a cache miss at the current miss gap, and a 429 settles the miss
-// gap to the sustained rate and pauses the whole queue (longer once 429s pile
-// up). Any non-429 outcome clears the 429 streak. ok is false if ctx was
-// cancelled.
-func fetchOnce(ctx context.Context, key string) (res cfbFetch, ok bool) {
+// cfbAttempt = outcome of a lookup, cfb possibly followed by Wishart directly
+type cfbAttempt struct {
+	res         cfbFetch // final result
+	direct      bool     // res came from Wishart directly
+	unavailable bool     // cfb and Wishart are both skipped as down, nothing was sent
+}
+
+// cfbNoteRoute counts consecutive failures of one route and skips it for cfbRouteDownFor (seconds) once it
+// seems down. Any other answer, 429 and 500 included, means the route is up
+func cfbNoteRoute(name string, mode cfbRetryMode, streak *int, skipUntil *time.Time, end time.Time) {
+	if mode != cfbRetryLimited {
+		*streak = 0
+		return
+	}
+	*streak++
+	if *streak >= cfbDownGiveUp {
+		*streak = 0
+		*skipUntil = end.Add(cfbRouteDownFor)
+		log.Printf("%s appears down after %d consecutive failures; skipping it for %s", name, cfbDownGiveUp, cfbRouteDownFor)
+	}
+}
+
+// cfbRefillSlots adds the slots earned since cfbSlotsAt
+func cfbRefillSlots(now time.Time) {
+	if cfbSlotsAt.IsZero() || cfbSlotRefill <= 0 {
+		cfbSlots = cfbSlotCap
+	} else {
+		cfbSlots = min(cfbSlotCap, cfbSlots+float64(now.Sub(cfbSlotsAt))/float64(cfbSlotRefill))
+	}
+	cfbSlotsAt = now
+}
+
+// cfbSettle sets the gap after a request, a cache hit return their slot to the pool
+func cfbSettle(res cfbFetch, end time.Time) {
+	if res.cacheHit {
+		cfbSlots = min(cfbSlotCap, cfbSlots+1)
+		cfbNextAllowed = end.Add(cfbHitDelay)
+		return
+	}
+	cfbNextAllowed = end.Add(cfbMissFloor)
+}
+
+// Try cfb first, then Wishart directly if cfb fails to respond.
+func fetchOnce(ctx context.Context, key string, preferDirect bool) (a cfbAttempt, ok bool) {
 	cfbGateMu.Lock()
 	defer cfbGateMu.Unlock()
 
-	// Check if it's been 30s since the last request, if so reset the miss gap
-	if time.Since(cfbLastReqAt) > cfbIdleReset {
-		cfbMissGap = cfbBurstGap
-		cfb429Streak = 0
-	}
-
-	// Wait after previous request, globally
-	if sleepCtx(ctx, time.Until(cfbNextAllowed)) != nil {
-		return cfbFetch{}, false
-	}
-
-	res, _ = classyFireFetcher(ctx, key)
-	end := time.Now()
-	cfbLastReqAt = end
-	if ctx.Err() != nil {
-		return cfbFetch{}, false
-	}
-
-	switch {
-	case res.mode == cfbRetryRateLimited:
-		cfb429Streak++
-		cfbMissGap = cfbSteadyGap
-		pause := cfb429Pause
-		if cfb429Streak >= cfb429StreakLong {
-			pause = cfb429PauseLong
+	// Wait for a slot
+	var useCFB, wishartUp bool
+	for {
+		now := time.Now()
+		cfbRefillSlots(now)
+		wait := cfbNextAllowed.Sub(now)
+		if cfbSlots < 1 {
+			wait = max(wait, time.Duration((1-cfbSlots)*float64(cfbSlotRefill)))
 		}
-		cfbNextAllowed = end.Add(pause)
-	case res.cacheHit:
-		cfb429Streak = 0
-		cfbNextAllowed = end.Add(cfbHitDelay)
-	default:
-		cfb429Streak = 0
-		cfbNextAllowed = end.Add(cfbMissGap)
+
+		cfbUp := !now.Before(cfbSkipUntil)
+		wishartUp = !now.Before(wishartSkipUntil)
+		if !cfbUp && !wishartUp {
+			return cfbAttempt{unavailable: true}, true
+		}
+		cooling := now.Before(cfbCooldownUntil)
+		useCFB = cfbUp && !cooling && !(preferDirect && wishartUp)
+		if !useCFB && !wishartUp {
+			wait = max(wait, cfbCooldownUntil.Sub(now)) // only cfb is up and it is cooling down
+		}
+
+		if wait <= 0 {
+			break
+		}
+		if sleepCtx(ctx, wait) != nil {
+			return cfbAttempt{}, false
+		}
 	}
-	return res, true
+	cfbSlots--
+
+	var cfbRes cfbFetch
+	if useCFB {
+		res, _ := classyFireFetcher(ctx, key)
+		end := time.Now()
+		if ctx.Err() != nil {
+			return cfbAttempt{}, false
+		}
+		cfbNoteRoute("cfb", res.mode, &cfbFailStreak, &cfbSkipUntil, end)
+		if res.mode == cfbRetryRateLimited {
+			cfbCooldownUntil = end.Add(cfb429Cooldown)
+		}
+		if res.mode == cfbTerminal || !wishartUp {
+			cfbSettle(res, end)
+			a.res = res
+			return a, true
+		}
+		log.Printf("cfb: %s for %s; trying Wishart directly", res.errMsg, key)
+		cfbRes = res
+	}
+
+	// Wishart directly, with the slot already taken
+	res, _ := wishartFetcher(ctx, key)
+	end := time.Now()
+	if ctx.Err() != nil {
+		return cfbAttempt{}, false
+	}
+	cfbNoteRoute("Wishart", res.mode, &wishartFailStreak, &wishartSkipUntil, end)
+	if res.mode == cfbRetryRateLimited {
+		cfbSlots, cfbSlotsAt = 0, end
+	}
+	cfbSettle(res, end)
+	if useCFB && res.mode == cfbRetryLimited {
+		// Wishart could not be reached, which says nothing about the key, so cfb's answer decides the retry.
+		// Any answer from Wishart, a 500 included, is about the key and stands
+		log.Printf("Wishart: %s for %s; keeping cfb's answer", res.errMsg, key)
+		a.res = cfbRes
+		return a, true
+	}
+	a.res, a.direct = res, true
+	return a, true
 }
 
 const cfbMaxMatchesPerQuery = 1
 const cfbCappedNote = "Only the top hit of each query is classified for latency considerations"
 
-// Determine the list of InChIKeys to be classified. Ignore matches past the top hit of a single query (attach capped note)
+// Determine the list of InChIKeys to be classified
 func classifiableKeys(results []*model.SingleResult) []string {
 	seen := make(map[string]bool)
 	var keys []string
@@ -402,6 +562,7 @@ func streamClassyFire(ctx context.Context, keys <-chan string, onResult func(key
 			attribute.Int("classyfire.classified", completed),
 			attribute.Int("classyfire.not_found", misses),
 			attribute.Int("classyfire.failed", failures),
+			attribute.Int("classyfire.direct", br.direct),
 			attribute.Bool("classyfire.breaker_tripped", br.tripped),
 		)
 		if br.tripped {
@@ -442,7 +603,19 @@ func streamClassyFire(ctx context.Context, keys <-chan string, onResult func(key
 	if failures > 0 {
 		summary += fmt.Sprintf(", %d failures", failures)
 	}
+	if br.direct > 0 {
+		summary += fmt.Sprintf(", %d answered by Wishart directly", br.direct)
+	}
 	log.Printf("%s in %s", summary, time.Since(start).Round(time.Millisecond))
+}
+
+// ok is false when the key already has the standard block, so a standard key is never retried
+func cfbStandardKey(key string) (string, bool) {
+	parts := strings.Split(key, "-")
+	if len(parts) != 3 || parts[1] == cfbStandardBlock {
+		return "", false
+	}
+	return parts[0] + "-" + cfbStandardBlock + "-" + parts[2], true
 }
 
 // Resolves one key: result, bounded retries, give up, or cancellation
@@ -457,36 +630,54 @@ func classifyKey(ctx context.Context, key string, br *cfbBreaker) (info *model.C
 		return &model.ClassyFireInfo{Error: cfbUnavailableNote}, cfbOutFailed
 	}
 
-	var rateLimited, transient, serverErr int
+	info, outcome, direct := lookupKey(ctx, key, br, false)
+	if !direct || info == nil || info.Error != cfbNotFoundNote {
+		return info, outcome
+	}
+
+	// A 404 from Wishart tries the same structure without stereo or isotope layers
+	std, ok := cfbStandardKey(key)
+	if !ok {
+		return info, outcome
+	}
+	stdInfo, found := cfbCacheLookup(std)
+	stdOutcome := cfbTerminalOutcome(stdInfo)
+	if !found {
+		stdInfo, stdOutcome, _ = lookupKey(ctx, std, br, true)
+	}
+	switch stdOutcome {
+	case cfbOutClassified:
+		cfbCache.Store(key, cfbCacheEntry{stdInfo, time.Now().Add(cfbCacheTTL)})
+		return stdInfo, stdOutcome
+	case cfbOutFailed:
+		// The fallback never got an answer, so the cached 404 for the original key is not final
+		cfbCache.Delete(key)
+		return stdInfo, stdOutcome
+	}
+	return info, outcome
+}
+
+// lookupKey runs the gated lookups for one key until a final answer, a give up, or cancellation
+func lookupKey(ctx context.Context, key string, br *cfbBreaker, preferDirect bool) (info *model.ClassyFireInfo, outcome cfbOutcome, direct bool) {
+	var cfb429, direct429, transient int
 	for {
-		res, ok := fetchOnce(ctx, key)
+		a, ok := fetchOnce(ctx, key, preferDirect)
 		if !ok {
-			return nil, cfbOutFailed // ctx cancelled mid-fetch
+			return nil, cfbOutFailed, false // ctx cancelled mid-fetch
 		}
+		if a.unavailable {
+			// cfb and Wishart both look down, fail fast
+			br.tripped = true
+			cfbServiceUp.Store(false)
+			log.Printf("ERROR: cfb and Wishart both appear down; failing remaining compounds for this request")
+			return &model.ClassyFireInfo{Error: cfbUnavailableNote}, cfbOutFailed, false
+		}
+		res := a.res
 
 		// Generic fallback message so that we don't ever return a blank error
 		msg := res.errMsg
 		if msg == "" {
 			msg = "ClassyFire lookup failed"
-		}
-
-		// While probing after a 500, each key gets a single attempt. Another 500
-		// counts toward confirming the service is down; any other outcome clears
-		// probe mode and the result is handled normally below
-		if br.probes500 > 0 {
-			if res.mode == cfbRetry500 {
-				br.probes500--
-				if br.probes500 == 0 {
-					br.tripped = true
-					cfbServiceUp.Store(false) // classyfire down
-					log.Printf("ERROR: ClassyFire returned HTTP 500 for %d consecutive keys; assuming it is down and failing remaining compounds for this request", cfb500Probes+1)
-					return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
-				}
-				log.Printf("ClassyFire HTTP 500 for probe key %s; %d probe(s) remaining", key, br.probes500)
-				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
-			}
-			// A non-500 outcome confirms the service is up
-			br.probes500 = 0
 		}
 
 		switch res.mode {
@@ -495,47 +686,66 @@ func classifyKey(ctx context.Context, key string, br *cfbBreaker) (info *model.C
 			if !res.cacheHit { // only consider classyfire up if it was not a cfb cache hit
 				cfbServiceUp.Store(true)
 			}
-			return res.info, cfbTerminalOutcome(res.info)
+			if a.direct {
+				br.direct++
+			}
+			return res.info, cfbTerminalOutcome(res.info), a.direct
 
 		case cfbRetryRateLimited:
-			br.downStreak = 0 // 429 means cfb is up
-			rateLimited++
-			if rateLimited >= cfb429MaxRetries {
-				log.Printf("ClassyFire still rate limited for %s after %d retries; giving up", key, rateLimited)
-				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+			br.downStreak = 0 // 429 means the service is up
+			if a.direct {
+				direct429++
+				if direct429 >= cfbDirect429MaxRetries {
+					log.Printf("Wishart still rate limited for %s after %d retries; giving up", key, direct429)
+					return &model.ClassyFireInfo{Error: msg}, cfbOutFailed, true
+				}
+				log.Printf("Wishart rate limited (429) for %s; retrying after the next refill (%d/%d)", key, direct429, cfbDirect429MaxRetries)
+				preferDirect = true
+			} else {
+				// Only reached while Wishart is skipped, the gate waits out cfb's cooldown
+				cfb429++
+				if cfb429 >= cfb429MaxRetries {
+					log.Printf("cfb still rate limited for %s after %d retries; giving up", key, cfb429)
+					return &model.ClassyFireInfo{Error: msg}, cfbOutFailed, false
+				}
+				log.Printf("cfb rate limited (429) for %s with Wishart down; retrying after the cooldown (%d/%d)", key, cfb429, cfb429MaxRetries)
 			}
-			log.Printf("ClassyFire rate limited (429) for %s; pausing and retrying (%d/%d)", key, rateLimited, cfb429MaxRetries)
 
 		case cfbRetry500:
-			// A 500 means the service responded, so it does not count toward the
-			// 'down' streak. Retry this key, then probe the next keys to decide
-			// whether the service is down or this key just persistently 500s
+			// 500 from both cfb and direct is a final answer for that key (failure)
+			// Try caffeine to assert ClassyFire is up before finalizing
 			br.downStreak = 0
-			if serverErr >= len(cfbRetryDelays) {
-				log.Printf("ClassyFire HTTP 500 for %s after %d attempts; probing the next %d key(s)", key, serverErr+1, cfb500Probes)
-				br.probes500 = cfb500Probes
-				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+			info := &model.ClassyFireInfo{Error: msg}
+			switch cfbServiceCheck(ctx) {
+			case cfbCheckDown:
+				br.tripped = true
+				log.Printf("ERROR: ClassyFire HTTP 500 for %s and the known-good key check failed; failing remaining compounds for this request", key)
+			case cfbCheckUp:
+				// Only Wishart's own 500 is cached, a cfb-only 500 could be cfb failing on its own
+				if a.direct {
+					cfbCache.Store(key, cfbCacheEntry{info, time.Now().Add(cfbCacheTTL)})
+				}
+				log.Printf("ClassyFire HTTP 500 for %s while the known-good key classifies; failing this key (cached: %v)", key, a.direct)
+			default:
+				log.Printf("ClassyFire HTTP 500 for %s and the known-good key check only got 429s; failing this key uncached", key)
 			}
-			if sleepCtx(ctx, cfbRetryDelays[serverErr]) != nil {
-				return nil, cfbOutFailed // ctx cancelled during backoff
-			}
-			serverErr++
+			return info, cfbOutFailed, a.direct
 
 		default: // cfbRetryLimited, service down
 			br.downStreak++
 			if br.downStreak >= cfbDownGiveUp {
-				// cfb looks down, fail fast
+				// cfb and Wishart look down, fail fast
 				br.tripped = true
-				cfbServiceUp.Store(false) // classyfire down
+				cfbServiceUp.Store(false)
 				log.Printf("ERROR: ClassyFire appears down after %d consecutive failures; failing remaining compounds for this request", br.downStreak)
-				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed, a.direct
 			}
 			if transient >= len(cfbRetryDelays) {
 				log.Printf("ClassyFire lookup failed for %s after %d attempts: %s", key, transient+1, msg)
-				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed
+				return &model.ClassyFireInfo{Error: msg}, cfbOutFailed, a.direct
 			}
 			if sleepCtx(ctx, cfbRetryDelays[transient]) != nil {
-				return nil, cfbOutFailed // ctx cancelled during backoff
+				return nil, cfbOutFailed, false // ctx cancelled during backoff
 			}
 			transient++
 		}
