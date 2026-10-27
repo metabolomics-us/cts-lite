@@ -54,7 +54,7 @@
                 <div class="form-actions">
                     <button type="submit" style="min-height: 44px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
                     <div class="cog-wrapper">
-                        <button type="button" class="cog-btn" id="settings-toggle" aria-label="Settings button" aria-expanded="false">
+                        <button type="button" class="cog-btn" id="settings-toggle" aria-label="Settings button" aria-expanded="false" title="Settings">
                             <img src="assets/settings-icon.svg" alt="settings" width="22" height="22">
                         </button>
                         <div class="settings-panel" id="settings-panel">
@@ -72,15 +72,8 @@
                                     <span class="toggle-track"></span>
                                 </label>
                             </div>
-                            <div class="settings-row" style="margin-top: 0.75rem;">
-                                <span>RDKit Conversion <a href="/docs#rdkit-conversion" target="_blank" aria-label="RDKit conversion documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
-                                <label class="toggle-label" aria-label="RDKit conversion">
-                                    <input type="checkbox" checked id="rdkit-conversion">
-                                    <span class="toggle-track"></span>
-                                </label>
-                            </div>
                             <div class="settings-row" style="margin-top: 0.75rem;" id="classyfire-row">
-                                <span>ClassyFire <img src="assets/beta-icon.svg" alt="Beta feature" width="42" height="19" style="vertical-align:middle;margin:0.25rem;opacity:0.7;"> <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>ClassyFire <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="ClassyFire chemical classes">
                                     <input type="checkbox" id="classyfire-enabled">
                                     <span class="toggle-track"></span>
@@ -100,14 +93,37 @@
                 </div>
             </form>
             <div id="output-container">
+                <!-- PubChem Live fallback progress spinner -->
+                <div id="pcb-progress" hidden>
+                    <span class="inline-spinner"></span>
+                    <span class="pcb-progress-label"></span>
+                </div>
                 <!-- ClassyFire progress bar and queue  -->
                 <div id="cf-progress" hidden>
+                    <div class="cf-progress-header">
+                        <span class="cf-progress-label"></span>
+                    </div>
                     <div class="cf-progress-track"><div class="cf-progress-fill"></div></div>
-                    <span class="cf-progress-label"></span>
+                    <span class="cf-progress-note" hidden>* ClassyFire total may shrink</span>
                     <span id="cf-queue" class="cf-queue doc-note" hidden></span>
                 </div>
                 <div class="results-header">
-                    <label for="output-text" id="output-label">Results</label>
+                    <div class="results-title">
+                        <label for="output-text" id="output-label">Results</label>
+                        <!-- Filter results menu -->
+                        <div class="cog-wrapper" id="result-filters" hidden>
+                            <button type="button" class="cog-btn" id="filter-toggle" aria-label="Filter results" aria-expanded="false" aria-haspopup="true" title="Filter results">
+                                <img src="assets/filter-icon.svg" alt="" width="20" height="20">
+                            </button>
+                            <div class="settings-panel filter-panel" id="filter-panel" role="group" aria-label="Filter results">
+                                <div class="filter-panel-heading">Show results</div>
+                                <button type="button" class="filter-option active" data-filter="all" aria-pressed="true"><span class="filter-name"><span class="filter-swatch"></span>All</span><span class="filter-count"></span></button>
+                                <button type="button" class="filter-option" data-filter="exact-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch exact-match"></span>Exact</span><span class="filter-count"></span></button>
+                                <button type="button" class="filter-option" data-filter="first-block-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch first-block-match"></span>First Block</span><span class="filter-count"></span></button>
+                                <button type="button" class="filter-option" data-filter="pubchem-live-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch pubchem-live-match"></span>PubChem Live</span><span class="filter-count"></span></button>
+                                <button type="button" class="filter-option" data-filter="no-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch no-match"></span>No Match</span><span class="filter-count"></span></button>
+                            </div>
+                        </div>                    </div>
                     <div id="download-buttons">
                         <button class="download-btn" id="download-csv" type="button">
                             CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">

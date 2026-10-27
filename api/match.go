@@ -10,6 +10,10 @@ var smilesToInChIKey = func(smiles string) (string, error) {
 	return rdkit.SmilesToInChIKey(smiles)
 }
 
+var inchiToInChIKey = func(inchi string) (string, error) {
+	return rdkit.InChIToInChIKey(inchi)
+}
+
 func matchPubChemID(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
 	compounds, err := index.QueryByPubChemID(query, topHitOnly)
 	if err != nil {
@@ -86,7 +90,7 @@ func matchInchiKey(index *model.PubChemIndex, query string, result *model.Single
 	}
 }
 
-func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool, allowRdkitConversion bool) {
+func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
 	compounds, err := index.QueryBySmiles(query, topHitOnly)
 	if err != nil {
 		log.Printf("Error querying by SMILES: %v", err)
@@ -94,16 +98,11 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.ErrMsg = "Internal server error"
 		return
 	}
+
 	if len(compounds) > 0 {
 		result.MatchFound = true
 		result.MatchLevel = "Exact SMILES"
 		result.Matches = compounds
-		return
-	}
-
-	if !allowRdkitConversion {
-		result.MatchFound = false
-		result.ErrMsg = "No compound found"
 		return
 	}
 
@@ -121,6 +120,9 @@ func matchSmiles(index *model.PubChemIndex, query string, result *model.SingleRe
 		result.MatchFound = false
 		return
 	}
+	// Keep the converted inchikey in case pubchem fallback needs it later
+	result.DerivedInChIKey = inchikey
+
 	if inchikey != "" {
 		matchInchiKey(index, inchikey, result, allowFirstBlockMatches, topHitOnly)
 		if result.MatchFound {
@@ -152,8 +154,8 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	result.Matches = compounds
 }
 
-func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool, allowRdkitConversion bool) {
-	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly, allowRdkitConversion)
+func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
+	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
 	if result.MatchFound {
 		if result.QueryType != "converted_smiles" {
 			result.QueryType = "smiles"

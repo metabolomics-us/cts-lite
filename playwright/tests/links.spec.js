@@ -9,6 +9,9 @@ async function collectHrefs(page, path) {
   return [...new Set(hrefs)];
 }
 
+// Hosts that reject requests from CI runners with 403 even though the page exists
+const BOT_BLOCKED_HOSTS = new Set(['pmc.ncbi.nlm.nih.gov']);
+
 function isExternal(href) {
   return /^https?:\/\//.test(href);
 }
@@ -74,7 +77,9 @@ test.describe('external links', () => {
 
       for (const href of hrefs) {
         const response = await page.request.get(href, { timeout: 30_000 });
-        expect(response.status(), `${href} on ${path}`).toBeLessThan(400);
+        const status = response.status();
+        if (status === 403 && BOT_BLOCKED_HOSTS.has(new URL(href).hostname)) continue;
+        expect(status, `${href} on ${path}`).toBeLessThan(400);
       }
     });
   }

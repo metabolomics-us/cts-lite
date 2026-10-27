@@ -17,34 +17,65 @@ import (
 	"time"
 )
 
-// mockClassyFire replaces classyFireFetcher for tests
+// mockClassyFire replaces both routes (cfb and Wishart directly) with fn, so a failing
+// mock means ClassyFire as a whole fails. Mocks only care about the key, so the
+// context is dropped here rather than in every mock
 func mockClassyFire(t *testing.T, fn func(string) (cfbFetch, error)) {
 	t.Helper()
-	orig := classyFireFetcher
-	classyFireFetcher = fn
-	t.Cleanup(func() { classyFireFetcher = orig })
+	mockRoutes(t, fn, fn)
+}
+
+// mockRoutes replaces classyFireFetcher (cfb) and wishartFetcher (Wishart directly) separately
+func mockRoutes(t *testing.T, cfbFn, wishartFn func(string) (cfbFetch, error)) {
+	t.Helper()
+	origCFB, origWishart := classyFireFetcher, wishartFetcher
+	classyFireFetcher = func(_ context.Context, key string) (cfbFetch, error) { return cfbFn(key) }
+	wishartFetcher = func(_ context.Context, key string) (cfbFetch, error) { return wishartFn(key) }
+	t.Cleanup(func() { classyFireFetcher, wishartFetcher = origCFB, origWishart })
 	resetCfbPacing(t)
 }
 
-// resetCfbPacing zeroes the pacing/retry delays
+// resetCfbPacing zeroes the pacing/retry delays and clears the gate state
 func resetCfbPacing(t *testing.T) {
 	t.Helper()
-	origHit, origBurst, origSteady := cfbHitDelay, cfbBurstGap, cfbSteadyGap
-	origPause, origLong, origRetry := cfb429Pause, cfb429PauseLong, cfbRetryDelays
-	cfbHitDelay, cfbBurstGap, cfbSteadyGap = 0, 0, 0
-	cfb429Pause, cfb429PauseLong = 0, 0
-	cfbRetryDelays = []time.Duration{0, 0}
+	origHit, origFloor, origRefill, origCooldown := cfbHitDelay, cfbMissFloor, cfbSlotRefill, cfb429Cooldown
+	origRetry, origDownFor := cfbRetryDelays, cfbRouteDownFor
+	cfbHitDelay, cfbMissFloor, cfbSlotRefill, cfb429Cooldown = 0, 0, 0, 0
+	cfbRetryDelays, cfbRouteDownFor = []time.Duration{0, 0}, 0
 
 	cfbGateMu.Lock()
-	cfbNextAllowed, cfbLastReqAt = time.Time{}, time.Time{}
-	cfbMissGap, cfb429Streak = 0, 0
+	cfbNextAllowed, cfbSlotsAt, cfbSlots = time.Time{}, time.Time{}, 0
+	cfbCooldownUntil, cfbSkipUntil, wishartSkipUntil = time.Time{}, time.Time{}, time.Time{}
+	cfbFailStreak, wishartFailStreak = 0, 0
 	cfbGateMu.Unlock()
 	atomic.StoreInt64(&cfbActiveRequests, 0)
 
+	// The known-good key check answers "up" without any HTTP unless a test says otherwise
+	origCheck := cfbCheckProbe
+	cfbCheckProbe = func(context.Context) cfbCheck { return cfbCheckUp }
+	cfbCheckMu.Lock()
+	cfbCheckUntil = time.Time{}
+	cfbCheckMu.Unlock()
+
 	t.Cleanup(func() {
-		cfbHitDelay, cfbBurstGap, cfbSteadyGap = origHit, origBurst, origSteady
-		cfb429Pause, cfb429PauseLong, cfbRetryDelays = origPause, origLong, origRetry
+		cfbHitDelay, cfbMissFloor, cfbSlotRefill, cfb429Cooldown = origHit, origFloor, origRefill, origCooldown
+		cfbRetryDelays, cfbRouteDownFor = origRetry, origDownFor
+		cfbCheckProbe = origCheck
+		cfbCheckMu.Lock()
+		cfbCheckUntil = time.Time{}
+		cfbCheckMu.Unlock()
 	})
+}
+
+// mockServiceCheck replaces the known-good key check and counts how often it runs
+func mockServiceCheck(t *testing.T, result cfbCheck) *int32 {
+	t.Helper()
+	var n int32
+	cfbCheckProbe = func(context.Context) cfbCheck {
+		atomic.AddInt32(&n, 1)
+		return result
+	}
+	return &n
 }
 
 func fakeClassyFireInfo() *model.ClassyFireInfo {
@@ -198,7 +229,7 @@ func TestEnrichWithClassyFireSurfacesFetchError(t *testing.T) {
 	}
 }
 
-// Transient failure twice, then success. Should perform 3 attempts and not give up
+// Transient failure on cfb and then Wishart, then success when cfb is retried. Should not give up
 func TestEnrichWithClassyFireRetriesThenSucceeds(t *testing.T) {
 	var calls int32
 	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
@@ -214,14 +245,14 @@ func TestEnrichWithClassyFireRetriesThenSucceeds(t *testing.T) {
 	enrichWithClassyFire(context.Background(), results)
 
 	if got := atomic.LoadInt32(&calls); got != 3 {
-		t.Errorf("expected 3 attempts (2 retries), got %d", got)
+		t.Errorf("expected 3 calls (cfb, Wishart, then cfb on the retry), got %d", got)
 	}
 	if results[0].Matches[0].ClassyFire == nil {
 		t.Error("expected ClassyFire info to be attached after successful retry")
 	}
 }
 
-// Give up after 3 transient failures
+// Give up after 3 transient failures, each attempt asks cfb and then Wishart
 func TestEnrichWithClassyFireGivesUpAfterRetries(t *testing.T) {
 	var calls int32
 	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
@@ -234,8 +265,8 @@ func TestEnrichWithClassyFireGivesUpAfterRetries(t *testing.T) {
 	}
 	enrichWithClassyFire(context.Background(), results)
 
-	if got := atomic.LoadInt32(&calls); got != 3 {
-		t.Errorf("expected 3 attempts before giving up, got %d", got)
+	if got := atomic.LoadInt32(&calls); got != 2*3 {
+		t.Errorf("expected 3 attempts (6 calls) before giving up, got %d calls", got)
 	}
 	cf := results[0].Matches[0].ClassyFire
 	if cf == nil || cf.Error != "ClassyFire unavailable (HTTP 503)" {
@@ -349,7 +380,7 @@ func TestStreamClassyFireLogsClientDisconnect(t *testing.T) {
 		"CYYVLZVUVIJVGH-UHFFFAOYSA-N",
 	}
 	var got int
-	streamClassyFire(ctx, keys, func(key string, info *model.ClassyFireInfo) {
+	streamClassyFire(ctx, cfbKeyChan(keys), func(key string, info *model.ClassyFireInfo) {
 		got++
 		cancel() // client disconnects after the first result resolves
 	})
@@ -357,7 +388,7 @@ func TestStreamClassyFireLogsClientDisconnect(t *testing.T) {
 	if got != 1 {
 		t.Errorf("expected to stop after 1 result, processed %d", got)
 	}
-	if want := "ClassyFire request cancelled by client; stopping after 1 of 3 compounds"; !strings.Contains(logBuf.String(), want) {
+	if want := "ClassyFire request cancelled by client; stopping after 1 compounds"; !strings.Contains(logBuf.String(), want) {
 		t.Errorf("expected log to contain %q, got: %q", want, logBuf.String())
 	}
 }
@@ -411,9 +442,9 @@ func TestEnrichWithClassyFireGivesUpWhenServiceDown(t *testing.T) {
 	}
 	enrichWithClassyFire(context.Background(), results)
 
-	// Only the first key probes (cfbDownGiveUp attempts), the rest are fast-failed
-	if got := atomic.LoadInt32(&calls); got != int32(cfbDownGiveUp) {
-		t.Errorf("expected %d total fetches before giving up, got %d", cfbDownGiveUp, got)
+	// Only the first key probes (cfbDownGiveUp attempts on cfb and Wishart), the rest are fast-failed
+	if got := atomic.LoadInt32(&calls); got != int32(2*cfbDownGiveUp) {
+		t.Errorf("expected %d total fetches before giving up, got %d", 2*cfbDownGiveUp, got)
 	}
 
 	// Every compound is still reported with an error rather than left unclassified
@@ -430,174 +461,357 @@ func TestEnrichWithClassyFireGivesUpWhenServiceDown(t *testing.T) {
 	}
 }
 
-// A single key that always 500s exhausts the normal bounded retries
-// and then fails. With no further keys to probe, the breaker never trips
-func TestEnrichWithClassyFire500SingleKeyRetries(t *testing.T) {
-	var calls int32
-	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
-		atomic.AddInt32(&calls, 1)
-		return cfbFetch{mode: cfbRetry500, errMsg: "ClassyFire internal error (HTTP 500)"}, errors.New("HTTP 500")
-	})
+// serverError is a 500 answer from either route
+func serverError(string) (cfbFetch, error) {
+	return cfbFetch{mode: cfbRetry500, errMsg: cfbInternalErrorNote}, errors.New("HTTP 500")
+}
 
-	results := []*model.SingleResult{
-		{MatchFound: true, Matches: []*model.Compound{{InChIKey: "RYYVLZVUVIJVGH-UHFFFAOYSA-N"}}},
-	}
+// A key that 500s on cfb and Wishart fails after that one attempt, a 500 key always 500s.
+// The known-good key check answers, so the 500 is cached and the breaker never trips
+func TestEnrichWithClassyFire500SingleKeyFailsWithoutRetry(t *testing.T) {
+	key := freshKey(t, "FIVEHUNDRED001-UHFFFAOYSA-N")
+	var calls int32
+	mockClassyFire(t, counted(&calls, serverError))
+	checks := mockServiceCheck(t, cfbCheckUp)
+
+	results := singleKeyResults(key)
 	enrichWithClassyFire(context.Background(), results)
 
-	if got, want := atomic.LoadInt32(&calls), int32(len(cfbRetryDelays)+1); got != want {
-		t.Errorf("expected %d attempts on a persistent 500, got %d", want, got)
+	// One attempt, cfb and then Wishart
+	if calls != 2 || *checks != 1 {
+		t.Errorf("expected 2 calls and 1 check on a persistent 500, got %d and %d", calls, *checks)
 	}
-	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "ClassyFire internal error (HTTP 500)" {
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != cfbInternalErrorNote {
 		t.Errorf("expected 500 error surfaced, got %+v", cf)
 	}
+	if cached, ok := cfbCacheLookup(key); !ok || cached.Error != cfbInternalErrorNote {
+		t.Errorf("expected Wishart's 500 cached, got %+v (ok=%v)", cached, ok)
+	}
 }
 
-// A persistent 500 retries the key, probes the next two keys once each, and only
-// after all three 500 does it assume the service is down and fast-fail the rest
-func TestEnrichWithClassyFireProbesThenGivesUpOn500(t *testing.T) {
+// A failed known-good key check means ClassyFire is down: the breaker trips after the first 500
+func TestEnrichWithClassyFire500WithFailedCheckTripsBreaker(t *testing.T) {
 	var calls int32
-	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
-		atomic.AddInt32(&calls, 1)
-		return cfbFetch{mode: cfbRetry500, errMsg: "ClassyFire internal error (HTTP 500)"}, errors.New("HTTP 500")
-	})
+	mockClassyFire(t, counted(&calls, serverError))
+	mockServiceCheck(t, cfbCheckDown)
 
-	const numKeys = 10
-	results := make([]*model.SingleResult, numKeys)
-	for i := range results {
-		key := string(rune('A'+i)) + "YYVLZVUVIJVGH-UHFFFAOYSA-N"
-		results[i] = &model.SingleResult{MatchFound: true, Matches: []*model.Compound{{InChIKey: key}}}
-	}
+	results := singleKeyResults("AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N")
 	enrichWithClassyFire(context.Background(), results)
 
-	// First key retries (len(cfbRetryDelays)+1 attempts), then each probe key is
-	// tried once. After all three keys 500 the breaker trips
-	wantCalls := int32(len(cfbRetryDelays) + 1 + cfb500Probes)
-	if got := atomic.LoadInt32(&calls); got != wantCalls {
-		t.Errorf("expected %d fetches before giving up, got %d", wantCalls, got)
+	if calls != 2 {
+		t.Errorf("expected 2 calls before the breaker tripped, got %d", calls)
 	}
-
-	// Every compound is still reported with an error
-	for i, r := range results {
-		if cf := r.Matches[0].ClassyFire; cf == nil || cf.Error == "" {
-			t.Errorf("result[%d]: expected an error, got %+v", i, cf)
-		}
-	}
-
-	// Keys after the breaker tripped carry the generic unavailable note
-	if cf := results[numKeys-1].Matches[0].ClassyFire; cf == nil || cf.Error != cfbUnavailableNote {
+	if cf := results[2].Matches[0].ClassyFire; cf == nil || cf.Error != cfbUnavailableNote {
 		t.Errorf("expected last compound to carry %q, got %+v", cfbUnavailableNote, cf)
 	}
+	if _, ok := cfbCacheLookup("AYYVLZVUVIJVGH-UHFFFAOYSA-N"); ok {
+		t.Error("a 500 while ClassyFire is down must not be cached")
+	}
 }
 
-// A 500 on one key must not be mistaken for the service being down: once a probe
-// key returns a non-500 outcome the remaining compounds are classified normally
-func TestEnrichWithClassyFire500RecoversWhenProbeSucceeds(t *testing.T) {
-	var calls int32
-	bad := "AYYVLZVUVIJVGH-UHFFFAOYSA-N"
-	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
-		atomic.AddInt32(&calls, 1)
-		if inchikey == bad {
-			return cfbFetch{mode: cfbRetry500, errMsg: "ClassyFire internal error (HTTP 500)"}, errors.New("HTTP 500")
-		}
-		return cfbFetch{info: fakeClassyFireInfo()}, nil
-	})
-
-	const numKeys = 5
-	results := make([]*model.SingleResult, numKeys)
-	for i := range results {
-		key := string(rune('A'+i)) + "YYVLZVUVIJVGH-UHFFFAOYSA-N"
-		results[i] = &model.SingleResult{MatchFound: true, Matches: []*model.Compound{{InChIKey: key}}}
+// Rerunning a batch whose good keys are cached must not trip the breaker on its 500 keys:
+// one check covers them all and a second rerun serves them from the cache
+func TestEnrichWithClassyFire500KeysBetweenCachedKeysDoNotTrip(t *testing.T) {
+	bad := []string{freshKey(t, "BADKEYAAAAAAAA-UHFFFAOYSA-N"), freshKey(t, "BADKEYBBBBBBBB-UHFFFAOYSA-N"), freshKey(t, "BADKEYCCCCCCCC-UHFFFAOYSA-N")}
+	var keys []string
+	for i, b := range bad {
+		good := freshKey(t, string(rune('A'+i))+"GOODKEYAAAAAA-UHFFFAOYSA-N")
+		cfbCache.Store(good, cfbCacheEntry{fakeClassyFireInfo(), time.Now().Add(time.Hour)})
+		keys = append(keys, good, b)
 	}
+	var calls int32
+	mockClassyFire(t, counted(&calls, serverError))
+	checks := mockServiceCheck(t, cfbCheckUp)
+
+	for run := 1; run <= 2; run++ {
+		results := singleKeyResults(keys...)
+		enrichWithClassyFire(context.Background(), results)
+		for i := 1; i < len(keys); i += 2 {
+			if cf := results[i].Matches[0].ClassyFire; cf == nil || cf.Error != cfbInternalErrorNote {
+				t.Errorf("run %d, %s: expected its own 500, got %+v", run, keys[i], cf)
+			}
+		}
+	}
+	if calls != 2*int32(len(bad)) || *checks != 1 {
+		t.Errorf("expected %d calls and 1 check over both runs, got %d and %d", 2*len(bad), calls, *checks)
+	}
+}
+
+// A 500 only cfb gave, with Wishart unreachable, may be cfb failing on its own, so it is not cached
+func TestEnrichWithClassyFireCfbOnly500IsNotCached(t *testing.T) {
+	key := freshKey(t, "CFBONLY500AAAA-UHFFFAOYSA-N")
+	mockRoutes(t, serverError, unreachable)
+
+	results := singleKeyResults(key)
 	enrichWithClassyFire(context.Background(), results)
 
-	// The bad key fails with the 500 message
-	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "ClassyFire internal error (HTTP 500)" {
-		t.Errorf("expected 500 error for the bad key, got %+v", cf)
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != cfbInternalErrorNote {
+		t.Errorf("expected cfb's 500 surfaced, got %+v", cf)
 	}
-	// The first probe confirms the service is up, so every other key is classified
-	for i := 1; i < numKeys; i++ {
-		if cf := results[i].Matches[0].ClassyFire; cf == nil || cf.Error != "" {
+	if _, ok := cfbCacheLookup(key); ok {
+		t.Error("a cfb-only 500 must not be cached")
+	}
+}
+
+// A check that only got 429s cannot tell, so the key fails uncached and nothing trips
+func TestEnrichWithClassyFire500WithUnknownCheckIsNotCached(t *testing.T) {
+	key := freshKey(t, "UNKNOWNCHK0001-UHFFFAOYSA-N")
+	mockClassyFire(t, serverError)
+	mockServiceCheck(t, cfbCheckUnknown)
+
+	results := singleKeyResults(key, "BYYVLZVUVIJVGH-UHFFFAOYSA-N")
+	enrichWithClassyFire(context.Background(), results)
+
+	if _, ok := cfbCacheLookup(key); ok {
+		t.Error("a 500 must not be cached when the check could not tell")
+	}
+	if cf := results[1].Matches[0].ClassyFire; cf == nil || cf.Error != cfbInternalErrorNote {
+		t.Errorf("expected the next key looked up, not fast-failed, got %+v", cf)
+	}
+}
+
+// The known-good key check asks Wishart directly, and cfb only when Wishart cannot be reached
+func TestCfbCheckProbeAsksWishartFirst(t *testing.T) {
+	probe := cfbCheckProbe // the real check, before resetCfbPacing mocks it
+	var cfbCalls, wishartCalls int32
+	mockRoutes(t, counted(&cfbCalls, classified), counted(&wishartCalls, classified))
+	t.Cleanup(func() { cfbCache.Delete(cfbHealthProbeKey) })
+
+	if got := probe(context.Background()); got != cfbCheckUp || cfbCalls != 0 || wishartCalls != 1 {
+		t.Errorf("expected up from Wishart alone, got %v with %d cfb and %d Wishart calls", got, cfbCalls, wishartCalls)
+	}
+
+	cfbCalls, wishartCalls = 0, 0
+	mockRoutes(t, counted(&cfbCalls, classified), counted(&wishartCalls, unreachable))
+	if got := probe(context.Background()); got != cfbCheckUp || cfbCalls != 1 {
+		t.Errorf("expected up from cfb when Wishart is unreachable, got %v with %d cfb calls", got, cfbCalls)
+	}
+}
+
+// A cfb 429 followed by Wishart's 500 is final, not retried as a cfb 429
+func TestEnrichWithClassyFireCfb429ThenWishart500FailsAtOnce(t *testing.T) {
+	key := freshKey(t, "CFB429WISH5000-UHFFFAOYSA-N")
+	var cfbCalls, wishartCalls int32
+	mockRoutes(t, counted(&cfbCalls, rateLimited), counted(&wishartCalls, serverError))
+
+	results := singleKeyResults(key)
+	enrichWithClassyFire(context.Background(), results)
+
+	if cfbCalls != 1 || wishartCalls != 1 {
+		t.Errorf("expected 1 cfb and 1 Wishart call, got %d and %d", cfbCalls, wishartCalls)
+	}
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != cfbInternalErrorNote {
+		t.Errorf("expected Wishart's 500 surfaced, got %+v", cf)
+	}
+}
+
+// rateLimited is a 429 answer from either route
+func rateLimited(string) (cfbFetch, error) {
+	return cfbFetch{mode: cfbRetryRateLimited, errMsg: "ClassyFire rate limited (HTTP 429)"}, errors.New("HTTP 429")
+}
+
+// unreachable is a network failure from either route
+func unreachable(string) (cfbFetch, error) {
+	return cfbFetch{mode: cfbRetryLimited, errMsg: "ClassyFire service unreachable"}, errors.New("down")
+}
+
+// counted wraps a mock so the test can see how often a route was asked
+func counted(n *int32, fn func(string) (cfbFetch, error)) func(string) (cfbFetch, error) {
+	return func(key string) (cfbFetch, error) {
+		atomic.AddInt32(n, 1)
+		return fn(key)
+	}
+}
+
+func classified(string) (cfbFetch, error) { return cfbFetch{info: fakeClassyFireInfo()}, nil }
+
+// singleKeyResults builds one matched query per key
+func singleKeyResults(keys ...string) []*model.SingleResult {
+	results := make([]*model.SingleResult, len(keys))
+	for i, k := range keys {
+		results[i] = &model.SingleResult{MatchFound: true, Matches: []*model.Compound{{InChIKey: k}}}
+	}
+	return results
+}
+
+// A cfb 429 sends the same key to Wishart directly instead of waiting for cfb
+func TestEnrichWithClassyFireRateLimitedCfbFallsBackToWishart(t *testing.T) {
+	var cfbCalls, wishartCalls int32
+	mockRoutes(t, counted(&cfbCalls, rateLimited), counted(&wishartCalls, classified))
+
+	results := singleKeyResults("RYYVLZVUVIJVGH-UHFFFAOYSA-N")
+	enrichWithClassyFire(context.Background(), results)
+
+	if cfbCalls != 1 || wishartCalls != 1 {
+		t.Errorf("expected 1 cfb and 1 Wishart call, got %d and %d", cfbCalls, wishartCalls)
+	}
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "" {
+		t.Errorf("expected classification from Wishart, got %+v", cf)
+	}
+}
+
+// While cfb cools down after a 429 the next key goes straight to Wishart
+func TestEnrichWithClassyFireCfbCooldownSendsNextKeyDirect(t *testing.T) {
+	var cfbCalls, wishartCalls int32
+	mockRoutes(t, counted(&cfbCalls, rateLimited), counted(&wishartCalls, classified))
+	cfb429Cooldown = time.Hour
+
+	enrichWithClassyFire(context.Background(), singleKeyResults("AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N"))
+
+	if cfbCalls != 1 || wishartCalls != 2 {
+		t.Errorf("expected 1 cfb and 2 Wishart calls, got %d and %d", cfbCalls, wishartCalls)
+	}
+}
+
+// A 429 from Wishart directly retries there and gives up after cfbDirect429MaxRetries
+func TestEnrichWithClassyFireDirectRateLimitGivesUpAfterRetries(t *testing.T) {
+	var cfbCalls, wishartCalls int32
+	mockRoutes(t, counted(&cfbCalls, rateLimited), counted(&wishartCalls, rateLimited))
+
+	results := singleKeyResults("RYYVLZVUVIJVGH-UHFFFAOYSA-N")
+	enrichWithClassyFire(context.Background(), results) // must terminate, not hang
+
+	if cfbCalls != 1 || wishartCalls != cfbDirect429MaxRetries {
+		t.Errorf("expected 1 cfb and %d Wishart calls, got %d and %d", cfbDirect429MaxRetries, cfbCalls, wishartCalls)
+	}
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "ClassyFire rate limited (HTTP 429)" {
+		t.Errorf("expected rate-limit error surfaced after retries, got %+v", cf)
+	}
+}
+
+// cfb failing cfbDownGiveUp times in a row is skipped, later keys go straight to Wishart
+func TestEnrichWithClassyFireSkipsCfbWhenDown(t *testing.T) {
+	var cfbCalls, wishartCalls int32
+	mockRoutes(t, counted(&cfbCalls, unreachable), counted(&wishartCalls, classified))
+	cfbRouteDownFor = time.Hour
+
+	results := singleKeyResults("AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N",
+		"CYYVLZVUVIJVGH-UHFFFAOYSA-N", "DYYVLZVUVIJVGH-UHFFFAOYSA-N", "EYYVLZVUVIJVGH-UHFFFAOYSA-N")
+	enrichWithClassyFire(context.Background(), results)
+
+	if cfbCalls != int32(cfbDownGiveUp) || wishartCalls != 5 {
+		t.Errorf("expected %d cfb and 5 Wishart calls, got %d and %d", cfbDownGiveUp, cfbCalls, wishartCalls)
+	}
+	for i, r := range results {
+		if cf := r.Matches[0].ClassyFire; cf == nil || cf.Error != "" {
 			t.Errorf("result[%d]: expected classification, got %+v", i, cf)
 		}
 	}
 }
 
-// Consecutive 429s are treated differently to non-429s, retry more than cfbDownGiveUp times
-func TestEnrichWithClassyFireRetriesRateLimitBeyondNormalLimit(t *testing.T) {
-	var calls int32
-	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
-		if atomic.AddInt32(&calls, 1) <= 4 {
-			return cfbFetch{mode: cfbRetryRateLimited, errMsg: "ClassyFire rate limited (HTTP 429)"}, errors.New("HTTP 429")
+// With Wishart down, a cfb 429 is retried on cfb rather than counted as ClassyFire being down
+func TestEnrichWithClassyFireCfbRateLimitWithWishartDownRetries(t *testing.T) {
+	var cfbCalls int32
+	mockRoutes(t, func(key string) (cfbFetch, error) {
+		if atomic.AddInt32(&cfbCalls, 1) < cfb429MaxRetries {
+			return rateLimited(key)
 		}
-		return cfbFetch{info: fakeClassyFireInfo()}, nil
-	})
+		return classified(key)
+	}, unreachable)
 
-	results := []*model.SingleResult{
-		{MatchFound: true, Matches: []*model.Compound{{InChIKey: "RYYVLZVUVIJVGH-UHFFFAOYSA-N"}}},
-	}
+	results := singleKeyResults("RYYVLZVUVIJVGH-UHFFFAOYSA-N")
 	enrichWithClassyFire(context.Background(), results)
 
-	if got := atomic.LoadInt32(&calls); got != 5 {
-		t.Errorf("expected 5 attempts (4 rate-limited retries then success), got %d", got)
-	}
-	cf := results[0].Matches[0].ClassyFire
-	if cf == nil || cf.Error != "" {
-		t.Errorf("expected successful classification after rate-limit retries, got %+v", cf)
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "" {
+		t.Errorf("expected classification once cfb answered, got %+v", cf)
 	}
 }
 
-// If cfb429MaxRetries is exceeded, the InChIKey is flagged as failed
-func TestEnrichWithClassyFireRateLimitGivesUpAfterRetries(t *testing.T) {
+// With both routes skipped as down, compounds fail fast without any request
+func TestEnrichWithClassyFireBothRoutesDownFailsFast(t *testing.T) {
 	var calls int32
-	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
-		atomic.AddInt32(&calls, 1)
-		return cfbFetch{mode: cfbRetryRateLimited, errMsg: "ClassyFire rate limited (HTTP 429)"}, errors.New("HTTP 429")
-	})
-
-	results := []*model.SingleResult{
-		{MatchFound: true, Matches: []*model.Compound{{InChIKey: "RYYVLZVUVIJVGH-UHFFFAOYSA-N"}}},
-	}
-	enrichWithClassyFire(context.Background(), results) // must terminate, not hang
-
-	if got := atomic.LoadInt32(&calls); got != cfb429MaxRetries {
-		t.Errorf("expected %d attempts before giving up, got %d", cfb429MaxRetries, got)
-	}
-	cf := results[0].Matches[0].ClassyFire
-	if cf == nil || cf.Error != "ClassyFire rate limited (HTTP 429)" {
-		t.Errorf("expected rate-limit error surfaced after retries, got %+v", cf)
-	}
-}
-
-// Test the miss gaps of a cache miss
-func TestEnrichWithClassyFirePacesByCacheHeader(t *testing.T) {
-	resetCfbPacing(t)
-	cfbHitDelay = 5 * time.Millisecond
-	cfbBurstGap = 80 * time.Millisecond
+	mockClassyFire(t, counted(&calls, classified))
 	cfbGateMu.Lock()
-	cfbMissGap = cfbBurstGap // current miss gap starts at the burst gap
+	cfbSkipUntil, wishartSkipUntil = time.Now().Add(time.Hour), time.Now().Add(time.Hour)
 	cfbGateMu.Unlock()
 
-	hits := map[string]bool{"AAAAAAAAAAAAAA-BBBBBBBBBB-A": false, "CCCCCCCCCCCCCC-DDDDDDDDDD-B": true}
-	orig := classyFireFetcher
-	classyFireFetcher = func(inchikey string) (cfbFetch, error) {
-		return cfbFetch{info: fakeClassyFireInfo(), cacheHit: hits[inchikey]}, nil
-	}
-	t.Cleanup(func() { classyFireFetcher = orig })
-
-	results := []*model.SingleResult{
-		{MatchFound: true, Matches: []*model.Compound{
-			{InChIKey: "AAAAAAAAAAAAAA-BBBBBBBBBB-A"}, // MISS first
-			{InChIKey: "CCCCCCCCCCCCCC-DDDDDDDDDD-B"}, // HIT second
-		}},
-	}
-
-	start := time.Now()
+	results := singleKeyResults("AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N")
 	enrichWithClassyFire(context.Background(), results)
-	elapsed := time.Since(start)
 
-	// The pause after the first MISS is the miss gap
-	if elapsed < cfbBurstGap {
-		t.Errorf("expected at least the miss gap (%s) between requests, took %s", cfbBurstGap, elapsed)
+	if calls != 0 {
+		t.Errorf("expected no requests, got %d", calls)
+	}
+	for i, r := range results {
+		if cf := r.Matches[0].ClassyFire; cf == nil || cf.Error != cfbUnavailableNote {
+			t.Errorf("result[%d]: expected %q, got %+v", i, cfbUnavailableNote, cf)
+		}
+	}
+}
+
+func TestCfbStandardKey(t *testing.T) {
+	if got, ok := cfbStandardKey("QNAYBMKLOCPYGJ-REOHCLBHSA-N"); !ok || got != "QNAYBMKLOCPYGJ-UHFFFAOYSA-N" {
+		t.Errorf("expected the standard block swapped in, got %q (ok=%v)", got, ok)
+	}
+	if _, ok := cfbStandardKey("RYYVLZVUVIJVGH-UHFFFAOYSA-N"); ok {
+		t.Error("a key that already has the standard block must not be retried")
+	}
+}
+
+// A 404 from Wishart directly retries the standard-block key, as cfb does, and caches it under the original key
+func TestEnrichWithClassyFireDirectNotFoundTriesStandardKey(t *testing.T) {
+	const key, std = "QNAYBMKLOCPYGJ-REOHCLBHSA-N", "QNAYBMKLOCPYGJ-UHFFFAOYSA-N"
+	freshKey(t, key)
+	freshKey(t, std)
+	var wishartCalls int32
+	mockRoutes(t, rateLimited, counted(&wishartCalls, func(k string) (cfbFetch, error) {
+		if k == std {
+			return classified(k)
+		}
+		return cfbFetch{info: &model.ClassyFireInfo{Error: cfbNotFoundNote}}, nil
+	}))
+
+	results := singleKeyResults(key)
+	enrichWithClassyFire(context.Background(), results)
+
+	if wishartCalls != 2 {
+		t.Errorf("expected Wishart asked for the key and the standard key, got %d calls", wishartCalls)
+	}
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != "" {
+		t.Errorf("expected the standard key's classification, got %+v", cf)
+	}
+	if cached, ok := cfbCacheLookup(key); !ok || cached.Error != "" {
+		t.Errorf("expected the classification cached under the original key, got %+v (ok=%v)", cached, ok)
+	}
+}
+
+// A standard key that 404s from Wishart directly is final, there is nothing to fall back to
+func TestEnrichWithClassyFireDirectNotFoundStandardKeyIsFinal(t *testing.T) {
+	var wishartCalls int32
+	mockRoutes(t, rateLimited, counted(&wishartCalls, func(string) (cfbFetch, error) {
+		return cfbFetch{info: &model.ClassyFireInfo{Error: cfbNotFoundNote}}, nil
+	}))
+
+	results := singleKeyResults("RYYVLZVUVIJVGH-UHFFFAOYSA-N")
+	enrichWithClassyFire(context.Background(), results)
+
+	if wishartCalls != 1 {
+		t.Errorf("expected a single Wishart call, got %d", wishartCalls)
+	}
+	if cf := results[0].Matches[0].ClassyFire; cf == nil || cf.Error != cfbNotFoundNote {
+		t.Errorf("expected %q, got %+v", cfbNotFoundNote, cf)
+	}
+}
+
+// Misses wait for the next slot once the allowance is spent, cache hits hand their slot back
+func TestEnrichWithClassyFireSlotsPaceMissesNotHits(t *testing.T) {
+	origCap := cfbSlotCap
+	t.Cleanup(func() { cfbSlotCap = origCap })
+
+	run := func(hit bool) time.Duration {
+		mockClassyFire(t, func(string) (cfbFetch, error) {
+			return cfbFetch{info: fakeClassyFireInfo(), cacheHit: hit}, nil
+		})
+		cfbSlotCap, cfbSlotRefill = 1, 80*time.Millisecond
+		start := time.Now()
+		enrichWithClassyFire(context.Background(), singleKeyResults("AAAAAAAAAAAAAA-BBBBBBBBBB-A", "CCCCCCCCCCCCCC-DDDDDDDDDD-B"))
+		return time.Since(start)
+	}
+
+	if elapsed := run(false); elapsed < 80*time.Millisecond {
+		t.Errorf("expected the second miss to wait for a refill (80ms), took %s", elapsed)
+	}
+	if elapsed := run(true); elapsed >= 80*time.Millisecond {
+		t.Errorf("expected cache hits not to wait for a refill, took %s", elapsed)
 	}
 }
 
@@ -613,7 +827,7 @@ func TestStreamClassyFireCancels(t *testing.T) {
 	cancel() // already cancelled
 
 	var emitted int
-	streamClassyFire(ctx, []string{"A", "B", "C"}, func(key string, info *model.ClassyFireInfo) {
+	streamClassyFire(ctx, cfbKeyChan([]string{"A", "B", "C"}), func(key string, info *model.ClassyFireInfo) {
 		emitted++
 	})
 
@@ -630,7 +844,7 @@ func TestStreamClassyFireInterleavesConcurrentBatches(t *testing.T) {
 	resetCfbPacing(t)
 	cfbHitDelay = 3 * time.Millisecond // small gap to force interleaving
 	orig := classyFireFetcher
-	classyFireFetcher = func(string) (cfbFetch, error) {
+	classyFireFetcher = func(context.Context, string) (cfbFetch, error) {
 		return cfbFetch{info: fakeClassyFireInfo(), cacheHit: true}, nil
 	}
 	t.Cleanup(func() { classyFireFetcher = orig })
@@ -648,8 +862,8 @@ func TestStreamClassyFireInterleavesConcurrentBatches(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); streamClassyFire(context.Background(), keys, record("A")) }()
-	go func() { defer wg.Done(); streamClassyFire(context.Background(), keys, record("B")) }()
+	go func() { defer wg.Done(); streamClassyFire(context.Background(), cfbKeyChan(keys), record("A")) }()
+	go func() { defer wg.Done(); streamClassyFire(context.Background(), cfbKeyChan(keys), record("B")) }()
 	wg.Wait()
 
 	// Assign when the first B was classified vs the last A
@@ -724,7 +938,7 @@ func TestDefaultFetcherParsesFullTaxonomy(t *testing.T) {
 		return cfbResp(http.StatusOK, body, map[string]string{"X-Cache": "HIT"}), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -763,7 +977,7 @@ func TestDefaultFetcherDescriptionOnlyIsUnclassified(t *testing.T) {
 		return cfbResp(http.StatusOK, `{"description":"only a description"}`, nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -779,7 +993,7 @@ func TestDefaultFetcherEmptyBodyIsUnclassified(t *testing.T) {
 		return cfbResp(http.StatusOK, `{}`, nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -795,7 +1009,7 @@ func TestDefaultFetcherNotFound(t *testing.T) {
 		return cfbResp(http.StatusNotFound, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -818,7 +1032,7 @@ func TestDefaultFetcherRateLimited(t *testing.T) {
 		return cfbResp(http.StatusTooManyRequests, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for HTTP 429")
 	}
@@ -841,7 +1055,7 @@ func TestDefaultFetcherServerError(t *testing.T) {
 		return cfbResp(http.StatusServiceUnavailable, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for HTTP 503")
 	}
@@ -860,7 +1074,7 @@ func TestDefaultFetcherInternalServerError(t *testing.T) {
 		return cfbResp(http.StatusInternalServerError, "", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for HTTP 500")
 	}
@@ -883,7 +1097,7 @@ func TestDefaultFetcherMalformedJSON(t *testing.T) {
 		return cfbResp(http.StatusOK, "this is not json", nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error for malformed JSON")
 	}
@@ -902,7 +1116,7 @@ func TestDefaultFetcherTransportError(t *testing.T) {
 		return nil, errors.New("connection refused")
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err == nil {
 		t.Error("expected error when transport fails")
 	}
@@ -925,7 +1139,7 @@ func TestDefaultFetcherServesInProcessCacheWithoutHTTP(t *testing.T) {
 		return nil, nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -944,7 +1158,7 @@ func TestDefaultFetcherEmptyNamedNodesAreUnclassified(t *testing.T) {
 		return cfbResp(http.StatusOK, `{"kingdom":{"name":""},"description":""}`, nil), nil
 	})
 
-	res, err := defaultClassyFireFetcher(key)
+	res, err := defaultClassyFireFetcher(context.Background(), key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

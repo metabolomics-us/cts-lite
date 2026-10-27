@@ -24,7 +24,6 @@ const maxLoggedMisses = 5
 type MatchOptions struct {
 	TopHitOnly             bool
 	AllowFirstBlockMatches bool
-	AllowRdkitConversion   bool
 	ClassyFireEnabled      bool
 }
 
@@ -38,8 +37,13 @@ var (
 	matchDuration             metric.Float64Histogram
 	matchQueriesPerReq        metric.Int64Histogram
 	classyfireClassifications metric.Int64Counter
+	pubchemFallbackOutcomes   metric.Int64Counter
+	pubchemFallbackDuration   metric.Float64Histogram
+	pubchemFallbackBatchSize  metric.Int64Histogram
+	pubchemFallbackValues     metric.Int64Counter
 	matchLogger               log.Logger
 	classyfireGaugeOnce       sync.Once
+	pubchemGaugeOnce          sync.Once
 )
 
 // initInstruments lazily creates the metric instruments and logger from the
@@ -68,6 +72,18 @@ func initInstruments() {
 			metric.WithExplicitBucketBoundaries(1, 5, 50, 250, 1000, 5000, 25000, 100000))
 		classyfireClassifications, _ = meter.Int64Counter("classyfire_classifications_total",
 			metric.WithDescription("Terminal outcomes of individual ClassyFire classifications, split by status"))
+		pubchemFallbackOutcomes, _ = meter.Int64Counter("pubchem_fallback_outcomes_total",
+			metric.WithDescription("Terminal outcomes of live PubChem fallback lookups triggered by /match misses, split by status and query type"))
+		// Its count doubles as the number of PubChem calls, so there is no separate request counter
+		pubchemFallbackDuration, _ = meter.Float64Histogram("pubchem_fallback_request_duration_ms",
+			metric.WithDescription("Duration of each live PubChem fallback HTTP round trip (retries included), split by endpoint and result"),
+			metric.WithUnit("ms"),
+			metric.WithExplicitBucketBoundaries(50, 100, 250, 500, 1000, 2000, 5000, 10000, 30000))
+		pubchemFallbackBatchSize, _ = meter.Int64Histogram("pubchem_fallback_batch_size",
+			metric.WithDescription("Number of values carried by each live PubChem fallback HTTP round trip, split by endpoint"),
+			metric.WithExplicitBucketBoundaries(1, 5, 10, 50, 100, 250, 500, 1000))
+		pubchemFallbackValues, _ = meter.Int64Counter("pubchem_fallback_values_total",
+			metric.WithDescription("Values sent to PubChem, split by endpoint and by what PubChem answered for each"))
 		matchLogger = logglobal.GetLoggerProvider().Logger(scopeName)
 	})
 }
@@ -146,7 +162,6 @@ func RecordMatch(r *http.Request, results []*model.SingleResult, matchCount int,
 		log.String("client_type", clientType),
 		log.Bool("top_hit_only", opts.TopHitOnly),
 		log.Bool("first_block_matches", opts.AllowFirstBlockMatches),
-		log.Bool("rdkit_conversion", opts.AllowRdkitConversion),
 		log.Bool("classyfire_enabled", opts.ClassyFireEnabled),
 		log.Slice("misses", misses...),
 	)
@@ -197,3 +212,198 @@ func RecordClassyFireOutcomes(ctx context.Context, classified, notFound, failed 
 	add("not_found", notFound)
 	add("failed", failed)
 }
+
+// RegisterPubChemServiceGauge wires an observable gauge that samples the
+// live PubChem fallback backend's reachability at each metric export: 1
+// when up, 0 when down
+func RegisterPubChemServiceGauge(up func() bool) {
+	if up == nil {
+		return
+	}
+	pubchemGaugeOnce.Do(func() {
+		meter := otel.Meter(scopeName)
+		_, err := meter.Int64ObservableGauge("pubchem_fallback_service_up",
+			metric.WithDescription("PubChem fallback service reachability sampled by the health probe (1 = up, 0 = down)"),
+			metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+				var v int64
+				if up() {
+					v = 1
+				}
+				o.Observe(v)
+				return nil
+			}),
+		)
+		if err != nil {
+			otel.Handle(err)
+		}
+	})
+}
+
+// RecordPubChemFallbackOutcomes counts terminal outcomes of live PubChem fallback for one query type
+// Statuses: found , not_found, unparseable (RDKit could not read the structure),
+// failed (no answer from PubChem), skipped (over the lookup limit, never attempted).
+func RecordPubChemFallbackOutcomes(ctx context.Context, queryType string, found, notFound, unparseable, failed, skipped int) {
+	initInstruments()
+	add := func(status string, n int) {
+		if n <= 0 {
+			return
+		}
+		pubchemFallbackOutcomes.Add(ctx, int64(n), metric.WithAttributes(
+			attribute.String("status", status),
+			attribute.String("query_type", queryType),
+		))
+	}
+	add("found", found)
+	add("not_found", notFound)
+	add("unparseable", unparseable)
+	add("failed", failed)
+	add("skipped", skipped)
+}
+
+// RecordPubChemFallbackRequest records one HTTP round trip to PubChem: how
+// long it took and how many values it carried.
+// Result is ok, not_found, throttled, error, or aborted
+func RecordPubChemFallbackRequest(ctx context.Context, endpoint, result string, duration time.Duration, batchSize int) {
+	initInstruments()
+	endpointAttr := attribute.String("endpoint", endpoint)
+	pubchemFallbackDuration.Record(ctx, float64(duration.Microseconds())/1000.0,
+		metric.WithAttributes(endpointAttr, attribute.String("result", result)))
+	pubchemFallbackBatchSize.Record(ctx, int64(batchSize), metric.WithAttributes(endpointAttr))
+}
+
+// RecordPubChemFallbackValues counts the values one batch sent to an
+// endpoint: found, not_found, or no_answer
+func RecordPubChemFallbackValues(ctx context.Context, endpoint string, found, notFound, noAnswer int) {
+	initInstruments()
+	add := func(result string, n int) {
+		if n <= 0 {
+			return
+		}
+		pubchemFallbackValues.Add(ctx, int64(n), metric.WithAttributes(
+			attribute.String("endpoint", endpoint),
+			attribute.String("result", result),
+		))
+	}
+	add("found", found)
+	add("not_found", notFound)
+	add("no_answer", noAnswer)
+}
+
+// pubchemComponent tags every PubChem fallback log record for Grafana to filter
+const pubchemComponent = "pubchem_fallback"
+
+// maxLoggedPathLen bounds the request path attached to an event, since a CID
+// batch carries up to a thousand CIDs in its path
+const maxLoggedPathLen = 200
+
+// PubChemEvent is one notable step of a PubChem fallback call
+type PubChemEvent struct {
+	Event      string // retrying, gave_up, recovered, breaker_tripped, cancelled
+	Endpoint   string // cid, inchikey, fastformula
+	Path       string // request path, trimmed of the property list
+	Reason     string // throttled, rejected, http_error, transport_error, read_error, build_error
+	StatusCode int
+	Attempt    int
+	Delay      time.Duration
+	Err        error
+}
+
+// LogPubChemEvent emits a PubChemEvent as an OTel log record whose body is
+// message. Severity follows the event: 'recovered' and 'cancelled' are Info,
+// retrying is Warn, and a PubChem call ending without an answer is Error
+func LogPubChemEvent(ctx context.Context, ev PubChemEvent, message string) {
+	initInstruments()
+
+	severity, severityText := log.SeverityWarn, "WARN"
+	switch ev.Event {
+	case "recovered", "cancelled":
+		severity, severityText = log.SeverityInfo, "INFO"
+	case "gave_up", "breaker_tripped":
+		severity, severityText = log.SeverityError, "ERROR"
+	}
+
+	var record log.Record
+	record.SetTimestamp(time.Now())
+	record.SetSeverity(severity)
+	record.SetSeverityText(severityText)
+	record.SetBody(log.StringValue(message))
+	record.AddAttributes(
+		log.String("component", pubchemComponent),
+		log.String("event", ev.Event),
+	)
+	if ev.Endpoint != "" {
+		record.AddAttributes(log.String("endpoint", ev.Endpoint))
+	}
+	if ev.Path != "" {
+		path := ev.Path
+		if len(path) > maxLoggedPathLen {
+			path = path[:maxLoggedPathLen] + "..."
+		}
+		record.AddAttributes(log.String("path", path))
+	}
+	if ev.Reason != "" {
+		record.AddAttributes(log.String("reason", ev.Reason))
+	}
+	if ev.StatusCode != 0 {
+		record.AddAttributes(log.Int("status_code", ev.StatusCode))
+	}
+	if ev.Attempt != 0 {
+		record.AddAttributes(log.Int("attempt", ev.Attempt))
+	}
+	if ev.Delay != 0 {
+		record.AddAttributes(log.Float64("delay_ms", float64(ev.Delay.Milliseconds())))
+	}
+	if ev.Err != nil {
+		record.AddAttributes(log.String("error", ev.Err.Error()))
+	}
+	matchLogger.Emit(ctx, record)
+}
+
+// PubChemFallbackSummary summarizes one /match request's PubChem fallback
+type PubChemFallbackSummary struct {
+	Misses          int // local misses handed to the fallback
+	Attempted       int
+	Found           int
+	NotFound        int
+	Unparseable     int
+	Failed          int
+	Skipped         int
+	Calls           int // HTTP round trips to PubChem, retries included
+	Retries         int
+	BreakerTripped  bool
+	Cancelled       bool // the client went away before every lookup finished
+	Duration        time.Duration
+}
+
+// LogPubChemFallbackSummary emits one record per request that reached the fallback
+func LogPubChemFallbackSummary(ctx context.Context, s PubChemFallbackSummary) {
+	initInstruments()
+
+	severity, severityText := log.SeverityInfo, "INFO"
+	if s.BreakerTripped {
+		severity, severityText = log.SeverityWarn, "WARN"
+	}
+
+	var record log.Record
+	record.SetTimestamp(time.Now())
+	record.SetSeverity(severity)
+	record.SetSeverityText(severityText)
+	record.SetBody(log.StringValue("pubchem fallback summary"))
+	record.AddAttributes(
+		log.String("component", pubchemComponent),
+		log.Int("misses", s.Misses),
+		log.Int("attempted", s.Attempted),
+		log.Int("found", s.Found),
+		log.Int("not_found", s.NotFound),
+		log.Int("unparseable", s.Unparseable),
+		log.Int("failed", s.Failed),
+		log.Int("skipped", s.Skipped),
+		log.Int("calls", s.Calls),
+		log.Int("retries", s.Retries),
+		log.Bool("breaker_tripped", s.BreakerTripped),
+		log.Bool("cancelled", s.Cancelled),
+		log.Float64("duration_ms", float64(s.Duration.Microseconds())/1000.0),
+	)
+	matchLogger.Emit(ctx, record)
+}
+

@@ -10,6 +10,13 @@ test('empty submit shows error', async ({ page }) => {
   await expect(page.locator('#output-text')).toHaveText('Please enter a query');
 });
 
+test('quotes-only submit shows empty query error', async ({ page }) => {
+  await page.fill('#query-input', '" "" """');
+  await page.click('button[type="submit"]');
+  await expect(page.locator('#output-label')).toHaveText('Error');
+  await expect(page.locator('#output-text')).toHaveText('Please enter a query');
+});
+
 test('InChIKey query returns exact match for Water', async ({ page }) => {
   await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
   await page.click('button[type="submit"]');

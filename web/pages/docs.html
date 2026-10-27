@@ -38,9 +38,43 @@
             <section class="doc-section">
                 <p class="doc-intro">
                 <strong style="color: #1a3e68">CTS-Lite</strong> is a lightweight <i>Chemical Translation Service</i>, and the successor to the Fiehn Lab's original <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2951090/" target="_blank">CTS</a>.
-                It allows users to easily match InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs against a curated subset of the PubChem database containing <b>13 million compounds</b>.
+                It allows users to easily match InChIs, InChIKeys, SMILES, Molecular Formulas, and PubChem CIDs against the <strong>100+ million compounds</strong> from the PubChem database.
                 </p>
             </section>
+
+            <nav class="doc-section doc-toc" aria-labelledby="toc-heading">
+                <h3 class="doc-toc-heading" id="toc-heading">Contents</h3>
+                <ol class="doc-toc-list">
+                    <li>
+                        <a href="#using-cts-lite">Using CTS-Lite</a>
+                    </li>
+                    <li>
+                        <a href="#query-types">Query Types</a>
+                        <ul>
+                            <li><a href="#malformed-queries">Malformed Queries</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#match-levels">Match Levels</a>
+                        <ul>
+                            <li><a href="#first-block-matches">First Block Matches</a></li>
+                            <li><a href="#pubchem-live-matches">PubChem Live Matches</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#rdkit-conversion">RDKit Conversion</a></li>
+                    <li><a href="#top-hit-only">Top Hit Only</a></li>
+                    <li><a href="#anno-type-count">Anno. Type Count</a></li>
+                    <li><a href="#classyfire">ClassyFire</a></li>
+                    <li>
+                        <a href="#rest-api">REST API</a>
+                        <ul>
+                            <li><a href="#request-formats">Request Formats</a></li>
+                            <li><a href="#request-parameters">Request Parameters</a></li>
+                            <li><a href="#response-formats">Response Formats</a></li>
+                        </ul>
+                    </li>
+                </ol>
+            </nav>
 
             <section class="doc-section">
                 <h3 class="doc-heading" id="using-cts-lite">Using CTS-Lite<button class="heading-anchor" onclick="copyHeadingLink(event,'using-cts-lite')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
@@ -57,10 +91,153 @@
             </section>
 
             <section class="doc-section">
-                <h3 class="doc-heading" id="rest-api">REST API<button class="heading-anchor" onclick="copyHeadingLink(event,'rest-api')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <h4 class="doc-subheading">Request Formats</h4>
+                <h3 class="doc-heading" id="query-types">Query Types<button class="heading-anchor" onclick="copyHeadingLink(event,'query-types')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
                 <p>
-                    To make queries using the REST API, use the following formats:
+                    Query types are parsed using the following logic:
+                </p>
+                <ul class="doc-list">
+                    <li>
+                        <strong>InChIKeys</strong> must be in the format <code class="inline-code">XXXXXXXXXXXXXX-XXXXXXXXXX-X</code> (14-10-1, all uppercase letters)
+                    </li>
+                    <li>
+                        <strong>InChIs</strong> must start with <code class="inline-code">InChI=</code> (case-sensitive)
+                    </li>
+                    <li>
+                        <strong>SMILES</strong> are first identified by the presence of structural characters:
+                        <code class="inline-code">= # - / \ : . @ + [ ] ( )</code> 
+                    </li>
+                    <li>
+                        <strong>PubChem CIDs</strong> are identified by numbers between 1 and 500 million
+                    </li>
+                    <li>
+                        <strong>Molecular Formulas</strong> are recognized by starting with letters that cannot be at the start of SMILES:
+                        <code class="inline-code">ADEGHKLMRTUVWXYZ</code>
+                    </li>
+                    <li>
+                        <strong>Converted SMILES / Converted InChI</strong> are SMILES or InChI queries that failed to match, but were then matched using their converted InChIKey. The SMILES/InChIs are converted to InChIKey using <a href="https://github.com/rdkit/rdkit">RDKit</a>.
+                    </li>
+                    <li>
+                        <strong>SMILES/Mol. Formula</strong> some queries, like <code class="inline-code">C</code>, are ambiguous and can be either SMILES or Molecular Formulas. In these cases, the query first tries to match against SMILES, and then Molecular Formula.
+                    </li>
+                </ul>
+
+                <h4 class="doc-subheading" id="malformed-queries">Malformed Queries</h4>
+                <p>
+                    Malformed queries are identified as follows:
+                </p>
+                <ul class="doc-list">
+                    <li>
+                        <strong>InChIKeys</strong> that match the <a href="https://regexper.com/#%5E%5Ba-zA-Z%5D%7B13%2C17%7D-%5Ba-zA-Z%5D%7B10%2C12%7D-%5Ba-zA-Z%5D%7B1%2C3%7D%24" target="_blank">regex</a> pattern: 
+                        <code class="inline-code">^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$</code>
+                    </li>
+                    <li>
+                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code>, but with improper capitalization, i.e. <code class="inline-code">inchi=</code>
+                    </li>
+                    <li>
+                        <strong>PubChem CIDs</strong> that cannot be valid. This includes negative numbers, zero itself, numbers with leading zeros, and numbers above 500 million
+                    </li>
+                    <li>
+                        <strong>Unidentified</strong> are queries that didn't fit any of the above criteria
+                    </li>
+                </ul>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <h4 class="doc-subheading" id="first-block-matches">First Block Matches</h4>
+                <p>
+                    Given the setting for first block matches is enabled (the default), "InChIKey" queries can match by first block if they don't find an exact match in the local database. This gives the <code class="inline-code">First Block</code> match level. "Converted SMILES" queries can also match by first block, since they are SMILES queries that were converted to InChIKey and then reattempted. The first fourteen characters of the InChIKey are the key's first block.
+                </p>
+                <p>
+                    For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
+                </p>
+                <p>
+                    Since a first block match is not considered a miss, that query is not sent to PubChem Live, even if PubChem would have had an exact match. If you want exact matches only, disable first block matching using the settings cog in the web UI or by adding <code class="inline-code">first_block_matches=false</code> to the API request.
+                </p>
+                <h4 class="doc-subheading" id="pubchem-live-matches">PubChem Live Matches</h4>
+                <p>
+                    Queries that do not find a match in the local database are forwarded to PubChem. A live lookup is performed against all 124 million compounds of PubChem. PubChem Live queries take longer than local database matches.
+                </p>
+                <p>
+                    A PubChem Live match can sometimes return something slightly different to the exact query provided by the user. For example, querying <code class="inline-code">H4C</code> will return <code class="inline-code">CH4</code>, and <code class="inline-code">CH3COOH</code> will return <code class="inline-code">C2H4O2</code>. This can even occur with some SMILES queries, because RDKit is used in the background to convert SMILES queries into InChIKeys before querying PubChem.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                The same compound can be written as many different SMILES strings, so a SMILES query with no exact match is converted to an InChIKey using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a> and searched again. If the local database still has no match, that InChIKey is used for the live PubChem lookup. InChI queries not found locally are converted to an InChIKey the same way before searching PubChem.
+                </p>
+                <p>
+                A match found this way is returned with the query type <code class="inline-code">Converted SMILES</code> or <code class="inline-code">Converted InChI</code>. For a given query, you can click the "Query Type" bubble to expand it and see the InChIKey that was used instead.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                    By default, CTS-Lite will return only the top hit per query. This setting can be toggled in the settings panel, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
+                </p>
+
+                <p>
+                For each query, the top hit is determined by ranking the hits on a weighted relevance score:<br>
+                <code class="inline-code">(0.7 * literature_count) + (0.3 * patent_count)</code>
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="anno-type-count">Anno. Type Count<button class="heading-anchor" onclick="copyHeadingLink(event,'anno-type-count')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <p>
+                    The "Annotation Type Count" indicates the number of PubChem categories (i.e. Taxonomy, Toxicity, Pharmacology, etc.) that a compound has been annotated with.
+                </p>
+                <p>
+                    Well-researched compounds tend to have 10+ types, with an observed maximum of 20. The "Annotation Type Count" can be used as a supplementary confidence metric when comparing compounds.
+                </p>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="classyfire">Chemical Classification (ClassyFire)<button class="heading-anchor" onclick="copyHeadingLink(event,'classyfire')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <div class="doc-note-red" id="classyfire-status-note" hidden>
+                    <strong>STATUS:</strong> ClassyFire is currently unavailable. Chemical classification is temporarily disabled in CTS-Lite. Please try again later, or report a persistent outage to the <a href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank">issue tracker</a>.
+                </div>
+                <p>
+                    CTS-Lite can optionally provide chemical taxonomy classifications from
+                    <a href="https://cfb.metabolomics.us/" target="_blank">ClassyFire</a>, developed by the
+                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>. Requests with ClassyFire enabled are <strong>limited to 1,000 entries</strong>.
+                </p>
+                <p>
+                ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API with the <code class="inline-code">classyfire=true</code> parameter. The <code class="inline-code">stream=true</code> parameter is recommended for ClassyFire requests, to help avoid timeouts.
+                </p>
+                <p>
+                    Each matched compound receives the following ClassyFire fields (some may be empty and therefore omitted):
+                </p>
+                <ul class="doc-list">
+                    <li><strong>Kingdom</strong>&emsp;(organic vs inorganic, e.g., <code class="inline-code">Organic compounds</code>)</li>
+                    <li><strong>Superclass</strong>&emsp;(general structural identifiers, e.g., <code class="inline-code">Organoheterocycli compounds)</code></li>
+                    <li><strong>Class</strong>&emsp;(specific structural features, e.g., <code class="inline-code">Imidazopyrimidines)</code></li>
+                    <li><strong>Subclass</strong>&emsp;(even more specific features, e.g., <code class="inline-code">Purines and purine derivatives)</code></li>
+                    <li><strong>Direct Parent</strong>&emsp;(most specific class (e.g., <code class="inline-code">Xanthines</code>)</li>
+                    <li><strong>Description</strong>&emsp;(text description of the compound's chemical class)</li>
+                </ul>
+                <p>
+                    If a compound is not found by ClassyFire, or if the ClassyFire service is unavailable, the
+                    reason is reported in an <code class="inline-code">error</code> field.
+                </p>
+                <p>
+                    A single query can match many compounds (for example, a molecular formula with
+                    <code class="inline-code">top_hit_only=false</code> may return hundreds of hits). To keep latency
+                    reasonable, only the <strong>top match of each identifier</strong> is classified.
+                </p>
+                <div class="doc-note">
+                    <strong>Note:</strong> ClassyFire adds significant network latency proportional to the number of unique matched compounds in your query.
+                </div>
+            </section>
+
+            <section class="doc-section">
+                <h3 class="doc-heading" id="rest-api">REST API<button class="heading-anchor" onclick="copyHeadingLink(event,'rest-api')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
+                <h4 class="doc-subheading" id="request-formats">Request Formats</h4>
+                <p>
+                    To make cURL requests using the REST API, use the following formats:
                 </p>
                 <p style="margin-bottom: -10px">JSON (Standard):</p>
                 <div class="code-block">
@@ -79,7 +256,7 @@
  "cts-lite.metabolomics.us/match"</code>
                 </div>
 
-                <h4 class="doc-subheading">Request Parameters</h4>
+                <h4 class="doc-subheading" id="request-parameters">Request Parameters</h4>
                 <p style="margin-bottom: -10px">
                 Disable top hit only:
                 </p>
@@ -95,21 +272,21 @@
                 </div>
 
                 <p style="margin-bottom: -10px">
-                Disable RDKit conversion:
-                </p>
-                <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?rdkit_conversion=false</strong>"</code>
-                </div>
-
-                <p style="margin-bottom: -10px">
                 Enable ClassyFire chemical classification:
                 </p>
                 <div class="code-block">
-                    <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true"</strong></code>
+                    <code>"cts-lite.metabolomics.us/match<strong>?classyfire=true</strong>"</code>
                 </div>
 
-                <h4 class="doc-subheading">Response Formats</h4>
-                <p>Example query: <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
+                <p style="margin-bottom: -10px">
+                Enable NDJSON response streaming (helps prevent timeouts, CSV-incompatible):
+                </p>
+                <div class="code-block">
+                    <code>"cts-lite.metabolomics.us/match<strong>?stream=true</strong>"</code>
+                </div>
+
+                <h4 class="doc-subheading" id="response-formats">Response Formats</h4>
+                <p>Example request with default parameters (2 queries): <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>
                 <div class="code-block">
                     <pre><code>[
@@ -144,6 +321,9 @@
   }
 ]</code></pre>
                 </div>
+                <p style="color: #4B535D; margin-left: 1rem">
+                    * With ClassyFire enabled, each compound also gets a <code class="inline-code">classyfire</code> JSON object with the <a href="#classyfire">six ClassyFire fields</a> and a potential error message
+                </p>
 
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px;">CSV</p>
                 <div class="code-block">
@@ -152,165 +332,8 @@ XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHF
 will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,,
                     </code></pre>
                 </div>
-            </section>
-
-            <section class="doc-section">
-                <h3 class="doc-heading" id="query-types">Query Types<button class="heading-anchor" onclick="copyHeadingLink(event,'query-types')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <p>
-                    Query types are parsed using the following logic:
-                </p>
-                <ul class="doc-list">
-                    <li>
-                        <strong>InChIKeys</strong> must be in the format <code class="inline-code">XXXXXXXXXXXXXX-XXXXXXXXXX-X</code> (14-10-1, all uppercase letters)
-                    </li>
-                    <li>
-                        <strong>InChIs</strong> must start with <code class="inline-code">InChI=</code> (case-sensitive)
-                    </li>
-                    <li>
-                        <strong>SMILES</strong> are first identified by the presence of structural characters:
-                        <code class="inline-code">= # - / \ : . @ + [ ] ( )</code> 
-                    </li>
-                    <li>
-                        <strong>Converted SMILES</strong> are SMILES queries that failed to match, but were then matched using their converted InChIKey. The SMILES are converted to InChIKeys using <a href="https://github.com/rdkit/rdkit">RDKit</a>.
-                    </li>
-                    <li>
-                        <strong>PubChem CIDs</strong> are identified as queries which only contain numbers
-                    </li>
-                    <li>
-                        <strong>Molecular Formulas</strong> are recognized by starting with letters that cannot be at the start of SMILES:
-                        <code class="inline-code">ADEGHKLMRTUVWXYZ</code>
-                    </li>
-                    <li>
-                        <strong>SMILES/Mol. Formula</strong> some queries, like <code class="inline-code">C</code>, are ambiguous and can be either SMILES or Molecular Formulas. In these cases, the query first tries to match against SMILES, and then Molecular Formula.
-                    </li>
-                </ul>
-
-                <h4 class="doc-subheading">Malformed Queries</h4>
-                <p>
-                    Malformed queries are identified as follows:
-                </p>
-                <ul class="doc-list">
-                    <li>
-                        <strong>InChIKeys</strong> that match the <a href="https://regexper.com/#%5E%5Ba-zA-Z%5D%7B13%2C17%7D-%5Ba-zA-Z%5D%7B10%2C12%7D-%5Ba-zA-Z%5D%7B1%2C3%7D%24" target="_blank">regex</a> pattern: 
-                        <code class="inline-code">^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$</code>
-                    </li>
-                    <li>
-                        <strong>InChIs</strong> that start with <code class="inline-code">InChI=</code>, but with improper capitalization
-                    </li>
-                    <li>
-                        <strong>Unidentified</strong> are queries that didn't fit any of the above criteria
-                    </li>
-                </ul>
-            </section>
-
-            <section class="doc-section">
-                <h3 class="doc-heading" id="anno-type-count">Anno. Type Count<button class="heading-anchor" onclick="copyHeadingLink(event,'anno-type-count')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <p>
-                    The "Annotation Type Count" indicates the number of PubChem categories (i.e. Taxonomy, Toxicity, Pharmacology, etc.) that a compound has been annotated with.
-                </p>
-                <p>
-                    Well-researched compounds tend to have 10+ types, with an observed maximum of 20. The "Annotation Type Count" can be used as a supplementary confidence metric when comparing compounds.
-                </p>
-            </section>
-
-            <section class="doc-section">
-                <h3 class="doc-heading" id="top-hit-only">Top Hit Only<button class="heading-anchor" onclick="copyHeadingLink(event,'top-hit-only')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <p>
-                    By default, CTS-Lite will return only the top hit per query. This setting can be toggled in the settings panel, or by adding the <code class="inline-code">top_hit_only=false</code> parameter to the API request.
-                </p>
-
-                <p>
-                For each query, the top hit is determined by ranking the hits on a weighted relevance score:<br>
-                <code class="inline-code">(0.7 * literature_count) + (0.3 * patent_count)</code>.
-                </p>
-            </section>
-
-            <section class="doc-section">
-                <h3 class="doc-heading" id="match-levels">Match Levels<button class="heading-anchor" onclick="copyHeadingLink(event,'match-levels')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <p>
-                    Given the setting for first block matches is enabled (default), "InChIKey" and "Converted SMILES" queries can match by first block <b><i>if</i></b> they don't find an exact match. This gives the <code class="inline-code">First Block</code> match level. The first fourteen characters of the InChIKey are the key's first block.
-                </p>
-                <p>
-                    For example, the query <code class="inline-code">XLYOFNOQVPJJNP-XXXXXXXXXX-X</code> would be a first block match with Water, whose key is <code class="inline-code">XLYOFNOQVPJJNP-UHFFFAOYSA-N</code>.
-                </p>
-                <p>
-                    To disable first block matching, use the settings cog in the web UI or add <code class="inline-code">first_block_matches=false</code> to the API request.
-                </p>
-                <p>
-                    All other query types can only be <code class="inline-code">Exact</code> matches.
-                </p>
-            </section>
-
-            <section class="doc-section">
-                <h3 class="doc-heading" id="rdkit-conversion">RDKit Conversion<button class="heading-anchor" onclick="copyHeadingLink(event,'rdkit-conversion')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <p>
-                By default, CTS-Lite will attempt to convert <strong>failed</strong> SMILES queries into InChIKeys using <a href="https://github.com/rdkit/rdkit" target="_blank">RDKit</a>. It will then retry the lookup against the database using the converted InChIKey. A successful conversion match is returned with the query type <code class="inline-code">Converted SMILES</code>.
-                </p>
-                <p>
-                Because SMILES are non-canonical, the same compound can have many SMILES representations, but PubChem only stores one of them. Converting to InChIKey ensures the lookup is format-independent.
-                </p>
-                <p>
-                    Disable RDKit conversion by toggling the setting from the cog-icon next to the "Match" button, or by adding the <code class="inline-code">rdkit_conversion=false</code> parameter to the API request.
-                </p>
-            </section>
-
-            <section class="doc-section">
-                <h3 class="doc-heading" id="classyfire">Chemical Classification (ClassyFire)<button class="heading-anchor" onclick="copyHeadingLink(event,'classyfire')"><img src="/assets/hyperlink-icon.svg" alt=""></button></h3>
-                <div class="doc-note-blue">
-                    <strong>BETA:</strong> Please be aware that the ClassyFire implementation in CTS-Lite is in a beta state. Please report any issues to the <a href=https://github.com/metabolomics-us/cts-lite/issues target=_blank>issue tracker</a>.
-                </div>
-                <div class="doc-note-red" id="classyfire-status-note" hidden>
-                    <strong>STATUS:</strong> ClassyFire is currently unavailable. Chemical classification is temporarily disabled in CTS-Lite. Please try again later, or report a persistent outage to the <a href="https://github.com/metabolomics-us/cts-lite/issues" target="_blank">issue tracker</a>.
-                </div>
-                <p>
-                    CTS-Lite can optionally provide chemical taxonomy classifications from
-                    <a href="https://cfb.metabolomics.us/" target="_blank">ClassyFire</a>, developed by the
-                    <a href="http://www.wishartlab.com/" target="_blank">Wishart Research Group</a>.
-                </p>
-                <p>
-                ClassyFire is <strong>disabled by default</strong> due to the additional network latency it causes. Enable it from the settings panel, or via the API with the <code class="inline-code">classyfire=true</code> parameter. Requests with ClassyFire enabled are <strong>limited to 1,000 entries</strong>.
-                </p>
-                <p>
-                    Each matched compound receives the following ClassyFire fields (some may be empty and therefore omitted):
-                </p>
-                <ul class="doc-list">
-                    <li><strong>Kingdom</strong>&emsp;(organic vs inorganic, e.g., <code class="inline-code">Organic compounds</code>)</li>
-                    <li><strong>Superclass</strong>&emsp;(general structural identifiers, e.g., <code class="inline-code">Organoheterocycli compounds)</code></li>
-                    <li><strong>Class</strong>&emsp;(specific structural features, e.g., <code class="inline-code">Imidazopyrimidines)</code></li>
-                    <li><strong>Subclass</strong>&emsp;(even more specific features, e.g., <code class="inline-code">Purines and purine derivatives)</code></li>
-                    <li><strong>Direct Parent</strong>&emsp;(most specific class (e.g., <code class="inline-code">Xanthines</code>)</li>
-                    <li><strong>Description</strong>&emsp;(text description of the compound's chemical class)</li>
-                </ul>
-                <p>
-                    If a compound is not found by ClassyFire, or if the ClassyFire service is unavailable, the
-                    reason is reported in an <code class="inline-code">error</code> field.
-                </p>
-                <p>
-                    A single query can match many compounds (for example, a molecular formula with
-                    <code class="inline-code">top_hit_only=false</code> may return hundreds of hits). To keep latency
-                    reasonable, only the <strong>top 3 matches of each identifier</strong> are classified.
-                </p>
-                <div class="doc-note">
-                    <strong>Note:</strong> ClassyFire adds significant network latency proportional to the number of unique matched compounds in your query.
-                </div>
-                <h4 class="doc-subheading">API Details When Using ClassyFire</h4>
-                <p>
-                    Enable ClassyFire by adding the <code class="inline-code">classyfire=true</code> parameter to an API request.
-                </p>
-                <p>
-                    You can stream ClassyFire results by adding the <code class="inline-code">stream=true</code> parameter. 
-                    Instead of a single JSON array upon completion, the server returns live NDJSON results. This may help with timeouts of large requests.
-                </p>
-                <p>
-                    JSON responses include a <code class="inline-code">classyfire</code>
-                    object on each matched compound.
-                </p>
-                <p>
-                    CSV outputs append seven additional columns:
-                    <div class="code-block">
-                        <pre><code>...,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error
-                        </code></pre>
-                    </div>
+                <p style="color: #4B535D; margin-left: 1rem">
+                * With ClassyFire enabled, seven more columns are appended: the <a href="#classyfire">six ClassyFire fields</a> and a potential error message
                 </p>
             </section>
 
@@ -343,6 +366,47 @@ will_fail,unidentified,,false,,"Invalid query type, could not identify, see docu
                 });
                 block.appendChild(btn);
             });
+
+            // Smooth scroll to a section from the table of contents and keep the hash in the URL
+            document.querySelectorAll('.doc-toc-list a').forEach(function(link) {
+                link.addEventListener('click', function(e) {
+                    var id = link.getAttribute('href').slice(1);
+                    var target = document.getElementById(id);
+                    if (!target) return;
+                    e.preventDefault();
+                    history.pushState(null, '', '#' + id);
+                    target.scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+
+            // Scrollspy: highlight the current TOC section being viewed 
+            var tocLinks = Array.prototype.slice.call(document.querySelectorAll('.doc-toc-list a'));
+            var tocSections = Array.prototype.slice.call(document.querySelectorAll('.doc-toc-list > li'));
+            var tocTicking = false;
+            function updateActiveToc() {
+                tocTicking = false;
+                var current = tocLinks[0];
+                tocLinks.forEach(function(link) {
+                    var target = document.getElementById(link.getAttribute('href').slice(1));
+                    if (target && target.getBoundingClientRect().top <= 160) current = link;
+                });
+                tocLinks.forEach(function(link) {
+                    var active = link === current;
+                    link.classList.toggle('active', active);
+                    if (active) link.setAttribute('aria-current', 'true');
+                    else link.removeAttribute('aria-current');
+                });
+                tocSections.forEach(function(section) {
+                    section.classList.toggle('current-section', section.contains(current));
+                });
+            }
+            window.addEventListener('scroll', function() {
+                if (!tocTicking) {
+                    tocTicking = true;
+                    requestAnimationFrame(updateActiveToc);
+                }
+            }, { passive: true });
+            updateActiveToc();
 
             // Reveal the ClassyFire outage note only when the backend reports it down
             fetch('/classyfire/status')

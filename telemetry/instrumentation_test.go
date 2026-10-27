@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,7 +242,7 @@ func TestRecordMatchLogSummaryTruncatesMisses(t *testing.T) {
 	capture.take()
 	results := makeResults(3, 7)                     // 7 misses: over the cap of 5
 	results[3].ConvertedQuery = "CONVERTED-INCHIKEY" // first miss carries a conversion
-	opts := MatchOptions{TopHitOnly: true, AllowFirstBlockMatches: false, AllowRdkitConversion: true, ClassyFireEnabled: false}
+	opts := MatchOptions{TopHitOnly: true, AllowFirstBlockMatches: false, ClassyFireEnabled: false}
 	RecordMatch(newMatchRequest(false), results, 3, 100*time.Millisecond, opts)
 	collectMetrics(t) // drain metrics so later tests stay isolated
 
@@ -270,7 +271,7 @@ func TestRecordMatchLogSummaryTruncatesMisses(t *testing.T) {
 	if v := attrs["hit_percent"].AsFloat64(); v != 30.0 {
 		t.Errorf("hit_percent = %v, want 30.0", v)
 	}
-	if !attrs["top_hit_only"].AsBool() || attrs["first_block_matches"].AsBool() || !attrs["rdkit_conversion"].AsBool() {
+	if !attrs["top_hit_only"].AsBool() || attrs["first_block_matches"].AsBool() {
 		t.Errorf("options not recorded correctly: %v", attrs)
 	}
 	if v, ok := attrs["misses_truncated"]; !ok || !v.AsBool() {
@@ -423,6 +424,126 @@ func TestClassyFireServiceGauge(t *testing.T) {
 	}
 }
 
+func TestRecordPubChemFallbackOutcomes(t *testing.T) {
+	RecordPubChemFallbackOutcomes(context.Background(), "smiles", 4, 3, 2, 1, 0)
+	RecordPubChemFallbackOutcomes(context.Background(), "formula", 5, 0, 0, 0, 0)
+	metrics := collectMetrics(t)
+
+	sum, ok := metrics["pubchem_fallback_outcomes_total"].Data.(metricdata.Sum[int64])
+	if !ok {
+		t.Fatalf("pubchem_fallback_outcomes_total: unexpected data %#v", metrics["pubchem_fallback_outcomes_total"].Data)
+	}
+	got := map[string]int64{}
+	for _, dp := range sum.DataPoints {
+		qt, _ := dp.Attributes.Value(attribute.Key("query_type"))
+		status, _ := dp.Attributes.Value(attribute.Key("status"))
+		got[qt.AsString()+"/"+status.AsString()] = dp.Value
+	}
+	// Zero counts must not appear at all
+	want := map[string]int64{"smiles/found": 4, "smiles/not_found": 3, "smiles/unparseable": 2, "smiles/failed": 1, "formula/found": 5}
+	if len(got) != len(want) {
+		t.Errorf("statuses = %v, want exactly %v", got, want)
+	}
+	for status, n := range want {
+		if got[status] != n {
+			t.Errorf("status %q = %d, want %d", status, got[status], n)
+		}
+	}
+}
+
+// Each call is one round trip: its duration by endpoint and result, and its
+// batch size by endpoint. The duration count is the number of calls
+func TestRecordPubChemFallbackRequest(t *testing.T) {
+	ctx := context.Background()
+	RecordPubChemFallbackRequest(ctx, "cid", "ok", 1200*time.Millisecond, 300)
+	RecordPubChemFallbackRequest(ctx, "cid", "ok", 800*time.Millisecond, 100)
+	RecordPubChemFallbackRequest(ctx, "fastformula", "not_found", 3*time.Second, 1)
+	metrics := collectMetrics(t)
+
+	dur, ok := metrics["pubchem_fallback_request_duration_ms"].Data.(metricdata.Histogram[float64])
+	if !ok {
+		t.Fatalf("pubchem_fallback_request_duration_ms: unexpected data %#v", metrics["pubchem_fallback_request_duration_ms"].Data)
+	}
+	gotDur := map[string]metricdata.HistogramDataPoint[float64]{}
+	for _, dp := range dur.DataPoints {
+		endpoint, _ := dp.Attributes.Value(attribute.Key("endpoint"))
+		result, _ := dp.Attributes.Value(attribute.Key("result"))
+		gotDur[endpoint.AsString()+"/"+result.AsString()] = dp
+	}
+	if dp := gotDur["cid/ok"]; dp.Count != 2 || dp.Sum != 2000 {
+		t.Errorf("cid/ok duration: count %d sum %v, want count 2 sum 2000", dp.Count, dp.Sum)
+	}
+	if dp := gotDur["fastformula/not_found"]; dp.Count != 1 || dp.Sum != 3000 {
+		t.Errorf("fastformula/not_found duration: count %d sum %v, want count 1 sum 3000", dp.Count, dp.Sum)
+	}
+
+	size, ok := metrics["pubchem_fallback_batch_size"].Data.(metricdata.Histogram[int64])
+	if !ok {
+		t.Fatalf("pubchem_fallback_batch_size: unexpected data %#v", metrics["pubchem_fallback_batch_size"].Data)
+	}
+	gotSize := map[string]metricdata.HistogramDataPoint[int64]{}
+	for _, dp := range size.DataPoints {
+		endpoint, _ := dp.Attributes.Value(attribute.Key("endpoint"))
+		gotSize[endpoint.AsString()] = dp
+	}
+	if dp := gotSize["cid"]; dp.Count != 2 || dp.Sum != 400 {
+		t.Errorf("cid batch size: count %d sum %d, want count 2 sum 400", dp.Count, dp.Sum)
+	}
+	if dp := gotSize["fastformula"]; dp.Count != 1 || dp.Sum != 1 {
+		t.Errorf("fastformula batch size: count %d sum %d, want count 1 sum 1", dp.Count, dp.Sum)
+	}
+}
+
+func TestRecordPubChemFallbackValues(t *testing.T) {
+	RecordPubChemFallbackValues(context.Background(), "inchikey", 6, 3, 1)
+	RecordPubChemFallbackValues(context.Background(), "fastformula", 9, 1, 0)
+	metrics := collectMetrics(t)
+
+	sum, ok := metrics["pubchem_fallback_values_total"].Data.(metricdata.Sum[int64])
+	if !ok {
+		t.Fatalf("pubchem_fallback_values_total: unexpected data %#v", metrics["pubchem_fallback_values_total"].Data)
+	}
+	got := map[string]int64{}
+	for _, dp := range sum.DataPoints {
+		endpoint, _ := dp.Attributes.Value(attribute.Key("endpoint"))
+		result, _ := dp.Attributes.Value(attribute.Key("result"))
+		got[endpoint.AsString()+"/"+result.AsString()] = dp.Value
+	}
+	// fastformula's zero no_answer must not appear
+	want := map[string]int64{"inchikey/found": 6, "inchikey/not_found": 3, "inchikey/no_answer": 1, "fastformula/found": 9, "fastformula/not_found": 1}
+	if len(got) != len(want) {
+		t.Errorf("datapoints = %v, want exactly %v", got, want)
+	}
+	for k, n := range want {
+		if got[k] != n {
+			t.Errorf("%s = %d, want %d", k, got[k], n)
+		}
+	}
+}
+
+func TestPubChemServiceGauge(t *testing.T) {
+	up := true
+	RegisterPubChemServiceGauge(func() bool { return up })
+
+	collectServiceUp := func() int64 {
+		t.Helper()
+		metrics := collectMetrics(t)
+		g, ok := metrics["pubchem_fallback_service_up"].Data.(metricdata.Gauge[int64])
+		if !ok || len(g.DataPoints) != 1 {
+			t.Fatalf("pubchem_fallback_service_up: unexpected data %#v", metrics["pubchem_fallback_service_up"].Data)
+		}
+		return g.DataPoints[0].Value
+	}
+
+	if got := collectServiceUp(); got != 1 {
+		t.Errorf("gauge while up = %d, want 1", got)
+	}
+	up = false
+	if got := collectServiceUp(); got != 0 {
+		t.Errorf("gauge while down = %d, want 0", got)
+	}
+}
+
 func TestRecordMatchEmptyResults(t *testing.T) {
 	capture.take()
 	// Must not panic or divide by zero.
@@ -439,5 +560,61 @@ func TestRecordMatchEmptyResults(t *testing.T) {
 	}
 	if v := attrs["hit_percent"].AsFloat64(); v != 0 {
 		t.Errorf("hit_percent = %v, want 0", v)
+	}
+}
+
+func TestLogPubChemEvent(t *testing.T) {
+	capture.take()
+	LogPubChemEvent(context.Background(), PubChemEvent{
+		Event: "retrying", Endpoint: "cid", Path: "/rest/pug/compound/cid/" + strings.Repeat("1,", 200),
+		Reason: "http_error", StatusCode: 502, Attempt: 1, Delay: 2 * time.Second,
+	}, "cid returned 502 on attempt 1, retrying in 2s")
+	LogPubChemEvent(context.Background(), PubChemEvent{Event: "gave_up"}, "gave up")
+
+	records := capture.take()
+	if len(records) != 2 {
+		t.Fatalf("got %d log records, want 2", len(records))
+	}
+	if records[0].Severity() != otellog.SeverityWarn || records[1].Severity() != otellog.SeverityError {
+		t.Errorf("severities = %v, %v, want Warn, Error", records[0].Severity(), records[1].Severity())
+	}
+	attrs := logAttrs(records[0])
+	if attrs["component"].AsString() != "pubchem_fallback" || attrs["event"].AsString() != "retrying" {
+		t.Errorf("component/event = %v/%v", attrs["component"], attrs["event"])
+	}
+	if attrs["status_code"].AsInt64() != 502 || attrs["delay_ms"].AsFloat64() != 2000 {
+		t.Errorf("status_code/delay_ms = %v/%v, want 502/2000", attrs["status_code"], attrs["delay_ms"])
+	}
+	if n := len(attrs["path"].AsString()); n != maxLoggedPathLen+3 {
+		t.Errorf("path length = %d, want trimmed to %d", n, maxLoggedPathLen+3)
+	}
+	if _, ok := logAttrs(records[1])["status_code"]; ok {
+		t.Error("status_code present on an event without one")
+	}
+}
+
+func TestLogPubChemFallbackSummary(t *testing.T) {
+	capture.take()
+	LogPubChemFallbackSummary(context.Background(), PubChemFallbackSummary{
+		Misses: 4, Attempted: 3, Found: 2, NotFound: 1, Skipped: 1, Calls: 5, Retries: 2,
+		BreakerTripped: true, Duration: 1500 * time.Millisecond,
+	})
+
+	records := capture.take()
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want 1", len(records))
+	}
+	if body := records[0].Body().AsString(); body != "pubchem fallback summary" {
+		t.Errorf("body = %q", body)
+	}
+	if records[0].Severity() != otellog.SeverityWarn {
+		t.Errorf("severity = %v, want Warn when the breaker tripped", records[0].Severity())
+	}
+	attrs := logAttrs(records[0])
+	if attrs["found"].AsInt64() != 2 || attrs["calls"].AsInt64() != 5 || attrs["retries"].AsInt64() != 2 {
+		t.Errorf("found/calls/retries = %v/%v/%v, want 2/5/2", attrs["found"], attrs["calls"], attrs["retries"])
+	}
+	if attrs["duration_ms"].AsFloat64() != 1500 {
+		t.Errorf("duration_ms = %v, want 1500", attrs["duration_ms"])
 	}
 }

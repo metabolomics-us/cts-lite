@@ -23,3 +23,18 @@ func SmilesToInChIKey(smiles string) (string, error) {
 	defer C.free(unsafe.Pointer(result))
 	return C.GoString(result), nil
 }
+
+// InChIToInChIKey converts an InChI string to an InChIKey.
+// Returns ("", nil) if the InChI is invalid or no InChIKey can be generated.
+func InChIToInChIKey(inchi string) (string, error) {
+	cs := C.CString(inchi)
+	defer C.free(unsafe.Pointer(cs))
+
+	result := C.inchi_to_inchikey(cs)
+	if result == nil {
+		return "", nil
+	}
+	defer C.free(unsafe.Pointer(result))
+	return C.GoString(result), nil
+}
+

@@ -5,18 +5,29 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 var mockIndex *model.PubChemIndex
+
+// pcbNetworkDisabledTransport fails every request instantly. It is the
+// test-binary default for pcbHTTPClient
+type pcbNetworkDisabledTransport struct{}
+
+func (pcbNetworkDisabledTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("network access disabled in tests; use withMockPCBTransport")
+}
 
 func TestMain(m *testing.M) {
 	var err error
@@ -24,6 +35,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("failed to load test CSV: %v", err)
 	}
+
+	// Default PubChem fallback to fail fast and offline unless a test
+	// explicitly mocks it; also zero the pacing/retry delays for testing
+	pcbHTTPClient = &http.Client{Transport: pcbNetworkDisabledTransport{}}
+	pcbMinGap, pcbThrottledGap, pcbThrottlePause, pcbIdleReset = 0, 0, 0, 0
+	pcbRetryDelays = []time.Duration{0, 0}
+
 	os.Exit(m.Run())
 }
 
@@ -283,7 +301,7 @@ func TestMultiQueryOrderPreserved(t *testing.T) {
 		fakeMethaneCompound(), // "2"                            pubchem_id
 		fakeWaterCompound(),   // "O"                            smiles
 		fakeFormaldehyde(),    // "FAKEFORMALDEHY-FAKEFRMALD-E"  inchikey
-		fakeWaterCompound(),   // "InChI=1S/H2O/h1H2"           inchi
+		fakeWaterCompound(),   // "InChI=1S/H2O/h1H2"            inchi
 		fakeFormaldehyde(),    // "3"                            pubchem_id
 		fakeMethaneCompound(), // "C"                            smiles_or_formula
 	}
@@ -303,24 +321,27 @@ func TestMatchErrors(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
+			// A local miss now always attempts a live PubChem fallback
+			// fallback is disabled in this test binary so the misses all fail fast
 			name:       "inchi no match",
 			query:      "InChI=1S/NOTHING",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			name:       "inchikey first block not found",
 			query:      "ZZZZZZZZZZZZZZ-XXXXXXXXXX-Y",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			name:       "smiles no match",
 			query:      "CC(O)=O",
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
+			// A real formula shape that is absent from the test dataset
 			name:       "formula no match",
-			query:      "Unknown",
-			wantErrMsg: "No compound found",
+			query:      "C99H99N99O99",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 		{
 			name:       "bad inchikey",
@@ -365,11 +386,12 @@ func TestMatchErrors(t *testing.T) {
 func TestQuotedEmptyQuery(t *testing.T) {
 	// Regression: `""` after quote-stripping becomes empty, which previously caused
 	//   a panic in parseQueryType due to an out-of-bounds slice on an empty string
-	res := doMatchRequest(t, `{"queries":"\"\""}`, nil, false)
-	results := parseMatchResults(t, res)
-
-	if len(results) != 0 {
-		t.Errorf("expected 0 results for empty quoted query, got %d", len(results))
+	// A query of only bare quotes is treated like a blank query
+	for _, payload := range []string{`{"queries":"\"\""}`, `{"queries":"\"\"\""}`, `{"queries":"\" \"\" \"\"\""}`} {
+		res := doMatchRequest(t, payload, nil, false)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 for %s, got %d", payload, res.StatusCode)
+		}
 	}
 }
 
@@ -379,10 +401,9 @@ func TestSingleDoubleQuoteQuery(t *testing.T) {
 	//   empty slice q[1:0]), and was not caught by the subsequent empty-string
 	//   check, leading to a panic in parseQueryType.
 	res := doMatchRequest(t, `{"queries":"\""}`, nil, false)
-	results := parseMatchResults(t, res)
 
-	if len(results) != 0 {
-		t.Errorf("expected 0 results for single double-quote query, got %d", len(results))
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for single double-quote query, got %d", res.StatusCode)
 	}
 }
 
@@ -568,7 +589,7 @@ func TestMatchPubChemID(t *testing.T) {
 			name:       "no match for unknown PubChem ID",
 			query:      "999",
 			wantFound:  false,
-			wantErrMsg: "No compound found",
+			wantErrMsg: "No local match; PubChem Live lookup unavailable",
 		},
 	}
 
@@ -912,7 +933,7 @@ func TestMatchErrorPaths(t *testing.T) {
 		// C=O contains '=' so smilesGuaranteePattern matches -> type smiles -> matchSmiles
 		{"smiles_direct", `{"queries":"C=O"}`},
 		{"formula", `{"queries":"H2O"}`},
-		{"smiles_or_formula", `{"queries":"CH4"}`},
+		{"formula_from_hydrogen_rule", `{"queries":"CH4"}`},
 		// Numeric query -> type pubchem_id -> matchPubChemID
 		{"pubchem_id", `{"queries":"1"}`},
 	}
@@ -949,6 +970,47 @@ func TestMatchErrorPaths(t *testing.T) {
 				t.Errorf("expected 'Internal server error', got %q", results[0].ErrMsg)
 			}
 		})
+	}
+}
+
+// DerivedInChIKey field should never appear in results, only used internally for
+// PubChem fallback to reuse the rdkit conversion if we already performed it
+func TestDerivedInChIKeyNeverSerialized(t *testing.T) {
+	results := []*model.SingleResult{{
+		Query:           "CCO",
+		QueryType:       "smiles",
+		ConvertedQuery:  "VISIBLEKEYAAAA-VISIBLEKEY-V",
+		ErrMsg:          "No compound found",
+		DerivedInChIKey: "SENTINELKEYAAA-SENTINELKK-S",
+	}}
+
+	assertHidden := func(format, out string) {
+		t.Helper()
+		// The control value proves the output really was rendered
+		if !strings.Contains(out, "VISIBLEKEY") {
+			t.Fatalf("%s: control value missing, assertion proves nothing", format)
+		}
+		if strings.Contains(out, "SENTINEL") {
+			t.Errorf("%s: DerivedInChIKey value leaked into output", format)
+		}
+		if strings.Contains(strings.ToLower(out), "derived") {
+			t.Errorf("%s: DerivedInChIKey field name leaked into output", format)
+		}
+	}
+
+	encoded, err := json.Marshal(results)
+	if err != nil {
+		t.Fatalf("failed to marshal results: %v", err)
+	}
+	assertHidden("JSON", string(encoded))
+
+	for _, classyfireEnabled := range []bool{false, true} {
+		w := httptest.NewRecorder()
+		if err := writeResultsAsCSV(w, results, classyfireEnabled); err != nil {
+			t.Fatalf("failed to write CSV: %v", err)
+		}
+		body, _ := io.ReadAll(w.Result().Body)
+		assertHidden(fmt.Sprintf("CSV(classyfire=%v)", classyfireEnabled), string(body))
 	}
 }
 
@@ -1015,7 +1077,7 @@ func TestClassyFireCSVNoMatchRowHasEmptyColumns(t *testing.T) {
 	}
 }
 
-// Streaming caps a query at the top 3 hits: extras carry the cap note and only 3 are classified
+// Streaming caps a query at the top hit: extras carry the cap note and only the top hit is classified
 func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
 		return cfbFetch{info: fakeClassyFireInfo()}, nil
@@ -1029,7 +1091,7 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
 	w := httptest.NewRecorder()
-	streamMatchResults(w, req, results)
+	streamMatchResults(w, req, results, true, func(func(int)) {})
 
 	type streamMsg struct {
 		Type    string                `json:"type"`
@@ -1065,13 +1127,193 @@ func TestStreamMatchResultsCapsAndStreams(t *testing.T) {
 		t.Errorf("last line: want done, got %q", msgs[len(msgs)-1].Type)
 	}
 
-	// Matches beyond the top 3 must carry the capped note in the initial matches line
+	// Matches beyond the top hit must carry the capped note in the initial matches line
 	streamed := msgs[0].Results[0].Matches
 	for i := cfbMaxMatchesPerQuery; i < len(streamed); i++ {
 		cf := streamed[i].ClassyFire
 		if cf == nil || cf.Error != cfbCappedNote {
 			t.Errorf("match[%d]: expected capped note, got %+v", i, cf)
 		}
+	}
+}
+
+// ClassyFire starts on local hits while the fallback is still running, and the
+// PubChem hits join the same stream once each of them settles. The total starts
+// as an upper bound counting every pending row and shrinks when one misses
+func TestStreamMatchResultsClassifiesDuringFallback(t *testing.T) {
+	localKey, liveKey, missKey := "AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N"
+	localClassified := make(chan struct{})
+	mockClassyFire(t, func(inchikey string) (cfbFetch, error) {
+		if inchikey == localKey {
+			close(localClassified)
+		}
+		return cfbFetch{info: fakeClassyFireInfo()}, nil
+	})
+
+	results := []*model.SingleResult{
+		{Query: localKey, QueryType: "inchikey", MatchFound: true, Matches: []*model.Compound{{InChIKey: localKey}}},
+		{Query: liveKey, QueryType: "inchikey"},
+		{Query: missKey, QueryType: "inchikey"},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
+	w := httptest.NewRecorder()
+	streamMatchResults(w, req, results, true, func(onSettled func(int)) {
+		// Simulate the fallback settling after the local key was classified
+		select {
+		case <-localClassified:
+		case <-time.After(2 * time.Second):
+			t.Error("ClassyFire did not start before the fallback settled")
+		}
+		onSettled(2) // PubChem has no match, so the bound drops
+		results[1].MatchFound = true
+		results[1].Matches = []*model.Compound{{InChIKey: liveKey}}
+		onSettled(1) // a hit with a new key keeps the bound, no new classifying line
+	})
+
+	var types []string
+	var uniques []int
+	classified := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		var m struct {
+			Type     string `json:"type"`
+			Unique   int    `json:"unique"`
+			InChIKey string `json:"inchikey"`
+		}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		types = append(types, m.Type)
+		if m.Type == "matches" || m.Type == "classifying" {
+			uniques = append(uniques, m.Unique)
+		}
+		if m.Type == "classyfire" {
+			classified[m.InChIKey] = true
+		}
+	}
+
+	if !classified[localKey] || !classified[liveKey] {
+		t.Errorf("expected both keys classified, got %v", classified)
+	}
+	// matches, then the queue join, then the miss
+	if !slices.Equal(uniques, []int{3, 3, 2}) {
+		t.Errorf("totals: want [3 3 2], got %v", uniques)
+	}
+	if types[len(types)-1] != "done" {
+		t.Errorf("last line: want done, got %v", types)
+	}
+}
+
+// streamTotals runs streamMatchResults with ClassyFire on and returns every
+// matches/classifying total in order plus how many keys were classified
+func streamTotals(t *testing.T, results []*model.SingleResult, fallback func(func(int))) (totals []int, classified int) {
+	t.Helper()
+	mockClassyFire(t, func(string) (cfbFetch, error) { return cfbFetch{info: fakeClassyFireInfo()}, nil })
+	req := httptest.NewRequest(http.MethodPost, "/match?classyfire=true&stream=true", nil)
+	w := httptest.NewRecorder()
+	streamMatchResults(w, req, results, true, fallback)
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		var m struct {
+			Type   string `json:"type"`
+			Unique int    `json:"unique"`
+		}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		switch m.Type {
+		case "matches", "classifying":
+			totals = append(totals, m.Unique)
+		case "classyfire":
+			classified++
+		}
+	}
+	return totals, classified
+}
+
+// With every query matched locally there is nothing pending, so the total is exact from the start
+func TestStreamMatchResultsAllLocalTotalIsExact(t *testing.T) {
+	var results []*model.SingleResult
+	for _, k := range []string{"AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N"} {
+		results = append(results, &model.SingleResult{Query: k, QueryType: "inchikey", MatchFound: true, Matches: []*model.Compound{{InChIKey: k}}})
+	}
+
+	totals, classified := streamTotals(t, results, func(func(int)) {})
+
+	// matches, then the queue join
+	if !slices.Equal(totals, []int{3, 3}) {
+		t.Errorf("totals: want [3 3], got %v", totals)
+	}
+	if classified != 3 {
+		t.Errorf("expected 3 classyfire lines, got %d", classified)
+	}
+}
+
+// When no query matches locally or on PubChem the bound shrinks to 0 and nothing is classified
+func TestStreamMatchResultsNoMatchesShrinksToZero(t *testing.T) {
+	var results []*model.SingleResult
+	for _, k := range []string{"AYYVLZVUVIJVGH-UHFFFAOYSA-N", "BYYVLZVUVIJVGH-UHFFFAOYSA-N", "CYYVLZVUVIJVGH-UHFFFAOYSA-N"} {
+		results = append(results, &model.SingleResult{Query: k, QueryType: "inchikey"})
+	}
+
+	totals, classified := streamTotals(t, results, func(onSettled func(int)) {
+		for i := range results {
+			onSettled(i)
+		}
+	})
+
+	if !slices.Equal(totals, []int{3, 2, 1, 0}) {
+		t.Errorf("totals: want [3 2 1 0], got %v", totals)
+	}
+	if classified != 0 {
+		t.Errorf("expected no classyfire lines, got %d", classified)
+	}
+}
+
+// the stream sends local matches first, marks the
+// fallback row pending, then replaces it with the pubchem result
+func TestMatchStreamingPubChemFallback(t *testing.T) {
+	resetPcbPacing(t)
+	pcbClearCache(t, "pubchem_id", "2244")
+	withMockPCBTransport(t, func(*http.Request) (*http.Response, error) {
+		return pcbResp(http.StatusOK, pcbPropertyJSON(`{"CID":2244,"InChIKey":"BSYNRYMUTXBXSQ-UHFFFAOYSA-N","MolecularFormula":"C9H8O4"}`)), nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?stream=true", strings.NewReader(`{"queries":"1 2244"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+
+	if ct := w.Result().Header.Get("Content-Type"); ct != "application/x-ndjson" {
+		t.Fatalf("expected NDJSON content type, got %q", ct)
+	}
+
+	type streamMsg struct {
+		Type    string                `json:"type"`
+		Results []*model.SingleResult `json:"results"`
+		Index   int                   `json:"index"`
+		Result  *model.SingleResult   `json:"result"`
+	}
+	var msgs []streamMsg
+	for _, line := range strings.Split(strings.TrimSpace(w.Body.String()), "\n") {
+		var m streamMsg
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid NDJSON line %q: %v", line, err)
+		}
+		msgs = append(msgs, m)
+	}
+
+	if len(msgs) != 3 || msgs[0].Type != "matches" || msgs[1].Type != "pubchem" || msgs[2].Type != "done" {
+		t.Fatalf("want matches, pubchem, done lines, got %+v", msgs)
+	}
+	local, waiting := msgs[0].Results[0], msgs[0].Results[1]
+	if !local.MatchFound || local.Pending {
+		t.Errorf("local hit should arrive found and not pending: %+v", local)
+	}
+	if !waiting.Pending {
+		t.Error("the fallback row should be pending in the matches line")
+	}
+	if msgs[1].Index != 1 || msgs[1].Result == nil || !msgs[1].Result.MatchFound || msgs[1].Result.Pending {
+		t.Errorf("pubchem line should carry the found, settled result at index 1: %+v", msgs[1])
 	}
 }
 
@@ -1082,7 +1324,14 @@ func mockSmilesConverter(t *testing.T, fn func(string) (string, error)) {
 	t.Cleanup(func() { smilesToInChIKey = orig })
 }
 
-func TestSmilesViaInChIKeyFallback(t *testing.T) {
+func mockInChIConverter(t *testing.T, fn func(string) (string, error)) {
+	t.Helper()
+	orig := inchiToInChIKey
+	inchiToInChIKey = fn
+	t.Cleanup(func() { inchiToInChIKey = orig })
+}
+
+func TestSmilesViaRDKitConversion(t *testing.T) {
 	t.Run("exact InChIKey match", func(t *testing.T) {
 		mockSmilesConverter(t, func(string) (string, error) {
 			return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
@@ -1094,7 +1343,7 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
 		if !results[0].MatchFound {
-			t.Fatal("expected match via SMILES InChIKey fallback")
+			t.Fatal("expected match via RDKit-converted InChIKey")
 		}
 		if results[0].QueryType != "converted_smiles" {
 			t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
@@ -1119,7 +1368,7 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
 		if !results[0].MatchFound {
-			t.Fatal("expected first block match via SMILES fallback")
+			t.Fatal("expected first block match via RDKit-converted InChIKey")
 		}
 		if results[0].QueryType != "converted_smiles" {
 			t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
@@ -1143,13 +1392,17 @@ func TestSmilesViaInChIKeyFallback(t *testing.T) {
 		if results[0].MatchFound {
 			t.Error("expected no match when converter returns empty")
 		}
-		if results[0].ErrMsg != "No compound found" {
-			t.Errorf("expected 'No compound found', got %q", results[0].ErrMsg)
+		// The PubChem fallback converts SMILES to an InChIKey before looking it up, so
+		// a converter that yields nothing leaves it with nothing to query and
+		// PubChem is never reached
+		if results[0].ErrMsg != "No compound found (structure could not be read)" {
+			t.Errorf("expected unreadable-structure message, got %q", results[0].ErrMsg)
 		}
 	})
 }
 
-func TestRdkitConversionDisabled(t *testing.T) {
+// rdkit_conversion was removed, so a client still sending it must get the converted match
+func TestRdkitConversionParamIgnored(t *testing.T) {
 	mockSmilesConverter(t, func(string) (string, error) {
 		return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
 	})
@@ -1162,28 +1415,30 @@ func TestRdkitConversionDisabled(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if results[0].MatchFound {
-		t.Error("expected no match when rdkit_conversion=false")
+	if !results[0].MatchFound {
+		t.Errorf("expected a match, got error %q", results[0].ErrMsg)
 	}
-	if results[0].ErrMsg != "No compound found" {
-		t.Errorf("expected 'No compound found', got %q", results[0].ErrMsg)
+	if results[0].QueryType != "converted_smiles" {
+		t.Errorf("expected converted_smiles, got %q", results[0].QueryType)
 	}
 }
 
-func TestSmilesOrFormulaViaInChIKeyFallback(t *testing.T) {
-	// "Cc1ccccc1" starts with C (not in formula-guarantee set) → smiles_or_formula,
-	// misses both formula and SMILES lookups, then falls through to RDKit.
+func TestSmilesOrFormulaKeepsConvertedSmilesType(t *testing.T) {
+	// "CO" reads as both SMILES and formula, so it classifies as
+	// smiles_or_formula. It misses the local SMILES lookup and is matched
+	// through RDKit conversion, and matchSmilesOrFormula must keep the
+	// converted_smiles query type rather than overwrite it with smiles
 	mockSmilesConverter(t, func(string) (string, error) {
 		return "MYFAKEINCHIKEY-ISRIGHTHER-E", nil
 	})
-	res := doMatchRequest(t, `{"queries":"Cc1ccccc1"}`, nil, false)
+	res := doMatchRequest(t, `{"queries":"CO"}`, nil, false)
 	results := parseMatchResults(t, res)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 	if !results[0].MatchFound {
-		t.Fatal("expected match via smiles_or_formula InChIKey fallback")
+		t.Fatal("expected smiles_or_formula match via converted SMILES InChIKey lookup")
 	}
 	if results[0].QueryType != "converted_smiles" {
 		t.Errorf("expected query_type 'converted_smiles', got %q", results[0].QueryType)
