@@ -288,6 +288,51 @@ func TestQueryByFormula_Miss(t *testing.T) {
 	}
 }
 
+// TestQueryByName_RankBeforeScore checks that a name sorts by its rank for each compound
+// before score. oxidane is Water's rank 1 and Methane's rank 2, so Water comes first even
+// though Methane scores higher (14.7 vs 7.6)
+func TestQueryByName_RankBeforeScore(t *testing.T) {
+	idx := loadTestIndex(t)
+	defer idx.Close()
+
+	compounds, err := idx.QueryByName("  OXIDANE ", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got []string
+	for _, c := range compounds {
+		got = append(got, c.CompoundName)
+	}
+	if diff := cmp.Diff([]string{"Water", "Methane"}, got); diff != "" {
+		t.Errorf("ordering mismatch (-want +got):\n%s", diff)
+	}
+
+	compounds, err = idx.QueryByName("oxidane", true)
+	if err != nil || len(compounds) != 1 || compounds[0].CompoundName != "Water" {
+		t.Errorf("top hit: got %v, err %v", compounds, err)
+	}
+
+	compounds, err = idx.QueryByName("no such name", false)
+	if err != nil || len(compounds) != 0 {
+		t.Errorf("miss: got %v, err %v", compounds, err)
+	}
+}
+
+func TestQueryByCAS(t *testing.T) {
+	idx := loadTestIndex(t)
+	defer idx.Close()
+
+	compounds, err := idx.QueryByCAS("50-00-0", true)
+	if err != nil || len(compounds) != 1 || compounds[0].CompoundName != "Formaldehyde" {
+		t.Errorf("hit: got %v, err %v", compounds, err)
+	}
+
+	compounds, err = idx.QueryByCAS("64-17-5", false)
+	if err != nil || len(compounds) != 0 {
+		t.Errorf("miss: got %v, err %v", compounds, err)
+	}
+}
+
 // TestQuery_ClosedDB verifies that all QueryBy* methods surface an error
 // (rather than panic) when the underlying database has been closed.
 func TestQuery_ClosedDB(t *testing.T) {
@@ -303,6 +348,8 @@ func TestQuery_ClosedDB(t *testing.T) {
 		{"QueryByInChI", func() ([]*Compound, error) { return idx.QueryByInChI("InChI=1S/H2O/h1H2", false) }},
 		{"QueryBySmiles", func() ([]*Compound, error) { return idx.QueryBySmiles("O", false) }},
 		{"QueryByFormula", func() ([]*Compound, error) { return idx.QueryByFormula("H2O", false) }},
+		{"QueryByName", func() ([]*Compound, error) { return idx.QueryByName("water", false) }},
+		{"QueryByCAS", func() ([]*Compound, error) { return idx.QueryByCAS("7732-18-5", false) }},
 	}
 
 	for _, q := range queries {

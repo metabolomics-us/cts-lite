@@ -1,4 +1,4 @@
 Identifier,PubMed_Count,Patent_Count,AnnotationTypeCount,MolecularFormula,SMILES,InChI,InChIKey,MonoisotopicMass,CompoundName,Synonyms
 1,10,2,6,H2O,O,InChI=1S/H2O/h1H2,MYFAKEINCHIKEY-ISRIGHTHER-E,100,Water,water|oxidane|7732-18-5|UNII-059QF0KO0R|dihydrogen oxide
-2,18,7,8,CH4,C,InChI=1S/CH4/h1H4,MYFAKEINCHIKEY-ANOTHERONE-E,99,Methane,methane|74-82-8|marsh gas
+2,18,7,8,CH4,C,InChI=1S/CH4/h1H4,MYFAKEINCHIKEY-ANOTHERONE-E,99,Methane,methane|74-82-8|marsh gas|oxidane
 3,5,1,4,CH2O,C=O,InChI=1S/CH2O/c1-2/h1H2,FAKEFORMALDEHY-FAKEFRMALD-E,30,Formaldehyde,formaldehyde|methanal|50-00-0|Formalin

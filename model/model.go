@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strconv"
 
+	"ctslite/synonyms"
+
 	_ "modernc.org/sqlite" // SQLite driver
 )
 
@@ -60,11 +62,24 @@ type PubChemIndex struct {
 	bySmiles1     *sql.Stmt
 	byFormula     *sql.Stmt
 	byFormula1    *sql.Stmt
+	byName        *sql.Stmt
+	byName1       *sql.Stmt
+	byCAS         *sql.Stmt
+	byCAS1        *sql.Stmt
 }
 
-const selectCols = `SELECT identifier, inchikey, inchi, smiles, compound_name,
-	molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count FROM compounds`
-const orderByScore = ` ORDER BY (0.7 * literature_count + 0.3 * patent_count) DESC`
+const compoundCols = `identifier, inchikey, inchi, smiles, compound_name,
+	molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count`
+const selectCols = `SELECT ` + compoundCols + ` FROM compounds`
+const score = `(0.7 * literature_count + 0.3 * patent_count)`
+const orderByScore = ` ORDER BY ` + score + ` DESC`
+
+// USING lets the shared column list name identifier without saying which table it comes from
+const selectByName = `SELECT ` + compoundCols + ` FROM names JOIN compounds USING (identifier) WHERE name_norm = ?`
+const selectByCAS = `SELECT ` + compoundCols + ` FROM cas JOIN compounds USING (identifier) WHERE cas = ?`
+
+// A name ranks by how prominent it is for each compound (0 is the title), then by score
+const orderByNameRank = ` ORDER BY rank, ` + score + ` DESC`
 
 // OpenSQLiteIndex opens a pre-built SQLite database for production use
 func OpenSQLiteIndex(dbPath string) (*PubChemIndex, error) {
@@ -115,6 +130,10 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		{&idx.bySmiles1, selectCols + ` WHERE smiles = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byFormula, selectCols + ` WHERE molecular_formula = ?` + orderByScore},
 		{&idx.byFormula1, selectCols + ` WHERE molecular_formula = ?` + orderByScore + ` LIMIT 1`},
+		{&idx.byName, selectByName + orderByNameRank},
+		{&idx.byName1, selectByName + orderByNameRank + ` LIMIT 1`},
+		{&idx.byCAS, selectByCAS + orderByScore},
+		{&idx.byCAS1, selectByCAS + orderByScore + ` LIMIT 1`},
 	}
 
 	for _, s := range stmts {
@@ -243,6 +262,22 @@ func (idx *PubChemIndex) QueryByFormula(formula string, topHitOnly bool) ([]*Com
 		return idx.query(idx.byFormula1, formula)
 	}
 	return idx.query(idx.byFormula, formula)
+}
+
+// QueryByName normalizes the name the same way build-db stored it, so callers pass it as typed
+func (idx *PubChemIndex) QueryByName(name string, topHitOnly bool) ([]*Compound, error) {
+	key := synonyms.Normalize(name)
+	if topHitOnly {
+		return idx.query(idx.byName1, key)
+	}
+	return idx.query(idx.byName, key)
+}
+
+func (idx *PubChemIndex) QueryByCAS(cas string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byCAS1, cas)
+	}
+	return idx.query(idx.byCAS, cas)
 }
 
 // Close releases the database connection and all prepared statements.
