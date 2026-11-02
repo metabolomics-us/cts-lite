@@ -10,6 +10,8 @@ import (
 	"log"
 	"os"
 	"time"
+
+	"ctslite/synonyms"
 )
 
 // LoadCSVToMemory builds a shared-cache in-memory SQLite database from a CSV
@@ -66,9 +68,6 @@ func loadCSVToSQLite(csvPath, dsn string) (*PubChemIndex, error) {
 }
 
 // populateDB creates the schema and bulk-inserts rows from a CSV reader (for tests)
-// CSV column order: identifier, literature_count, patent_count, annotation_type_count,
-//
-//	molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name
 func populateDB(db *sql.DB, reader *csv.Reader) error {
 	if _, err := db.Exec(CreateTableSQL); err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
@@ -85,6 +84,20 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 		return fmt.Errorf("failed to prepare insert: %w", err)
 	}
 	defer stmt.Close()
+
+	nameStmt, err := tx.Prepare(InsertNameSQL)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to prepare name insert: %w", err)
+	}
+	defer nameStmt.Close()
+
+	casStmt, err := tx.Prepare(InsertCASSQL)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to prepare CAS insert: %w", err)
+	}
+	defer casStmt.Close()
 
 	for {
 		line, err := reader.Read()
@@ -116,6 +129,20 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 		); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("failed to insert row: %w", err)
+		}
+
+		names, cas := synonyms.Filter(line[9], line[10])
+		for _, n := range names {
+			if _, err := nameStmt.Exec(n.Key, line[0], n.Rank); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to insert name: %w", err)
+			}
+		}
+		for _, c := range cas {
+			if _, err := casStmt.Exec(c, line[0]); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to insert CAS: %w", err)
+			}
 		}
 	}
 

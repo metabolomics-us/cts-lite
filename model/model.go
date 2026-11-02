@@ -142,7 +142,18 @@ const CreateTableSQL = `CREATE TABLE IF NOT EXISTS compounds (
 	literature_count  REAL NOT NULL,
 	patent_count      REAL NOT NULL,
 	annotation_type_count REAL NOT NULL
-)`
+);
+CREATE TABLE IF NOT EXISTS names (
+	name_norm  TEXT NOT NULL,
+	identifier TEXT NOT NULL,
+	rank       INTEGER NOT NULL,
+	PRIMARY KEY (name_norm, identifier)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS cas (
+	cas        TEXT NOT NULL,
+	identifier TEXT NOT NULL,
+	PRIMARY KEY (cas, identifier)
+) WITHOUT ROWID`
 
 const CreateIndexSQL = `
 CREATE INDEX IF NOT EXISTS idx_pubchem_id  ON compounds(identifier);
@@ -155,6 +166,11 @@ CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula)`
 const InsertSQL = `INSERT INTO compounds
 	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+// The names and cas tables are keyed on their lookup value, so they need no index after load
+const InsertNameSQL = `INSERT OR IGNORE INTO names (name_norm, identifier, rank) VALUES (?, ?, ?)`
+
+const InsertCASSQL = `INSERT OR IGNORE INTO cas (cas, identifier) VALUES (?, ?)`
 
 // query executes a prepared statement and scans all result rows into Compound pointers
 func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) {

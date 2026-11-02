@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-const testCSVContent = `Identifier,Literature_Count,Patent_Count,AnnotationTypeCount,MolecularFormula,SMILES,InChI,InChIKey,ExactMass,CompoundName
-1,10,2,6,H2O,O,InChI=1S/H2O/h1H2,MYFAKEINCHIKEY-ISRIGHTHER-E,100,Water
-2,18,7,8,CH4,C,InChI=1S/CH4/h1H4,MYFAKEINCHIKEY-ANOTHERONE-E,99,Methane
+const testCSVContent = `Identifier,Literature_Count,Patent_Count,AnnotationTypeCount,MolecularFormula,SMILES,InChI,InChIKey,ExactMass,CompoundName,Synonyms
+1,10,2,6,H2O,O,InChI=1S/H2O/h1H2,MYFAKEINCHIKEY-ISRIGHTHER-E,100,Water,water|oxidane|7732-18-5|UNII-059QF0KO0R|dihydrogen oxide
+2,18,7,8,CH4,C,InChI=1S/CH4/h1H4,MYFAKEINCHIKEY-ANOTHERONE-E,99,Methane,methane|74-82-8|marsh gas
 `
 
 // writeTempCSV writes testCSVContent to a temp file and returns its path.
@@ -117,6 +117,14 @@ func TestBulkInsert(t *testing.T) {
 	if count != 2 {
 		t.Errorf("expected 2 rows inserted, got %d", count)
 	}
+
+	var names, cas int
+	if err := db.QueryRow("SELECT (SELECT COUNT(*) FROM names), (SELECT COUNT(*) FROM cas)").Scan(&names, &cas); err != nil {
+		t.Fatalf("failed to count names: %v", err)
+	}
+	if names != 5 || cas != 2 {
+		t.Errorf("expected 5 names and 2 CAS numbers, got %d and %d", names, cas)
+	}
 }
 
 func TestBulkInsert_MalformedCSV(t *testing.T) {
@@ -131,8 +139,7 @@ func TestBulkInsert_MalformedCSV(t *testing.T) {
 		t.Fatalf("failed to create table: %v", err)
 	}
 
-	// A row with only 3 fields will trigger a scan error inside bulkInsert
-	// when it tries to access line[9] (compound_name)
+	// A row with only 3 fields fails the field count check inside bulkInsert
 	malformed := "a,b,c\n"
 	reader := csv.NewReader(strings.NewReader(malformed))
 

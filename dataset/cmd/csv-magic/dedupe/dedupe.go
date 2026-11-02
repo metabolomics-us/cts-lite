@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -21,26 +22,6 @@ func main() {
 	}
 	defer csvFile.Close()
 
-	reader := csv.NewReader(csvFile)
-	records, err := reader.ReadAll()
-	if err != nil {
-		panic(err)
-	}
-
-	// Read through all rows and check for duplicate Identifiers
-	seen := make(map[string]bool)
-	var duplicateCount int = 0
-	output := [][]string{records[0]} // Start with header
-	for _, row := range records[1:] {
-		identifier := row[0]
-		if seen[identifier] == true {
-			duplicateCount++
-			continue
-		}
-		seen[identifier] = true
-		output = append(output, row)
-	}
-
 	// Write out to a new CSV without duplicates
 	outFile, err := os.Create("deduped_" + inputPath)
 	if err != nil {
@@ -48,13 +29,37 @@ func main() {
 	}
 	defer outFile.Close()
 
+	reader := csv.NewReader(csvFile)
 	writer := csv.NewWriter(outFile)
-	for _, row := range output {
-		if row != nil {
-			err := writer.Write(row)
-			if err != nil {
-				panic(err)
-			}
+
+	// Start with header
+	header, err := reader.Read()
+	if err != nil {
+		panic(err)
+	}
+	if err := writer.Write(header); err != nil {
+		panic(err)
+	}
+
+	// Stream through all rows and check for duplicate Identifiers
+	seen := make(map[string]bool)
+	var duplicateCount int = 0
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
+		}
+		identifier := row[0]
+		if seen[identifier] == true {
+			duplicateCount++
+			continue
+		}
+		seen[identifier] = true
+		if err := writer.Write(row); err != nil {
+			panic(err)
 		}
 	}
 	writer.Flush()

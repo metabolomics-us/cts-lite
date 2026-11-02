@@ -7,6 +7,7 @@ package main
 
 import (
 	"ctslite/model"
+	"ctslite/synonyms"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
@@ -81,6 +82,11 @@ func run(csvPath, dbPath string) error {
 		return err
 	}
 	fmt.Printf("Inserted %d compounds in %.1f minutes\n", count, time.Since(start).Minutes())
+	var names, cas int
+	if err := db.QueryRow("SELECT (SELECT COUNT(*) FROM names), (SELECT COUNT(*) FROM cas)").Scan(&names, &cas); err != nil {
+		return fmt.Errorf("failed to count names: %w", err)
+	}
+	fmt.Printf("Inserted %d names and %d CAS numbers\n", names, cas)
 
 	fmt.Println("Building indices...")
 	indexStart := time.Now()
@@ -107,9 +113,9 @@ func tempStorePragma() string {
 
 // bulkInsert inserts all CSV rows using batched transactions for performance
 // CSV column order: identifier, literature_count, patent_count, annotation_type_count,
-//	molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name
+//	molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name, synonyms
 func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
-	tx, stmt, err := beginBatch(db)
+	tx, stmts, err := beginBatch(db)
 	if err != nil {
 		return 0, err
 	}
@@ -126,9 +132,9 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			return 0, fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		if len(line) != 10 {
+		if len(line) != 11 {
 			tx.Rollback()
-			return 0, fmt.Errorf("row %d has %d fields, expected 10", count+1, len(line))
+			return 0, fmt.Errorf("row %d has %d fields, expected 11", count+1, len(line))
 		}
 
 		// Skip lines without inchikeys
@@ -142,7 +148,7 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			continue
 		}
 
-		if _, err := stmt.Exec(
+		if _, err := stmts.compound.Exec(
 			line[0],      // identifier
 			line[7],      // inchikey
 			line[7][:14], // first_block
@@ -159,24 +165,29 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			return 0, fmt.Errorf("failed to insert row %d: %w", count+1, err)
 		}
 
+		if err := insertNames(stmts, line[0], line[9], line[10]); err != nil {
+			tx.Rollback()
+			return 0, fmt.Errorf("failed to insert names for row %d: %w", count+1, err)
+		}
+
 		count++
 
 		if count%batchSize == 0 {
-			stmt.Close()
+			stmts.close()
 			if err := tx.Commit(); err != nil {
 				return 0, fmt.Errorf("failed to commit batch at row %d: %w", count, err)
 			}
 			if count%(batchSize*10) == 0 {
 				fmt.Printf("  %d rows inserted...\n", count)
 			}
-			tx, stmt, err = beginBatch(db)
+			tx, stmts, err = beginBatch(db)
 			if err != nil {
 				return 0, err
 			}
 		}
 	}
 
-	stmt.Close()
+	stmts.close()
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("failed to commit final batch: %w", err)
 	}
@@ -199,15 +210,53 @@ func hasValidNumericFields(line []string) bool {
 	return true
 }
 
-func beginBatch(db *sql.DB) (*sql.Tx, *sql.Stmt, error) {
+// batchStmts are the inserts prepared in one batch transaction
+type batchStmts struct {
+	compound, name, cas *sql.Stmt
+}
+
+func (b *batchStmts) close() {
+	b.compound.Close()
+	b.name.Close()
+	b.cas.Close()
+}
+
+func beginBatch(db *sql.DB) (*sql.Tx, *batchStmts, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	stmt, err := tx.Prepare(model.InsertSQL)
-	if err != nil {
-		tx.Rollback()
-		return nil, nil, fmt.Errorf("failed to prepare insert: %w", err)
+	var stmts batchStmts
+	for _, s := range []struct {
+		dest  **sql.Stmt
+		query string
+	}{
+		{&stmts.compound, model.InsertSQL},
+		{&stmts.name, model.InsertNameSQL},
+		{&stmts.cas, model.InsertCASSQL},
+	} {
+		stmt, err := tx.Prepare(s.query)
+		if err != nil {
+			tx.Rollback()
+			return nil, nil, fmt.Errorf("failed to prepare insert: %w", err)
+		}
+		*s.dest = stmt
 	}
-	return tx, stmt, nil
+	return tx, &stmts, nil
+}
+
+// insertNames writes the compound's filtered names and CAS numbers
+func insertNames(stmts *batchStmts, identifier, title, synonymField string) error {
+	names, cas := synonyms.Filter(title, synonymField)
+	for _, n := range names {
+		if _, err := stmts.name.Exec(n.Key, identifier, n.Rank); err != nil {
+			return err
+		}
+	}
+	for _, c := range cas {
+		if _, err := stmts.cas.Exec(c, identifier); err != nil {
+			return err
+		}
+	}
+	return nil
 }
