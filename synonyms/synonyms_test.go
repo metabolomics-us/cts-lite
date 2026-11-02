@@ -36,6 +36,42 @@ func TestValidCAS(t *testing.T) {
 	}
 }
 
+func TestIsJunk(t *testing.T) {
+	for in, want := range map[string]bool{
+		// One per junk rule
+		"EINECS 200-064-1":              true, // ec_number
+		"R16CO5Y76E":                    true, // unii
+		"Aspirin 100 ug/ml in methanol": true, // solution_product
+		"DTXCID90123":                   true, // dsstox
+		"CHEMBL25":                      true, // chebi_chembl
+		"NSC 27223":                     true, // registry_prefixed
+		"4-10-00-00138 (Beilstein Handbook Reference)": true, // beilstein_ref
+		"BSYNRYMUTXBXSQ-UHFFFAOYSA-N":                  true, // inchi_like
+		"WLN: QVR BOV1":                                true, // wln
+		"_,4-dihydroxy-":                               true, // split_fragment
+		"A-phenyl-":                                    true, // split_fragment
+		"A-D-glucopyranoside":                          true, // mangled_greek
+		"Example 12":                                   true, // patent_label
+		"F2190-0369":                                   true, // vendor_code
+		// Exceptions that must stay
+		"aspirin":                       false,
+		"DICHLORVOS":                    false, // all letters, not a UNII
+		"Hydroxyzine N-trimethylsilyl-": false, // inverted derivative, not a fragment
+		"a-ketoglutaric acid":           false, // informal Greek, not mangled
+		"WY-14643":                      false, // devCode
+		"E1520":                         false, // shortCode
+	} {
+		if got := isJunk(in); got != want {
+			t.Errorf("isJunk(%q) = %v, want %v", in, got, want)
+		}
+	}
+
+	// A trailing comma is a split fragment, dropped in keep rather than isJunk
+	if names, _ := Filter("", "4-dihydroxy,"); len(names) != 0 {
+		t.Errorf("trailing comma fragment kept: %v", names)
+	}
+}
+
 func TestFilter(t *testing.T) {
 	names, cas := Filter("Aspirin", "aspirin|ACETYLSALICYLIC ACID|50-78-2|UNII-R16CO5Y76E|CHEBI:15365|DTXSID5020108|WY-14643|E 330|Acetylsalicylic acid [INCI]|MFCD00002430|a,|141-40-0")
 	want := []Name{{"aspirin", 0}, {"acetylsalicylic acid", 1}, {"wy-14643", 2}, {"e 330", 3}}
