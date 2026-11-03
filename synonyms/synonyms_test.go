@@ -15,9 +15,34 @@ func TestNormalize(t *testing.T) {
 		"2‐chloro–ethanol":       "2-chloro-ethanol",
 		"µ-conotoxin":            "mu-conotoxin",
 		"Beta-D-glucopyranoside": "beta-d-glucopyranoside",
+		"PE(40:6)":               "pe 40:6",
+		"PC(16:0/18:1(9Z))":      "pc 16:0/18:1(9z)",
+		"Cer(d18:1/24:0)":        "cer d18:1/24:0",
+		"(R)-limonene":           "(r)-limonene",
 	} {
 		if got := Normalize(in); got != want {
 			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestVariants(t *testing.T) {
+	for in, want := range map[string][]string{
+		"arg pro phe":                     {"arg-pro-phe"},
+		"acylcarnitine 08:0":              {"car 8:0"},
+		"fa 14:1 (physeteric acid)":       {"physeteric acid", "fa 14:1"},
+		"9,10-epoxystearic acid isomer a": {"9,10-epoxystearic acid"},
+		"pc 16:0_20:5 a":                  {"pc 16:0_20:5"},
+		"glycine, n-lauroyl-":             {"n-lauroylglycine", "n-lauroyl-glycine", "n-lauroyl glycine"},
+		"acylcarnitine, isovaleryl-":      {"isovalerylcarnitine", "isovaleryl-carnitine", "isovaleryl carnitine"},
+		"dimethylarginine, symmetric":     {"symmetric dimethylarginine"},
+		// Not rewritten
+		"coenzyme a":                   nil,
+		"acylcarnitine 04:0, branched": {"branched acylcarnitine 04:0"},
+		"ret":                          nil,
+	} {
+		if diff := cmp.Diff(want, Variants(in)); diff != "" {
+			t.Errorf("Variants(%q) mismatch (-want +got):\n%s", in, diff)
 		}
 	}
 }
@@ -90,11 +115,11 @@ func TestFilter(t *testing.T) {
 		t.Errorf("CAS title: names %v, cas %v", names, cas)
 	}
 
-	// The title plus MaxSynonyms, with CAS numbers past the cap still collected
+	// Every synonym is kept, ranked in PubChem's order
 	field := "n1|n2|n3|n4|n5|n6|n7|n8|n9|n10|n11|n12|64-17-5"
 	names, cas = Filter("title", strings.ReplaceAll(field, "n", "name"))
-	if len(names) != MaxSynonyms+1 || len(cas) != 1 {
-		t.Errorf("cap: got %d names and %d CAS numbers", len(names), len(cas))
+	if len(names) != 13 || names[12] != (Name{"name12", 12}) || len(cas) != 1 {
+		t.Errorf("all synonyms: got %d names and %d CAS numbers", len(names), len(cas))
 	}
 
 	// 4-digit E-numbers and refrigerants are short codes, not vendor codes

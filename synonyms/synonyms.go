@@ -7,9 +7,6 @@ import (
 	"unicode"
 )
 
-// Number of synonyms kept per compound (not counting title)
-const MaxSynonyms = 10
-
 // Max number of characters when downloading synonyms before cutting it off
 const SDQSynonymCap = 10000
 
@@ -75,14 +72,107 @@ var greekReplacer = strings.NewReplacer(
 
 var dottedGreek = regexp.MustCompile(`\.(alpha|beta|gamma|delta|epsilon|omega|kappa|lambda|mu|pi|sigma|tau|xi|zeta|eta|theta|chi|psi|phi|rho|nu|iota|upsilon)\.`)
 
-// Normalize is the lookup key: lowercase, collapsed whitespace, one dash character and
-// Greek letters spelled out
+// Lipid classes written in shorthand like "PC 16:0_18:1", "PE(40:6)" or "Cer d18:1/24:0"
+const lipidClasses = `pc|pe|pi|ps|pg|pa|lpc|lpe|lpi|lps|lpg|lpa|sm|cer|galcer|glccer|hexcer|laccer|tg|dg|mg|fa|ce|car|nae`
+
+// The chain part of a lipid shorthand, like "16:0", "o-16:0" or "d18:1"
+const lipidChains = `[dtmop]?-?\d+:\d+`
+
+// "pe(40:6)" and "pe 40:6" are the same lipid, so the parentheses around the chains go.
+// Inner ones stay, like the "(9z)" in "pc(16:0/18:1(9z))"
+var lipidParens = regexp.MustCompile(`^(` + lipidClasses + `) ?\((` + lipidChains + `.*)\)$`)
+
+var lipidShorthand = regexp.MustCompile(`^(` + lipidClasses + `) ` + lipidChains)
+
+// Normalize is the lookup key: lowercase, collapsed whitespace, one dash character,
+// Greek letters spelled out and lipid shorthand without the parentheses
 func Normalize(s string) string {
 	s = strings.ToLower(s)
 	s = dashReplacer.Replace(s)
 	s = greekReplacer.Replace(s)
 	s = dottedGreek.ReplaceAllString(s, "$1")
-	return strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(s), " ")
+	return lipidParens.ReplaceAllString(s, "$1 $2")
+}
+
+// Lab annotations that tell apart peaks of one compound, not part of its name.
+// "dehydrated" and "branched" stay since they name a different compound
+var annotation = regexp.MustCompile(`\s+(isomer [a-z]|minor)$`)
+
+// A single trailing letter is an annotation only on lipid shorthand, "coenzyme a" keeps it
+var lipidAnnotation = regexp.MustCompile(`\s+[a-z]$`)
+
+// Lipid shorthand followed by its common name, like "fa 14:0 (myristic acid)"
+var lipidWithName = regexp.MustCompile(`^(.+?) \(([^()]+)\)$`)
+
+var acylcarnitine = regexp.MustCompile(`^acylcarnitine 0*(\d+:\d+)$`)
+
+// CAS index names put the parent first, like "glycine, n-lauroyl-" or "phthalate, dioctyl-"
+var inverted = regexp.MustCompile(`^([^,]+), ([^,]+)$`)
+
+var aminoAcids = map[string]bool{
+	"ala": true, "arg": true, "asn": true, "asp": true, "cys": true, "gln": true, "glu": true,
+	"gly": true, "his": true, "ile": true, "leu": true, "lys": true, "met": true, "phe": true,
+	"pro": true, "ser": true, "thr": true, "trp": true, "tyr": true, "val": true,
+}
+
+// Variants returns rewrites of a normalized key to try in order when the key itself
+// misses. They turn common lab spellings into the ones PubChem uses, so they are guesses
+// tried at query time and never stored
+func Variants(key string) []string {
+	var out []string
+	seen := map[string]bool{key: true}
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+
+	base := annotation.ReplaceAllString(key, "")
+	if lipidShorthand.MatchString(base) {
+		base = lipidAnnotation.ReplaceAllString(base, "")
+	}
+	add(base)
+
+	// "gly pro" is written "gly-pro" in PubChem. One-letter codes are left alone, "RET"
+	// matches unrelated compounds
+	if tokens := strings.Fields(base); len(tokens) >= 2 {
+		allAminoAcids := true
+		for _, t := range tokens {
+			allAminoAcids = allAminoAcids && aminoAcids[t]
+		}
+		if allAminoAcids {
+			add(strings.Join(tokens, "-"))
+		}
+	}
+
+	if m := acylcarnitine.FindStringSubmatch(base); m != nil {
+		add("car " + m[1])
+	}
+
+	// The common name is more specific than the shorthand, "fa 14:1 (physeteric acid)" is
+	// one isomer of fa 14:1
+	if m := lipidWithName.FindStringSubmatch(base); m != nil && lipidShorthand.MatchString(m[1]) {
+		add(m[2])
+		add(m[1])
+	}
+
+	if m := inverted.FindStringSubmatch(base); m != nil {
+		parent, modifier := m[1], m[2]
+		if parent == "acylcarnitine" {
+			parent = "carnitine"
+		}
+		if prefix, ok := strings.CutSuffix(modifier, "-"); ok {
+			// Substituents join the parent and esters stand apart from it
+			add(prefix + parent)
+			add(modifier + parent)
+			add(prefix + " " + parent)
+		} else {
+			add(modifier + " " + parent)
+		}
+	}
+	return out
 }
 
 // IsCASShaped reports whether a string looks like a CAS number, whatever its check digit
@@ -181,7 +271,7 @@ func Filter(title, field string) ([]Name, []string) {
 			addCAS(s)
 			continue
 		}
-		if synonymCount >= MaxSynonyms || isJunk(s) {
+		if isJunk(s) {
 			continue
 		}
 		keep(sourceTag.ReplaceAllString(s, ""), false)
