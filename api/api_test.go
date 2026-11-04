@@ -437,6 +437,14 @@ func TestQueryLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestLongLineAlwaysSplits(t *testing.T) {
+	// Over maxNameWords words splits even when no word is an identifier
+	res := doMatchRequest(t, `{"queries":"aa bb cc dd ee ff gg hh ii jj kk"}`, nil, false)
+	if got := len(parseMatchResults(t, res)); got != 11 {
+		t.Errorf("expected 11 results for an 11-word line, got %d", got)
+	}
+}
+
 func TestClassyFireQueryLimitExceeded(t *testing.T) {
 	// ClassyFire enabled limits queries to 1,000 entries/identifiers
 	queries := strings.TrimRight(strings.Repeat("O ", 1001), " ")

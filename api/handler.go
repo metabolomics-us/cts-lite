@@ -325,10 +325,15 @@ func isIdentifierToken(t string) bool {
 		(queryType == "smiles" && isPlausibleSmiles(t))
 }
 
+// maxNameWords is the most words a line can have and still be read as one name.
+// 99.92% of PubChem names have 10 words or fewer
+const maxNameWords = 10
+
 // splitQueries makes one query per line, except a line that is a list of identifiers
-// separated by spaces. A line that is a known name stays whole even when its words read
-// as identifiers, like "Tween 80". Otherwise it splits when any word is an InChIKey,
-// InChI or CAS number, or when every word is an identifier
+// separated by spaces. A line over maxNameWords words always splits.
+// A line that is a known name stays whole even when its words read as identifiers,
+// like "Tween 80". Otherwise it splits when any word is an InChIKey, InChI or CAS
+// number, or when every word is an identifier
 func splitQueries(index *model.PubChemIndex, raw string) []string {
 	var queries []string
 	for _, line := range strings.Split(raw, "\n") {
@@ -336,7 +341,8 @@ func splitQueries(index *model.PubChemIndex, raw string) []string {
 		tokens := slices.DeleteFunc(strings.Fields(line), func(t string) bool {
 			return strings.Trim(t, `"`) == ""
 		})
-		if len(tokens) <= 1 {
+		// Same logic found in script.js for counting queries
+		if len(tokens) <= 1 || len(tokens) > maxNameWords {
 			queries = append(queries, tokens...)
 			continue
 		}

@@ -288,8 +288,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const maxQueryLength = 100000;
-    // Couted as one query per line since names contain spaces
-    const queryCount = query.split("\n").filter((l) => l.trim()).length;
+    // Counted as one query per line since names contain spaces, but a line over 10 words
+    // always splits. Shorter lines may also split, so this can undercount and the server 
+    // enforces the limits again
+    const queryCount = query.split("\n").reduce((n, l) => {
+      const words = l.trim().split(/\s+/).filter(Boolean).length;
+      return n + (words > 10 ? words : words ? 1 : 0);
+    }, 0);
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
