@@ -1,0 +1,10 @@
+# GitGuardian (ggshield) config.
+# Anything whose path contains "test" (any case) is a test credential and is never flagged.
+# Mirrors the filepath exclusion in the GitGuardian dashboard.
+version: 2
+secret:
+  ignored_paths:
+    - "**/*[Tt][Ee][Ss][Tt]*"
+    - "**/*[Tt][Ee][Ss][Tt]*/**"
+    - "*[Tt][Ee][Ss][Tt]*"
+    - "*[Tt][Ee][Ss][Tt]*/**"
