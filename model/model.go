@@ -266,6 +266,13 @@ func (idx *PubChemIndex) QueryByFormula(formula string, topHitOnly bool) ([]*Com
 
 // QueryByName normalizes the name the same way build-db stored it, so callers pass it as typed
 func (idx *PubChemIndex) QueryByName(name string, topHitOnly bool) ([]*Compound, error) {
+	compounds, _, err := idx.QueryByNameKey(name, topHitOnly)
+	return compounds, err
+}
+
+// QueryByNameKey is QueryByName that also returns the key that matched, which differs
+// from the normalized name when one of its variants did
+func (idx *PubChemIndex) QueryByNameKey(name string, topHitOnly bool) ([]*Compound, string, error) {
 	key := synonyms.Normalize(name)
 	stmt := idx.byName
 	if topHitOnly {
@@ -276,11 +283,14 @@ func (idx *PubChemIndex) QueryByName(name string, topHitOnly bool) ([]*Compound,
 	for _, k := range append([]string{key}, synonyms.Variants(key)...) {
 		var err error
 		compounds, err = idx.query(stmt, k)
-		if err != nil || len(compounds) > 0 {
-			return compounds, err
+		if err != nil {
+			return nil, "", err
+		}
+		if len(compounds) > 0 {
+			return compounds, k, nil
 		}
 	}
-	return compounds, nil
+	return compounds, "", nil
 }
 
 func (idx *PubChemIndex) QueryByCAS(cas string, topHitOnly bool) ([]*Compound, error) {

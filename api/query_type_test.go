@@ -63,6 +63,11 @@ func TestParseQueryTypeClassification(t *testing.T) {
 		{"junk_word", "hello", "unidentified"},
 		{"junk_digits_then_letter", "12345a", "unidentified"},
 
+		{"cas_valid", "50-00-0", "cas"},
+		{"cas_bad_check_digit", "50-00-1", "bad_cas"},
+		{"name_with_space", "lactic acid", "unidentified"},
+		{"name_with_space_and_colon", "PC 16:0_18:1", "unidentified"},
+
 		{"punctuated_acetic_acid", "CC(=O)O", "smiles"},
 		{"punctuated_benzene", "C1=CC=CC=C1", "smiles"},
 		{"punctuated_aspirin", "CC(=O)Oc1ccccc1C(=O)O", "smiles"},

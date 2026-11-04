@@ -2,6 +2,7 @@ package api
 
 import (
 	"ctslite/model"
+	"ctslite/synonyms"
 	"ctslite/telemetry"
 	"encoding/csv"
 	"encoding/json"
@@ -265,6 +266,16 @@ func parseQueryType(q string) string {
 	case isAllDigits(q):
 		return "bad_pubchem_id"
 
+	// A fast-fail for names not to be misclassified as SMILES (Like "PC 16:0_18:1")
+	case strings.ContainsAny(q, " \t"):
+		return "unidentified"
+
+	case synonyms.IsCASShaped(q) && synonyms.ValidCAS(q):
+		return "cas"
+
+	case synonyms.IsCASShaped(q):
+		return "bad_cas"
+
 	case strings.ContainsAny(q, smilesPunctuation):
 		return "smiles"
 
@@ -275,6 +286,77 @@ func parseQueryType(q string) string {
 		// Everything left is letters and digits, which both grammars can use
 		return classifyElementString(q)
 	}
+}
+
+// Query types with no ambiguity, so one on a line means the line is a list instead of a long name
+var strongQueryTypes = map[string]bool{
+	"inchikey": true, "inchi": true, "bad_inchikey": true, "bad_inchi": true, "cas": true, "bad_cas": true,
+}
+
+// Query types that might be found inside a name (i.e. Tween 80, 80 is a CID)
+var identifierQueryTypes = map[string]bool{
+	"pubchem_id": true, "bad_pubchem_id": true, "formula": true, "smiles_or_formula": true,
+}
+
+// smilesStart are the characters a SMILES can start with
+const smilesStart = "BCNOPSFIbcnops[*"
+
+// smilesChars are every character a SMILES can contain
+const smilesChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789=#/\\:.@[]()+-%*"
+
+// isPlausibleSmiles rules out words that only read as SMILES because of their
+// punctuation, like the "16:0_18:1" in "PC 16:0_18:1"
+func isPlausibleSmiles(q string) bool {
+	if q == "" || !strings.ContainsRune(smilesStart, rune(q[0])) {
+		return false
+	}
+	for i := 0; i < len(q); i++ {
+		if !strings.ContainsRune(smilesChars, rune(q[i])) {
+			return false
+		}
+	}
+	return true
+}
+
+// isIdentifierToken reports whether a word on a line can be an identifier of its own
+func isIdentifierToken(t string) bool {
+	queryType := parseQueryType(t)
+	return strongQueryTypes[queryType] || identifierQueryTypes[queryType] ||
+		(queryType == "smiles" && isPlausibleSmiles(t))
+}
+
+// splitQueries makes one query per line, except a line that is a list of identifiers
+// separated by spaces. A line that is a known name stays whole even when its words read
+// as identifiers, like "Tween 80". Otherwise it splits when any word is an InChIKey,
+// InChI or CAS number, or when every word is an identifier
+func splitQueries(index *model.PubChemIndex, raw string) []string {
+	var queries []string
+	for _, line := range strings.Split(raw, "\n") {
+		// Bare quotes are dropped
+		tokens := slices.DeleteFunc(strings.Fields(line), func(t string) bool {
+			return strings.Trim(t, `"`) == ""
+		})
+		if len(tokens) <= 1 {
+			queries = append(queries, tokens...)
+			continue
+		}
+		whole := strings.Join(tokens, " ")
+		if compounds, err := index.QueryByName(whole, true); err == nil && len(compounds) > 0 {
+			queries = append(queries, whole)
+			continue
+		}
+		anyStrong, allIdentifiers := false, true
+		for _, t := range tokens {
+			anyStrong = anyStrong || strongQueryTypes[parseQueryType(t)]
+			allIdentifiers = allIdentifiers && isIdentifierToken(t)
+		}
+		if anyStrong || allIdentifiers {
+			queries = append(queries, tokens...)
+		} else {
+			queries = append(queries, whole)
+		}
+	}
+	return queries
 }
 
 // writeResultsAsCSV converts the results to CSV format and writes to the response writer
@@ -395,8 +477,8 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
 	var stream bool = r.URL.Query().Get("stream") == "true"
 
-	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
-	queries := strings.Fields(rawQuery)
+	// Split query by newline, and by space on lines of identifiers
+	queries := splitQueries(index, rawQuery)
 
 	if len(queries) > 100000 {
 		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100,000)", len(queries)), http.StatusBadRequest)
@@ -455,6 +537,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		case "smiles_or_formula":
 			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly)
 
+		case "cas":
+			matchCAS(index, q, result, topHitOnly)
+
+		case "bad_cas":
+			result.MatchFound = false
+			result.ErrMsg = "Invalid CAS ID, see documentation"
+
 		case "bad_inchi":
 			result.MatchFound = false
 			result.ErrMsg = "Malformed InChI, see documentation"
@@ -476,6 +565,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			localSpan.End()
 			http.Error(w, "An unexpected error occurred when parsing the request", http.StatusInternalServerError)
 			return
+		}
+
+		// A name is only tried once the structure lookup found nothing
+		if !result.MatchFound && result.ErrMsg != "Internal server error" && nameFallbackTypes[result.QueryType] {
+			matchName(index, q, result, topHitOnly)
 		}
 
 		if result.MatchFound {

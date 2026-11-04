@@ -288,7 +288,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const maxQueryLength = 100000;
-    const queryCount = query.trim().split(/\s+/).filter(Boolean).length;
+    // Couted as one query per line since names contain spaces
+    const queryCount = query.split("\n").filter((l) => l.trim()).length;
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
@@ -639,11 +640,16 @@ function displayResults(data, outputElement) {
       : "";
 
     const isConverted = (result.query_type === "converted_smiles" || result.query_type === "converted_inchi") && result.converted_query;
+    // A name variant carries the rewrite it matched as, shown the same way as a conversion
+    const isNameVariant = result.query_type === "name" && result.converted_query;
     const transId = `trans-${queryIndex}`;
+    const expandable = (title, label) => `<div class="query-type-expandable-wrapper" title="${title}"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>${label}<br>${escapeHtml(result.converted_query)}</div></div>`;
 
     const queryTypeBubble = isConverted
-      ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
-      : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
+      ? expandable("Converted with RDKit", "to InChIKey:")
+      : isNameVariant
+        ? expandable("Matched a rewritten spelling", "read as:")
+        : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
 
     const matchStatus = getMatchStatus(result);
 
@@ -702,6 +708,7 @@ function getMatchStatus(result) {
   if (level.startsWith("pubchem live:")) {
     return { text: "✓ Match Found: PubChem Live", className: "pubchem-live-match" };
   }
+  if (level === "name variant") return { text: "✓ Match Found: Name Variant", className: "name-variant-match" };
   if (level.includes("exact")) return { text: "✓ Match Found: Exact", className: "exact-match" };
   if (level.includes("first block")) return { text: "✓ Match Found: First Block", className: "first-block-match" };
   if (result.match_level) return { text: `✓ Match Found: ${result.match_level}`, className: "found" };
@@ -721,6 +728,9 @@ function formatQueryType(queryType) {
     case "bad_inchi":         return "Malformed InChI";
     case "bad_inchikey":      return "Malformed InChIKey";
     case "bad_pubchem_id":    return "Invalid PubChem CID";
+    case "name":              return "Compound Name";
+    case "cas":               return "CAS Number";
+    case "bad_cas":           return "Invalid CAS Number";
     case "unidentified":      return "Unidentified";
     default:                  return queryType;
   }

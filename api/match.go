@@ -3,6 +3,7 @@ package api
 import (
 	"ctslite/model"
 	"ctslite/rdkit"
+	"ctslite/synonyms"
 	"log"
 )
 
@@ -151,6 +152,53 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	}
 	result.MatchFound = true
 	result.MatchLevel = "Exact Formula"
+	result.Matches = compounds
+}
+
+func matchCAS(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, err := index.QueryByCAS(query, topHitOnly)
+	if err != nil {
+		log.Printf("Error querying by CAS: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact CAS"
+	result.Matches = compounds
+}
+
+// nameFallbackTypes are the query types that try a name lookup once their own lookup missed
+var nameFallbackTypes = map[string]bool{
+	"smiles": true, "formula": true, "smiles_or_formula": true, "unidentified": true,
+}
+
+// matchName looks the query up as a compound name.
+// A miss leaves the result as it was, so a structure query still reaches the PubChem
+// fallback with its own error
+func matchName(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, key, err := index.QueryByNameKey(query, topHitOnly)
+	if err != nil {
+		log.Printf("Error querying by name: %v", err)
+		return
+	}
+	if len(compounds) == 0 {
+		return
+	}
+	result.MatchFound = true
+	result.QueryType = "name"
+	result.ErrMsg = ""
+	result.MatchLevel = "Exact Name"
+	// A variant is a rewrite of the query, so it shows what the query was read as
+	if key != synonyms.Normalize(query) {
+		result.MatchLevel = "Name Variant"
+		result.ConvertedQuery = key
+	}
 	result.Matches = compounds
 }
 
