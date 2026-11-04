@@ -17,6 +17,21 @@ test('quotes-only submit shows empty query error', async ({ page }) => {
   await expect(page.locator('#output-text')).toHaveText('Please enter a query');
 });
 
+// A line over 10 words splits per word, so one long line counts toward the limit
+test('more than 100,000 identifiers on one line is blocked client-side', async ({ page }) => {
+  let requested = false;
+  await page.route('**/match*', (route) => { requested = true; route.fulfill({ status: 200, body: '' }); });
+
+  await page.fill('#query-input', Array.from({ length: 100001 }, () => 'O').join(' '));
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#output-label')).toHaveText('Error');
+  await expect(page.locator('#output-text')).toHaveText(
+    'Query contains 100,001 identifiers - please limit to 100,000 per submission'
+  );
+  expect(requested).toBe(false);
+});
+
 test('InChIKey query returns exact match for Water', async ({ page }) => {
   await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
   await page.click('button[type="submit"]');
