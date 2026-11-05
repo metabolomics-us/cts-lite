@@ -145,7 +145,7 @@ func TestFilter(t *testing.T) {
 	field := "n1|n2|n3|n4|n5|n6|n7|n8|n9|n10|n11|n12|64-17-5"
 	names, cas = Filter("title", strings.ReplaceAll(field, "n", "name"))
 	if len(names) != 13 || names[12] != (Name{"name12", 12}) || len(cas) != 1 {
-		t.Errorf("all synonyms: got %d names and %d CAS numbers", len(names), len(cas))
+		t.Errorf("all synonyms: got %d names and %d CAS IDs", len(names), len(cas))
 	}
 
 	// 4-digit E-numbers and refrigerants are short codes, not vendor codes

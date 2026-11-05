@@ -86,7 +86,7 @@ func run(csvPath, dbPath string) error {
 	if err := db.QueryRow("SELECT (SELECT COUNT(*) FROM names), (SELECT COUNT(*) FROM cas), (SELECT COUNT(*) FROM hmdb)").Scan(&names, &cas, &hmdb); err != nil {
 		return fmt.Errorf("failed to count names: %w", err)
 	}
-	fmt.Printf("Inserted %d names, %d CAS numbers and %d HMDB IDs\n", names, cas, hmdb)
+	fmt.Printf("Inserted %d names, %d CAS IDs and %d HMDB IDs\n", names, cas, hmdb)
 
 	fmt.Println("Building indices...")
 	indexStart := time.Now()
@@ -250,7 +250,7 @@ func beginBatch(db *sql.DB) (*sql.Tx, *batchStmts, error) {
 	return tx, &stmts, nil
 }
 
-// insertNames writes the compound's filtered names and CAS numbers
+// insertNames writes the compound's filtered names and CAS IDs
 func insertNames(stmts *batchStmts, identifier, title, synonymField string) error {
 	names, cas := synonyms.Filter(title, synonymField)
 	for _, n := range names {

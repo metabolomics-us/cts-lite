@@ -734,8 +734,8 @@ function formatQueryType(queryType) {
     case "bad_inchikey":      return "Malformed InChIKey";
     case "bad_pubchem_id":    return "Invalid PubChem CID";
     case "name":              return "Compound Name";
-    case "cas":               return "CAS Number";
-    case "bad_cas":           return "Invalid CAS Number";
+    case "cas":               return "CAS ID";
+    case "bad_cas":           return "Invalid CAS ID";
     case "hmdb":              return "HMDB ID";
     case "bad_hmdb":          return "Invalid HMDB ID";
     case "unidentified":      return "Unidentified";

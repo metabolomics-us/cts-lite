@@ -179,7 +179,7 @@ func Variants(key string) []string {
 	return out
 }
 
-// IsCASShaped reports whether a string looks like a CAS number, whatever its check digit
+// IsCASShaped reports whether a string looks like a CAS ID, whatever its check digit
 func IsCASShaped(s string) bool {
 	return casPattern.MatchString(s)
 }
@@ -226,8 +226,8 @@ func SplitHMDB(field string) []string {
 	return ids
 }
 
-// Filter returns the names and valid CAS numbers to store for one compound.
-// The title is kept unless it's a CAS number or has no letter
+// Filter returns the names and valid CAS IDs to store for one compound.
+// The title is kept unless it's a CAS ID or has no letter
 func Filter(title, field string) ([]Name, []string) {
 	var names []Name
 	var cas []string

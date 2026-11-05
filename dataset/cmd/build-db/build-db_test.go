@@ -123,7 +123,7 @@ func TestBulkInsert(t *testing.T) {
 		t.Fatalf("failed to count names: %v", err)
 	}
 	if names != 5 || cas != 2 || hmdb != 2 {
-		t.Errorf("expected 5 names, 2 CAS numbers and 2 HMDB IDs, got %d, %d and %d", names, cas, hmdb)
+		t.Errorf("expected 5 names, 2 CAS IDs and 2 HMDB IDs, got %d, %d and %d", names, cas, hmdb)
 	}
 }
 
