@@ -647,6 +647,8 @@ function displayResults(data, outputElement) {
     const isConverted = (result.query_type === "converted_smiles" || result.query_type === "converted_inchi") && result.converted_query;
     // A name variant carries the rewrite it matched as, shown the same way as a conversion
     const isNameVariant = result.query_type === "name" && result.converted_query;
+    // An HMDB ID is padded to 7 digits and uppercased, still an exact match, so only the bubble shows it
+    const isHMDBRewrite = result.query_type === "hmdb" && result.converted_query;
     const transId = `trans-${queryIndex}`;
     const expandable = (title, label) => `<div class="query-type-expandable-wrapper" title="${title}"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>${label}<br>${escapeHtml(result.converted_query)}</div></div>`;
 
@@ -654,7 +656,9 @@ function displayResults(data, outputElement) {
       ? expandable("Converted with RDKit", "to InChIKey:")
       : isNameVariant
         ? expandable("Matched a rewritten spelling", "read as:")
-        : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
+        : isHMDBRewrite
+          ? expandable("Normalized to 7 digits", "read as:")
+          : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
 
     const matchStatus = getMatchStatus(result);
 

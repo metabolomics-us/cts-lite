@@ -71,6 +71,26 @@ test('PubChem ID query returns match for Water', async ({ page }) => {
   await expect(page.locator('.match-item')).toContainText('WATER');
 });
 
+// Padding keeps the match exact, the dropdown shows the ID that was looked up
+test('short HMDB ID matches exactly and shows the padded ID', async ({ page }) => {
+  await page.fill('#query-input', 'hmdb:02714');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.match-item')).toContainText('METHANE');
+  await expect(page.locator('.match-status')).toHaveText('✓ Match Found: Exact');
+  await page.click('.query-type-expandable-btn');
+  await expect(page.locator('.query-type-conversion')).toContainText('HMDB0002714');
+});
+
+test('HMDB ID typed in full shows no read-as dropdown', async ({ page }) => {
+  await page.fill('#query-input', 'HMDB0002111');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.match-item')).toContainText('WATER');
+  await expect(page.locator('.query-type')).toHaveText('Type: HMDB ID');
+  await expect(page.locator('.query-type-expandable-btn')).toHaveCount(0);
+});
+
 test('unknown InChIKey returns no match', async ({ page }) => {
   await page.fill('#query-input', 'ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z');
   await page.click('button[type="submit"]');
