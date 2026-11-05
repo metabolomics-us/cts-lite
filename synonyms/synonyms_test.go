@@ -61,6 +61,32 @@ func TestValidCAS(t *testing.T) {
 	}
 }
 
+func TestNormalizeHMDB(t *testing.T) {
+	for in, want := range map[string]string{
+		"HMDB0001847":   "HMDB0001847",
+		"HMDB01847":     "HMDB0001847",
+		"hmdb:01847":    "HMDB0001847",
+		"HMDB 01847":    "",
+		"HMDB: 0011628": "",
+		"HMDB004253":    "HMDB0004253",
+		"HMDB123":       "HMDB0000123",
+		"HMDB00018470":  "",
+		"HMDBP00001":    "",
+		"HMDB:":         "",
+		"aspirin":       "",
+	} {
+		if got, _ := NormalizeHMDB(in); got != want {
+			t.Errorf("NormalizeHMDB(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if diff := cmp.Diff([]string{"HMDB0002111", "HMDB0062587"}, SplitHMDB("HMDB0002111|HMDB02111|HMDB0062587|junk")); diff != "" {
+		t.Errorf("SplitHMDB mismatch (-want +got):\n%s", diff)
+	}
+	if got := SplitHMDB(""); got != nil {
+		t.Errorf("SplitHMDB(\"\") = %v, want nil", got)
+	}
+}
+
 func TestIsJunk(t *testing.T) {
 	for in, want := range map[string]bool{
 		// One per junk rule

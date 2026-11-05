@@ -18,6 +18,10 @@ type Name struct {
 
 var casPattern = regexp.MustCompile(`^(\d{2,7})-(\d{2})-(\d)$`)
 
+// An HMDB metabolite ID as typed, like HMDB0001847, HMDB01847 or hmdb:01847.
+// The prefix alone matches too, so "HMDB:" reads as an invalid HMDB ID 
+var hmdbPattern = regexp.MustCompile(`(?i)^HMDB[-_:]?(\d*)$`)
+
 // Database and registry IDs that are never names. The first match drops the synonym
 var junkRules = []struct {
 	name    string
@@ -193,6 +197,33 @@ func ValidCAS(s string) bool {
 	}
 	check, _ := strconv.Atoi(m[3])
 	return sum%10 == check
+}
+
+// IsHMDBShaped reports whether a string looks like an HMDB ID, regardless of digit count
+func IsHMDBShaped(s string) bool {
+	return hmdbPattern.MatchString(s)
+}
+
+// NormalizeHMDB returns the 7-digit, like HMDB0001847 for HMDB01847
+func NormalizeHMDB(s string) (string, bool) {
+	m := hmdbPattern.FindStringSubmatch(s)
+	if m == nil || len(m[1]) == 0 || len(m[1]) > 7 {
+		return "", false
+	}
+	return "HMDB" + strings.Repeat("0", 7-len(m[1])) + m[1], true
+}
+
+// SplitHMDB returns the normalized, unique HMDB IDs in a dataset's "|" separated HMDB column
+func SplitHMDB(field string) []string {
+	var ids []string
+	seen := map[string]bool{}
+	for _, s := range strings.Split(field, "|") {
+		if id, ok := NormalizeHMDB(strings.TrimSpace(s)); ok && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // Filter returns the names and valid CAS numbers to store for one compound.

@@ -66,6 +66,8 @@ type PubChemIndex struct {
 	byName1       *sql.Stmt
 	byCAS         *sql.Stmt
 	byCAS1        *sql.Stmt
+	byHMDB        *sql.Stmt
+	byHMDB1       *sql.Stmt
 }
 
 const compoundCols = `identifier, inchikey, inchi, smiles, compound_name,
@@ -77,6 +79,7 @@ const orderByScore = ` ORDER BY ` + score + ` DESC`
 // USING lets the shared column list name identifier without saying which table it comes from
 const selectByName = `SELECT ` + compoundCols + ` FROM names JOIN compounds USING (identifier) WHERE name_norm = ?`
 const selectByCAS = `SELECT ` + compoundCols + ` FROM cas JOIN compounds USING (identifier) WHERE cas = ?`
+const selectByHMDB = `SELECT ` + compoundCols + ` FROM hmdb JOIN compounds USING (identifier) WHERE hmdb_id = ?`
 
 // A name ranks by how prominent it is for each compound (0 is the title), then by score
 const orderByNameRank = ` ORDER BY rank, ` + score + ` DESC`
@@ -134,6 +137,8 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		{&idx.byName1, selectByName + orderByNameRank + ` LIMIT 1`},
 		{&idx.byCAS, selectByCAS + orderByScore},
 		{&idx.byCAS1, selectByCAS + orderByScore + ` LIMIT 1`},
+		{&idx.byHMDB, selectByHMDB + orderByScore},
+		{&idx.byHMDB1, selectByHMDB + orderByScore + ` LIMIT 1`},
 	}
 
 	for _, s := range stmts {
@@ -172,6 +177,11 @@ CREATE TABLE IF NOT EXISTS cas (
 	cas        TEXT NOT NULL,
 	identifier TEXT NOT NULL,
 	PRIMARY KEY (cas, identifier)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS hmdb (
+	hmdb_id    TEXT NOT NULL,
+	identifier TEXT NOT NULL,
+	PRIMARY KEY (hmdb_id, identifier)
 ) WITHOUT ROWID`
 
 const CreateIndexSQL = `
@@ -186,10 +196,12 @@ const InsertSQL = `INSERT INTO compounds
 	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-// The names and cas tables are keyed on their lookup value, so they need no index after load
+// The names, cas, and hmdb tables are keyed on their lookup value, so they need no index after load
 const InsertNameSQL = `INSERT OR IGNORE INTO names (name_norm, identifier, rank) VALUES (?, ?, ?)`
 
 const InsertCASSQL = `INSERT OR IGNORE INTO cas (cas, identifier) VALUES (?, ?)`
+
+const InsertHMDBSQL = `INSERT OR IGNORE INTO hmdb (hmdb_id, identifier) VALUES (?, ?)`
 
 // query executes a prepared statement and scans all result rows into Compound pointers
 func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) {
@@ -298,6 +310,14 @@ func (idx *PubChemIndex) QueryByCAS(cas string, topHitOnly bool) ([]*Compound, e
 		return idx.query(idx.byCAS1, cas)
 	}
 	return idx.query(idx.byCAS, cas)
+}
+
+// QueryByHMDB takes the 7-digit form stored in the hmdb table, see synonyms.NormalizeHMDB
+func (idx *PubChemIndex) QueryByHMDB(id string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byHMDB1, id)
+	}
+	return idx.query(idx.byHMDB, id)
 }
 
 // Close releases the database connection and all prepared statements.

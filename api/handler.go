@@ -276,6 +276,12 @@ func parseQueryType(q string) string {
 	case synonyms.IsCASShaped(q):
 		return "bad_cas"
 
+	case synonyms.IsHMDBShaped(q):
+		if _, ok := synonyms.NormalizeHMDB(q); ok {
+			return "hmdb"
+		}
+		return "bad_hmdb"
+
 	case strings.ContainsAny(q, smilesPunctuation):
 		return "smiles"
 
@@ -290,7 +296,7 @@ func parseQueryType(q string) string {
 
 // Query types with no ambiguity, so one on a line means the line is a list instead of a long name
 var strongQueryTypes = map[string]bool{
-	"inchikey": true, "inchi": true, "bad_inchikey": true, "bad_inchi": true, "cas": true, "bad_cas": true,
+	"inchikey": true, "inchi": true, "bad_inchikey": true, "bad_inchi": true, "cas": true, "bad_cas": true, "hmdb": true, "bad_hmdb": true,
 }
 
 // Query types that might be found inside a name (i.e. Tween 80, 80 is a CID)
@@ -549,6 +555,13 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		case "bad_cas":
 			result.MatchFound = false
 			result.ErrMsg = "Invalid CAS ID, see documentation"
+
+		case "hmdb":
+			matchHMDB(index, q, result, topHitOnly)
+
+		case "bad_hmdb":
+			result.MatchFound = false
+			result.ErrMsg = "Invalid HMDB ID, see documentation"
 
 		case "bad_inchi":
 			result.MatchFound = false

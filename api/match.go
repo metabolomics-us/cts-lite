@@ -173,6 +173,30 @@ func matchCAS(index *model.PubChemIndex, query string, result *model.SingleResul
 	result.Matches = compounds
 }
 
+// matchHMDB looks the ID up in the 7-digit form (i.e. HMDB01847 finds HMDB0001847)
+func matchHMDB(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	id, _ := synonyms.NormalizeHMDB(query)
+	compounds, err := index.QueryByHMDB(id, topHitOnly)
+	if err != nil {
+		log.Printf("Error querying by HMDB ID: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	// The padded ID shows what a short or lowercase query was read as
+	if id != query {
+		result.ConvertedQuery = id
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact HMDB"
+	result.Matches = compounds
+}
+
 // nameFallbackTypes are the query types that try a name lookup once their own lookup missed
 var nameFallbackTypes = map[string]bool{
 	"smiles": true, "formula": true, "smiles_or_formula": true, "unidentified": true,

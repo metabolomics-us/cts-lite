@@ -99,6 +99,13 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 	}
 	defer casStmt.Close()
 
+	hmdbStmt, err := tx.Prepare(InsertHMDBSQL)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to prepare HMDB insert: %w", err)
+	}
+	defer hmdbStmt.Close()
+
 	for {
 		line, err := reader.Read()
 		if err == io.EOF {
@@ -142,6 +149,12 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 			if _, err := casStmt.Exec(c, line[0]); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to insert CAS: %w", err)
+			}
+		}
+		for _, id := range synonyms.SplitHMDB(line[11]) {
+			if _, err := hmdbStmt.Exec(id, line[0]); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to insert HMDB ID: %w", err)
 			}
 		}
 	}

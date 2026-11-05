@@ -736,6 +736,8 @@ function formatQueryType(queryType) {
     case "name":              return "Compound Name";
     case "cas":               return "CAS Number";
     case "bad_cas":           return "Invalid CAS Number";
+    case "hmdb":              return "HMDB ID";
+    case "bad_hmdb":          return "Invalid HMDB ID";
     case "unidentified":      return "Unidentified";
     default:                  return queryType;
   }

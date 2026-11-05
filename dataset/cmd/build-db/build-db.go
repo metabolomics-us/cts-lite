@@ -82,11 +82,11 @@ func run(csvPath, dbPath string) error {
 		return err
 	}
 	fmt.Printf("Inserted %d compounds in %.1f minutes\n", count, time.Since(start).Minutes())
-	var names, cas int
-	if err := db.QueryRow("SELECT (SELECT COUNT(*) FROM names), (SELECT COUNT(*) FROM cas)").Scan(&names, &cas); err != nil {
+	var names, cas, hmdb int
+	if err := db.QueryRow("SELECT (SELECT COUNT(*) FROM names), (SELECT COUNT(*) FROM cas), (SELECT COUNT(*) FROM hmdb)").Scan(&names, &cas, &hmdb); err != nil {
 		return fmt.Errorf("failed to count names: %w", err)
 	}
-	fmt.Printf("Inserted %d names and %d CAS numbers\n", names, cas)
+	fmt.Printf("Inserted %d names, %d CAS numbers and %d HMDB IDs\n", names, cas, hmdb)
 
 	fmt.Println("Building indices...")
 	indexStart := time.Now()
@@ -112,8 +112,6 @@ func tempStorePragma() string {
 }
 
 // bulkInsert inserts all CSV rows using batched transactions for performance
-// CSV column order: identifier, literature_count, patent_count, annotation_type_count,
-//	molecular_formula, smiles, inchi, inchikey, exact_mass, compound_name, synonyms
 func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 	tx, stmts, err := beginBatch(db)
 	if err != nil {
@@ -132,9 +130,9 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 			return 0, fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		if len(line) != 11 {
+		if len(line) != 12 {
 			tx.Rollback()
-			return 0, fmt.Errorf("row %d has %d fields, expected 11", count+1, len(line))
+			return 0, fmt.Errorf("row %d has %d fields, expected 12", count+1, len(line))
 		}
 
 		// Skip lines without inchikeys
@@ -168,6 +166,11 @@ func bulkInsert(db *sql.DB, reader *csv.Reader, batchSize int) (int, error) {
 		if err := insertNames(stmts, line[0], line[9], line[10]); err != nil {
 			tx.Rollback()
 			return 0, fmt.Errorf("failed to insert names for row %d: %w", count+1, err)
+		}
+
+		if err := insertHMDB(stmts, line[0], line[11]); err != nil {
+			tx.Rollback()
+			return 0, fmt.Errorf("failed to insert HMDB IDs for row %d: %w", count+1, err)
 		}
 
 		count++
@@ -212,13 +215,14 @@ func hasValidNumericFields(line []string) bool {
 
 // batchStmts are the inserts prepared in one batch transaction
 type batchStmts struct {
-	compound, name, cas *sql.Stmt
+	compound, name, cas, hmdb *sql.Stmt
 }
 
 func (b *batchStmts) close() {
 	b.compound.Close()
 	b.name.Close()
 	b.cas.Close()
+	b.hmdb.Close()
 }
 
 func beginBatch(db *sql.DB) (*sql.Tx, *batchStmts, error) {
@@ -234,6 +238,7 @@ func beginBatch(db *sql.DB) (*sql.Tx, *batchStmts, error) {
 		{&stmts.compound, model.InsertSQL},
 		{&stmts.name, model.InsertNameSQL},
 		{&stmts.cas, model.InsertCASSQL},
+		{&stmts.hmdb, model.InsertHMDBSQL},
 	} {
 		stmt, err := tx.Prepare(s.query)
 		if err != nil {
@@ -255,6 +260,16 @@ func insertNames(stmts *batchStmts, identifier, title, synonymField string) erro
 	}
 	for _, c := range cas {
 		if _, err := stmts.cas.Exec(c, identifier); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// insertHMDB writes the compound's HMDB IDs from the dataset's HMDB column
+func insertHMDB(stmts *batchStmts, identifier, hmdbField string) error {
+	for _, id := range synonyms.SplitHMDB(hmdbField) {
+		if _, err := stmts.hmdb.Exec(id, identifier); err != nil {
 			return err
 		}
 	}

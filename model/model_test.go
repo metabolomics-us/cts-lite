@@ -333,6 +333,28 @@ func TestQueryByCAS(t *testing.T) {
 	}
 }
 
+func TestQueryByHMDB(t *testing.T) {
+	idx := loadTestIndex(t)
+	defer idx.Close()
+
+	// Water has two IDs, and Methane's 5-digit one was padded when loaded
+	for _, id := range []string{"HMDB0002111", "HMDB0062587"} {
+		compounds, err := idx.QueryByHMDB(id, true)
+		if err != nil || len(compounds) != 1 || compounds[0].CompoundName != "Water" {
+			t.Errorf("%s: got %v, err %v", id, compounds, err)
+		}
+	}
+	compounds, err := idx.QueryByHMDB("HMDB0002714", false)
+	if err != nil || len(compounds) != 1 || compounds[0].CompoundName != "Methane" {
+		t.Errorf("padded: got %v, err %v", compounds, err)
+	}
+
+	compounds, err = idx.QueryByHMDB("HMDB0000001", false)
+	if err != nil || len(compounds) != 0 {
+		t.Errorf("miss: got %v, err %v", compounds, err)
+	}
+}
+
 // TestQuery_ClosedDB verifies that all QueryBy* methods surface an error
 // (rather than panic) when the underlying database has been closed.
 func TestQuery_ClosedDB(t *testing.T) {
@@ -350,6 +372,7 @@ func TestQuery_ClosedDB(t *testing.T) {
 		{"QueryByFormula", func() ([]*Compound, error) { return idx.QueryByFormula("H2O", false) }},
 		{"QueryByName", func() ([]*Compound, error) { return idx.QueryByName("water", false) }},
 		{"QueryByCAS", func() ([]*Compound, error) { return idx.QueryByCAS("7732-18-5", false) }},
+		{"QueryByHMDB", func() ([]*Compound, error) { return idx.QueryByHMDB("HMDB0002111", false) }},
 	}
 
 	for _, q := range queries {

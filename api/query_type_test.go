@@ -65,6 +65,15 @@ func TestParseQueryTypeClassification(t *testing.T) {
 
 		{"cas_valid", "50-00-0", "cas"},
 		{"cas_bad_check_digit", "50-00-1", "bad_cas"},
+		{"hmdb_seven_digits", "HMDB0001847", "hmdb"},
+		{"hmdb_five_digits_lowercase", "hmdb01847", "hmdb"},
+		{"hmdb_with_space", "HMDB 01847", "unidentified"},
+		{"hmdb_with_colon", "HMDB:01847", "hmdb"},
+		{"hmdb_too_long", "HMDB00018470", "bad_hmdb"},
+		{"hmdb_protein", "HMDBP00001", "unidentified"},
+		{"hmdb_prefix_only", "hmdb", "bad_hmdb"},
+		{"hmdb_prefix_colon", "HMDB:", "bad_hmdb"},
+		{"inchikey_starting_hmdb", "HMDBNQQPXAFNTW-UHFFFAOYSA-N", "inchikey"},
 		{"name_with_space", "lactic acid", "unidentified"},
 		{"name_with_space_and_colon", "PC 16:0_18:1", "unidentified"},
 
