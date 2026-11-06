@@ -561,6 +561,31 @@ func TestCSVFormatResponse(t *testing.T) {
 	}
 }
 
+func TestCSVHeaderKeepsIDColumnsWithoutIDs(t *testing.T) {
+	// No match carries CAS or HMDB IDs, the columns must still be there with empty cells
+	results := []*model.SingleResult{{
+		Query: "C", QueryType: "smiles", MatchFound: true, MatchLevel: "Exact SMILES",
+		Matches: []*model.Compound{{Identifier: "2"}, {Identifier: "3"}},
+	}}
+	w := httptest.NewRecorder()
+	if err := writeResultsAsCSV(w, results, false); err != nil {
+		t.Fatalf("writeResultsAsCSV: %v", err)
+	}
+
+	records, err := csv.NewReader(w.Body).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read CSV: %v", err)
+	}
+	if diff := cmp.Diff(CSVHeader, records[0]); diff != "" {
+		t.Errorf("CSV header mismatch (-want +got):\n%s", diff)
+	}
+	for _, row := range records[1:] {
+		if got := row[len(row)-2:]; got[0] != "" || got[1] != "" {
+			t.Errorf("expected empty cas_ids and hmdb_ids, got %q", got)
+		}
+	}
+}
+
 func TestCSVCommaInQuery(t *testing.T) {
 	// Regression: InChI queries contain commas; the query field must be quoted
 	// so csv.NewReader does not split it mid-field.
