@@ -442,6 +442,20 @@ func TestQueryLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestQueryLineLimitExceeded(t *testing.T) {
+	// Blank and bare-quote lines make no query
+	if got := countQueryLines("O\n\n  \"\" \n\"\" water\nC"); got != 3 {
+		t.Errorf("expected 3 query lines, got %d", got)
+	}
+
+	// Rejected by the line count before splitting
+	queries := strings.TrimRight(strings.Repeat(`O\n`, 100001), `\n`)
+	res := doMatchRequest(t, `{"queries":"`+queries+`"}`, nil, false)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for over-limit lines, got %d", res.StatusCode)
+	}
+}
+
 func TestLongLineAlwaysSplits(t *testing.T) {
 	// Over maxNameWords words splits even when no word is an identifier
 	res := doMatchRequest(t, `{"queries":"aa bb cc dd ee ff gg hh ii jj kk"}`, nil, false)

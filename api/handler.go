@@ -18,6 +18,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -352,13 +353,13 @@ func isIdentifierToken(t string) bool {
 const maxNameWords = 10
 
 // splitQueries makes one query per line, except a line that is a list of identifiers
-// separated by spaces. A line over maxNameWords words always splits.
-// A line that is a known name stays whole even when its words read as identifiers,
-// like "Tween 80". Otherwise it splits when any word is an InChIKey, InChI or CAS
-// number, or when every word is an identifier
-func splitQueries(index *model.PubChemIndex, raw string) []string {
+// separated by spaces. A line that is a known name stays whole even when its words read as identifiers
+func splitQueries(index *model.PubChemIndex, raw string, limit int) []string {
 	var queries []string
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
+		if len(queries) > limit {
+			break // early check against >100k queries
+		}
 		// Bare quotes are dropped
 		tokens := slices.DeleteFunc(strings.Fields(line), func(t string) bool {
 			return strings.Trim(t, `"`) == ""
@@ -385,6 +386,23 @@ func splitQueries(index *model.PubChemIndex, raw string) []string {
 		}
 	}
 	return queries
+}
+
+// maxQueries for one request (then with ClassyFire enabled)
+const (
+	maxQueries           = 100_000
+	maxClassyFireQueries = 1_000
+)
+
+// Cheap check to see if a request is over the query limit by line count
+func countQueryLines(raw string) int {
+	n := 0
+	for line := range strings.SplitSeq(raw, "\n") {
+		if strings.ContainsFunc(line, func(r rune) bool { return r != '"' && !unicode.IsSpace(r) }) {
+			n++
+		}
+	}
+	return n
 }
 
 // writeResultsAsCSV converts the results to CSV format and writes to the response writer
@@ -507,17 +525,25 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
 	var stream bool = r.URL.Query().Get("stream") == "true"
 
-	// Split query by newline, and by space on lines of identifiers
-	queries := splitQueries(index, rawQuery)
+	// ClassyFire is rate limited, so it has a lower query limit
+	limit, limitNote := maxQueries, "limit 100,000"
+	if classyfireEnabled {
+		limit, limitNote = maxClassyFireQueries, "limit 1,000 when ClassyFire is enabled"
+	}
+	tooMany := func() {
+		http.Error(w, fmt.Sprintf("Query contains more than %d identifiers (%s)", limit, limitNote), http.StatusBadRequest)
+	}
 
-	if len(queries) > 100000 {
-		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100,000)", len(queries)), http.StatusBadRequest)
+	// Every line makes at least one query, so too many lines fails before any name lookup
+	if countQueryLines(rawQuery) > limit {
+		tooMany()
 		return
 	}
 
-	// Enforce ClassyFire query limit
-	if classyfireEnabled && len(queries) > 1000 {
-		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 1,000 when ClassyFire is enabled)", len(queries)), http.StatusBadRequest)
+	// Split query by newline, and by space on lines of identifiers
+	queries := splitQueries(index, rawQuery, limit)
+	if len(queries) > limit {
+		tooMany()
 		return
 	}
 
