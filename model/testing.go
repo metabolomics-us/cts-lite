@@ -145,8 +145,8 @@ func populateDB(db *sql.DB, reader *csv.Reader) error {
 				return fmt.Errorf("failed to insert name: %w", err)
 			}
 		}
-		for _, c := range cas {
-			if _, err := casStmt.Exec(c, line[0]); err != nil {
+		for rank, c := range cas {
+			if _, err := casStmt.Exec(c, line[0], rank); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to insert CAS: %w", err)
 			}

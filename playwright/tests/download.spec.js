@@ -83,7 +83,7 @@ test('CSV download contains correct headers', async ({ page }) => {
   const header = content.split('\n')[0];
 
   expect(header).toBe(
-    'query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count'
+    'query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,cas_ids,hmdb_ids'
   );
 });
 
@@ -104,6 +104,7 @@ test('CSV download contains correct data for matched compound', async ({ page })
   expect(lines[1]).toContain('true');
   expect(lines[1]).toContain('Water');
   expect(lines[1]).toContain('H2O');
+  expect(lines[1]).toContain('7732-18-5,HMDB0002111;HMDB0062587');
 });
 
 test('CSV download has empty compound fields for no-match', async ({ page }) => {
@@ -124,7 +125,7 @@ test('CSV download has empty compound fields for no-match', async ({ page }) => 
   expect(dataCols).toBe(headerCols);
   expect(lines[1]).toContain('false');
   // pubchem_cid and compound fields are empty — row ends with many commas
-  expect(lines[1]).toMatch(/false,[^,]*,[^,]*,,,,,,,,,,$/);
+  expect(lines[1]).toMatch(/false,[^,]*,[^,]*,,,,,,,,,,,,$/);
 });
 
 // Mix of matches and no-matches — exercises the no-match CSV branch in script.js

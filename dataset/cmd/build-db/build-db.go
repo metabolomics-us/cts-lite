@@ -258,8 +258,9 @@ func insertNames(stmts *batchStmts, identifier, title, synonymField string) erro
 			return err
 		}
 	}
-	for _, c := range cas {
-		if _, err := stmts.cas.Exec(c, identifier); err != nil {
+	// Filter keeps PubChem's synonym order, so the position is the CAS rank
+	for rank, c := range cas {
+		if _, err := stmts.cas.Exec(c, identifier, rank); err != nil {
 			return err
 		}
 	}

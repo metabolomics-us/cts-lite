@@ -29,6 +29,22 @@ var CSVHeader = []string{
 	"query", "query_type", "converted_query", "found_match", "match_level", "error_message",
 	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
 	"molecular_formula", "exact_mass", "literature_count", "patent_count", "annotation_type_count",
+	"cas_ids", "hmdb_ids",
+}
+
+// csvIDSeparator joins a compound's CAS or HMDB IDs into one CSV cell
+const csvIDSeparator = ";"
+
+// attachExternalIDs adds CAS and HMDB IDs to the results' matches. They only add
+// detail, so a failed lookup is logged and the matches go out without them
+func attachExternalIDs(index *model.PubChemIndex, results []*model.SingleResult) {
+	var compounds []*model.Compound
+	for _, r := range results {
+		compounds = append(compounds, r.Matches...)
+	}
+	if err := index.AttachExternalIDs(compounds); err != nil {
+		log.Printf("Failed to attach CAS/HMDB IDs: %v", err)
+	}
 }
 
 func isAllDigits(s string) bool {
@@ -408,7 +424,7 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 				strconv.FormatBool(result.MatchFound),
 				result.MatchLevel,
 				result.ErrMsg,
-				"", "", "", "", "", "", "", "", "", "", // Empty compound fields
+				"", "", "", "", "", "", "", "", "", "", "", "", // Empty compound fields
 			}
 			if classyfireEnabled {
 				row = append(row, cfFields(nil)...)
@@ -436,6 +452,8 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
 					strconv.FormatFloat(float64(match.AnnotationTypeCount), 'f', -1, 32),
+					strings.Join(match.CASIDs, csvIDSeparator),
+					strings.Join(match.HMDBIDs, csvIDSeparator),
 				}
 				if classyfireEnabled {
 					row = append(row, cfFields(match.ClassyFire)...)
@@ -597,6 +615,9 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		results = append(results, result)
 	}
 
+	// One batched lookup for every local match, PubChem hits get theirs as they settle
+	attachExternalIDs(index, results)
+
 	localSpan.SetAttributes(
 		attribute.Int("local_match.queries", len(results)),
 		attribute.Int("local_match.matches", localMatches),
@@ -612,7 +633,14 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	// Attempt a live PubChem lookup for anything that missed locally (except unidentified queries of course)
 	// onSettled hears about each result as soon as its lookup is over, nil when not streaming
 	fallback := func(onSettled func(index int)) {
-		pcb := resolvePubChemFallbackStream(r.Context(), results, topHitOnly, onSettled)
+		// A PubChem hit gets its CAS and HMDB IDs before anything sees the result
+		settled := func(i int) {
+			attachExternalIDs(index, results[i:i+1])
+			if onSettled != nil {
+				onSettled(i)
+			}
+		}
+		pcb := resolvePubChemFallbackStream(r.Context(), results, topHitOnly, settled)
 		if pcb.attempted+pcb.unparseable+pcb.skipped > 0 {
 			log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d unparseable (not sent), %d skipped (due to limit reached)",
 				pcb.attempted, pcb.found, pcb.notFound, pcb.failed, pcb.unparseable, pcb.skipped)

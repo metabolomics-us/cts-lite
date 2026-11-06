@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"ctslite/synonyms"
 
@@ -32,7 +33,9 @@ type Compound struct {
 	LiteratureCount     float32         `json:"literature_count"`
 	PatentCount         float32         `json:"patent_count"`
 	AnnotationTypeCount float32         `json:"annotation_type_count"`
-	ClassyFire          *ClassyFireInfo `json:"classyfire,omitempty"`
+	CASIDs     []string        `json:"cas_ids,omitempty"`
+	HMDBIDs    []string        `json:"hmdb_ids,omitempty"`
+	ClassyFire *ClassyFireInfo `json:"classyfire,omitempty"`
 }
 
 type SingleResult struct {
@@ -176,6 +179,7 @@ CREATE TABLE IF NOT EXISTS names (
 CREATE TABLE IF NOT EXISTS cas (
 	cas        TEXT NOT NULL,
 	identifier TEXT NOT NULL,
+	rank       INTEGER NOT NULL,
 	PRIMARY KEY (cas, identifier)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS hmdb (
@@ -190,16 +194,19 @@ CREATE INDEX IF NOT EXISTS idx_inchikey    ON compounds(inchikey);
 CREATE INDEX IF NOT EXISTS idx_first_block ON compounds(first_block);
 CREATE INDEX IF NOT EXISTS idx_inchi       ON compounds(inchi);
 CREATE INDEX IF NOT EXISTS idx_smiles      ON compounds(smiles);
-CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula)`
+CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula);
+CREATE INDEX IF NOT EXISTS idx_cas_identifier  ON cas(identifier, rank);
+CREATE INDEX IF NOT EXISTS idx_hmdb_identifier ON hmdb(identifier)`
 
 const InsertSQL = `INSERT INTO compounds
 	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-// The names, cas, and hmdb tables are keyed on their lookup value, so they need no index after load
+// The names, cas, and hmdb tables are keyed on their lookup value
 const InsertNameSQL = `INSERT OR IGNORE INTO names (name_norm, identifier, rank) VALUES (?, ?, ?)`
 
-const InsertCASSQL = `INSERT OR IGNORE INTO cas (cas, identifier) VALUES (?, ?)`
+// A CAS ID's rank is its position among the compound's CAS IDs in PubChem's synonym order
+const InsertCASSQL = `INSERT OR IGNORE INTO cas (cas, identifier, rank) VALUES (?, ?, ?)`
 
 const InsertHMDBSQL = `INSERT OR IGNORE INTO hmdb (hmdb_id, identifier) VALUES (?, ?)`
 
@@ -318,6 +325,63 @@ func (idx *PubChemIndex) QueryByHMDB(id string, topHitOnly bool) ([]*Compound, e
 		return idx.query(idx.byHMDB1, id)
 	}
 	return idx.query(idx.byHMDB, id)
+}
+
+// externalIDChunk keeps each IN list well under SQLite's bound parameter limit
+const externalIDChunk = 500
+
+// AttachExternalIDs sets CASIDs and HMDBIDs on each compound
+func (idx *PubChemIndex) AttachExternalIDs(compounds []*Compound) error {
+	if len(compounds) == 0 {
+		return nil
+	}
+	byCID := map[string][]*Compound{}
+	var cids []string
+	for _, c := range compounds {
+		c.CASIDs, c.HMDBIDs = nil, nil
+		if _, seen := byCID[c.Identifier]; !seen {
+			cids = append(cids, c.Identifier)
+		}
+		byCID[c.Identifier] = append(byCID[c.Identifier], c)
+	}
+
+	for start := 0; start < len(cids); start += externalIDChunk {
+		chunk := cids[start:min(start+externalIDChunk, len(cids))]
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			args[i] = id
+		}
+		in := `(` + strings.Repeat(`?,`, len(chunk)-1) + `?)`
+		// Both orders come straight off the reverse indexes, no sort needed
+		if err := idx.collectIDs(`SELECT identifier, cas FROM cas WHERE identifier IN `+in+` ORDER BY identifier, rank`,
+			args, byCID, func(c *Compound, id string) { c.CASIDs = append(c.CASIDs, id) }); err != nil {
+			return err
+		}
+		if err := idx.collectIDs(`SELECT identifier, hmdb_id FROM hmdb WHERE identifier IN `+in+` ORDER BY identifier, hmdb_id`,
+			args, byCID, func(c *Compound, id string) { c.HMDBIDs = append(c.HMDBIDs, id) }); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// collectIDs runs one (CID, id) query and hands each row to add() for every compound with that CID
+func (idx *PubChemIndex) collectIDs(query string, args []any, byCID map[string][]*Compound, add func(*Compound, string)) error {
+	rows, err := idx.db.Query(query, args...)
+	if err != nil {
+		return fmt.Errorf("external ID query failed: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, id string
+		if err := rows.Scan(&cid, &id); err != nil {
+			return fmt.Errorf("external ID scan failed: %w", err)
+		}
+		for _, c := range byCID[cid] {
+			add(c, id)
+		}
+	}
+	return rows.Err()
 }
 
 // Close releases the database connection and all prepared statements.

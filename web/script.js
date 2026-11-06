@@ -198,7 +198,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Download buttons (set up once, always reference current allData)
   document.getElementById("download-csv").addEventListener("click", () => {
     const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
-    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count";
+    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,cas_ids,hmdb_ids";
     if (hasClassyfire) {
       csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error";
     }
@@ -223,7 +223,10 @@ document.addEventListener("DOMContentLoaded", () => {
             csvField(match.exact_mass),
             csvField(match.literature_count),
             csvField(match.patent_count),
-            csvField(match.annotation_type_count)
+            csvField(match.annotation_type_count),
+            // Same separator as the server's CSV
+            csvField((match.cas_ids || []).join(";")),
+            csvField((match.hmdb_ids || []).join(";"))
           ];
           if (hasClassyfire) {
             row.push(csvField(cf.kingdom), csvField(cf.superclass), csvField(cf.class),
@@ -235,7 +238,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const row = [
           csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
           csvField(""), csvField(result.error_message),
-          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
+          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
         ];
         if (hasClassyfire) {
           row.push(csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""));
@@ -620,6 +623,8 @@ function displayResults(data, outputElement) {
               <div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>
               <div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>
               <div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>
+              ${match.cas_ids?.length ? `<div class="match-field"><label>CAS IDs:</label><div class="monospace id-list">${idListHtml(match.cas_ids)}</div></div>` : ""}
+              ${match.hmdb_ids?.length ? `<div class="match-field"><label>HMDB IDs:</label><div class="monospace id-list">${idListHtml(match.hmdb_ids)}</div></div>` : ""}
               <div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>
               <div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>
               <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
@@ -685,6 +690,16 @@ function displayResults(data, outputElement) {
       resultDiv.classList.toggle("collapsed");
     });
 
+    // Toggles the list of CAS or HMDB IDs between "+N more" and "Show less"
+    resultDiv.querySelectorAll(".id-more-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const expanded = btn.getAttribute("aria-expanded") === "true";
+        btn.previousElementSibling.hidden = expanded;
+        btn.setAttribute("aria-expanded", String(!expanded));
+        btn.textContent = expanded ? btn.dataset.more : "Show less";
+      });
+    });
+
     const expandBtn = resultDiv.querySelector(".query-type-expandable-btn");
     if (expandBtn) {
       expandBtn.addEventListener("click", () => {
@@ -700,6 +715,18 @@ function displayResults(data, outputElement) {
       outputElement.insertAdjacentHTML("beforeend", '<hr class="result-separator">');
     }
   });
+}
+
+// How many CAS or HMDB IDs a match card shows before "+N more"
+const ID_PREVIEW_COUNT = 3;
+
+// One ID per line, "+N more" toggle after ID_PREVIEW_COUNT
+function idListHtml(ids) {
+  const items = list => list.map(id => `<div class="id-item">${escapeHtml(id)}</div>`).join("");
+  if (ids.length <= ID_PREVIEW_COUNT) return items(ids);
+  const extra = ids.length - ID_PREVIEW_COUNT;
+  return `${items(ids.slice(0, ID_PREVIEW_COUNT))}<div class="id-more" hidden>${items(ids.slice(ID_PREVIEW_COUNT))}</div>`
+    + `<button type="button" class="id-more-btn" aria-expanded="false" data-more="+${extra} more">+${extra} more</button>`;
 }
 
 function escapeHtml(text) {

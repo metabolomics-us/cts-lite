@@ -58,6 +58,8 @@ func fakeWaterCompound() *model.Compound {
 		LiteratureCount:     10,
 		PatentCount:         2,
 		AnnotationTypeCount: 6,
+		CASIDs:              []string{"7732-18-5"},
+		HMDBIDs:             []string{"HMDB0002111", "HMDB0062587"},
 	}
 }
 
@@ -74,6 +76,7 @@ func fakeFormaldehyde() *model.Compound {
 		LiteratureCount:     5,
 		PatentCount:         1,
 		AnnotationTypeCount: 4,
+		CASIDs:              []string{"50-00-0"},
 	}
 }
 
@@ -90,6 +93,8 @@ func fakeMethaneCompound() *model.Compound {
 		LiteratureCount:     18,
 		PatentCount:         7,
 		AnnotationTypeCount: 8,
+		CASIDs:  []string{"74-82-8", "1333-74-0"},
+		HMDBIDs: []string{"HMDB0002714"},
 	}
 }
 
@@ -549,6 +554,7 @@ func TestCSVFormatResponse(t *testing.T) {
 	expectedData := []string{
 		"O", "smiles", "", "true", "Exact SMILES", "",
 		"1", "MYFAKEINCHIKEY-ISRIGHTHER-E", "InChI=1S/H2O/h1H2", "O", "Water", "H2O", "100", "10", "2", "6",
+		"7732-18-5", "HMDB0002111;HMDB0062587",
 	}
 	if diff := cmp.Diff(expectedData, records[1]); diff != "" {
 		t.Errorf("CSV data row mismatch (-want +got):\n%s", diff)
@@ -893,20 +899,20 @@ func TestClassyFireCSVHeader(t *testing.T) {
 		"classyfire_error",
 	}
 	header := records[0]
-	if len(header) != 23 {
-		t.Fatalf("expected 23 CSV columns with classyfire enabled, got %d", len(header))
+	if len(header) != 25 {
+		t.Fatalf("expected 25 CSV columns with classyfire enabled, got %d", len(header))
 	}
 	for i, want := range wantSuffix {
-		got := header[16+i]
+		got := header[18+i]
 		if got != want {
-			t.Errorf("header[%d]: want %q, got %q", 16+i, want, got)
+			t.Errorf("header[%d]: want %q, got %q", 18+i, want, got)
 		}
 	}
 
 	// Data row must contain ClassyFire values
 	row := records[1]
-	if row[16] != "Organic compounds" {
-		t.Errorf("classyfire_kingdom: want %q, got %q", "Organic compounds", row[16])
+	if row[18] != "Organic compounds" {
+		t.Errorf("classyfire_kingdom: want %q, got %q", "Organic compounds", row[18])
 	}
 }
 
@@ -921,8 +927,8 @@ func TestClassyFireCSVNoExtraColumnsWhenDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse CSV: %v", err)
 	}
-	if len(records[0]) != 16 {
-		t.Errorf("expected 16 columns without classyfire, got %d", len(records[0]))
+	if len(records[0]) != 18 {
+		t.Errorf("expected 18 columns without classyfire, got %d", len(records[0]))
 	}
 }
 
@@ -1072,13 +1078,13 @@ func TestClassyFireCSVNoMatchRowHasEmptyColumns(t *testing.T) {
 		t.Fatalf("expected header + no-match row, got %d rows", len(records))
 	}
 	row := records[1]
-	if len(row) != 23 {
-		t.Fatalf("expected 23 columns on the no-match row, got %d", len(row))
+	if len(row) != 25 {
+		t.Fatalf("expected 25 columns on the no-match row, got %d", len(row))
 	}
 	if row[3] != "false" {
 		t.Errorf("expected found_match=false, got %q", row[3])
 	}
-	for i := 15; i < 22; i++ {
+	for i := 18; i < 25; i++ {
 		if row[i] != "" {
 			t.Errorf("classyfire column %d should be empty on a no-match, got %q", i, row[i])
 		}

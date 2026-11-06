@@ -771,6 +771,38 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+/* CAS and HMDB lists stack one ID per line */
+.match-field .id-list {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.id-item {
+  white-space: nowrap;
+}
+
+.id-more-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 0.15rem;
+  color: #1a3e68;
+  text-decoration: underline;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.id-more-btn:hover,
+.id-more-btn:focus {
+  background: none;
+  color: #1a3e68;
+  outline: none;
+}
+
 .classyfire-heading {
   margin-top: 0.75rem;
 }
