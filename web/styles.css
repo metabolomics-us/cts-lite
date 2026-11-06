@@ -732,6 +732,22 @@ button:disabled {
   color: #495057;
 }
 
+.match-title-link {
+  color: #1a3e68;
+  text-decoration: underline;
+}
+
+.match-title-link:hover,
+.match-title-link:focus-visible {
+  color: #36679e;
+}
+
+.match-title-link:focus-visible {
+  outline: 2px solid #7aabde;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .match-details {
   display: grid;
   grid-template-columns: 1fr;
@@ -799,8 +815,18 @@ button:disabled {
 .id-more-btn:hover,
 .id-more-btn:focus {
   background: none;
-  color: #1a3e68;
   outline: none;
+}
+
+.id-more-btn:hover,
+.id-more-btn:focus-visible {
+  color: #36679e;
+}
+
+.id-more-btn:focus-visible {
+  outline: 2px solid #7aabde;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .classyfire-heading {

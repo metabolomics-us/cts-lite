@@ -615,7 +615,7 @@ function displayResults(data, outputElement) {
           <div class="match-item">
             <div class="match-header">
               MATCH${result.matches.length > 1 ? ` ${i + 1}` : ""} &mdash;
-              <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}" target="_blank" style="text-decoration:underline;color:#1a3e68">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
+              <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}" target="_blank" class="match-title-link">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
             </div>
             <hr>
             <div class="match-details">
