@@ -623,8 +623,8 @@ function displayResults(data, outputElement) {
               <div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>
               <div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>
               <div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>
-              ${match.cas_ids?.length ? `<div class="match-field"><label>CAS IDs:</label><div class="monospace id-list">${idListHtml(match.cas_ids)}</div></div>` : ""}
-              ${match.hmdb_ids?.length ? `<div class="match-field"><label>HMDB IDs:</label><div class="monospace id-list">${idListHtml(match.hmdb_ids)}</div></div>` : ""}
+              <div class="match-field"><label>CAS IDs:</label>${match.cas_ids?.length ? `<div class="monospace id-list">${idListHtml(match.cas_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>
+              <div class="match-field"><label>HMDB IDs:</label>${match.hmdb_ids?.length ? `<div class="monospace id-list">${idListHtml(match.hmdb_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>
               <div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>
               <div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>
               <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>

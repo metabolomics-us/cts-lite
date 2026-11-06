@@ -799,6 +799,12 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* Empty HMDB or CAS ID field */
+.monospace.id-none {
+  color: #5f6870;
+  background-color: transparent;
+}
+
 .id-more-btn {
   background: none;
   border: none;
