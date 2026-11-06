@@ -456,6 +456,26 @@ func TestQueryLineLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestSplitQueryLimitExceeded(t *testing.T) {
+	// 50,001 lines pass the line count, but each splits into two HMDB IDs
+	queries := strings.TrimRight(strings.Repeat(`HMDB1 HMDB2\n`, 50001), `\n`)
+	res := doMatchRequest(t, `{"queries":"`+queries+`"}`, nil, false)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for lines splitting over the limit, got %d", res.StatusCode)
+	}
+	if body, _ := io.ReadAll(res.Body); !strings.Contains(string(body), "more than 100000 identifiers") {
+		t.Errorf("unexpected error body: %s", body)
+	}
+}
+
+func TestSplitQueriesStopsPastLimit(t *testing.T) {
+	// Stops after the second line takes it past 3, the other 8 lines are never split
+	raw := strings.TrimRight(strings.Repeat("HMDB1 HMDB2\n", 10), "\n")
+	if got := len(splitQueries(mockIndex, raw, 3)); got != 4 {
+		t.Errorf("expected splitting to stop at 4 queries, got %d", got)
+	}
+}
+
 func TestLongLineAlwaysSplits(t *testing.T) {
 	// Over maxNameWords words splits even when no word is an identifier
 	res := doMatchRequest(t, `{"queries":"aa bb cc dd ee ff gg hh ii jj kk"}`, nil, false)

@@ -32,6 +32,17 @@ test('more than 100,000 identifiers on one line is blocked client-side', async (
   expect(requested).toBe(false);
 });
 
+// Short lines count once client-side, but lines of HMDB IDs split on the server
+test('lines splitting over 100,000 identifiers show the server error', async ({ page }) => {
+  await page.fill('#query-input', Array.from({ length: 50001 }, () => 'HMDB1 HMDB2').join('\n'));
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#output-label')).toHaveText('Error');
+  await expect(page.locator('#output-text')).toContainText(
+    'Server returned 400 - Query contains more than 100000 identifiers (limit 100,000)'
+  );
+});
+
 test('InChIKey query returns exact match for Water', async ({ page }) => {
   await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
   await page.click('button[type="submit"]');
