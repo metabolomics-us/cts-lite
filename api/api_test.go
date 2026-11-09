@@ -471,8 +471,56 @@ func TestSplitQueryLimitExceeded(t *testing.T) {
 func TestSplitQueriesStopsPastLimit(t *testing.T) {
 	// Stops after the second line takes it past 3, the other 8 lines are never split
 	raw := strings.TrimRight(strings.Repeat("HMDB1 HMDB2\n", 10), "\n")
-	if got := len(splitQueries(mockIndex, raw, 3)); got != 4 {
+	if got := len(splitQueries(mockIndex, raw, 3, "")); got != 4 {
 		t.Errorf("expected splitting to stop at 4 queries, got %d", got)
+	}
+}
+
+func TestForcedQueryType(t *testing.T) {
+	forcedResults := func(queryType, queries string) []*model.SingleResult {
+		req := httptest.NewRequest(http.MethodPost, "/match?query_type="+queryType, strings.NewReader(`{"queries":"`+queries+`"}`))
+		w := httptest.NewRecorder()
+		Match(mockIndex, w, req)
+		return parseMatchResults(t, w.Result())
+	}
+	type row struct{ queryType, errMsg string }
+	check := func(results []*model.SingleResult, want []row) {
+		t.Helper()
+		if len(results) != len(want) {
+			t.Fatalf("expected %d results, got %d", len(want), len(results))
+		}
+		for i, w := range want {
+			if got := (row{results[i].QueryType, results[i].ErrMsg}); got != w {
+				t.Errorf("result %d (%q): got %+v, want %+v", i, results[i].Query, got, w)
+			}
+		}
+	}
+
+	// A name is one query per line, and a CID can never be one
+	check(forcedResults("name", `water\nmethane water\n1`), []row{
+		{"name", ""},
+		{"name", "No compound found (forced query type: name)"},
+		{"name", "Not a valid name (forced query type: name)"},
+	})
+
+	// A CID is rejected before the PubChem fallback, which would say it was unavailable
+	check(forcedResults("smiles", `O 1`), []row{
+		{"smiles", ""},
+		{"smiles", "Not a valid SMILES (forced query type: smiles)"},
+	})
+
+	// No name fallback for a word under a forced structure type
+	check(forcedResults("formula", `CH4 CCO water`), []row{
+		{"formula", ""},
+		{"formula", "Not a valid molecular formula (forced query type: formula)"},
+		{"formula", "Not a valid molecular formula (forced query type: formula)"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/match?query_type=bogus", strings.NewReader(`{"queries":"O"}`))
+	w := httptest.NewRecorder()
+	Match(mockIndex, w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for an unknown query_type, got %d", w.Result().StatusCode)
 	}
 }
 

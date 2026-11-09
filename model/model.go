@@ -48,6 +48,7 @@ type SingleResult struct {
 	ErrMsg          string      `json:"error_message"`
 	Pending         bool        `json:"pending,omitempty"` // true while the fallback request is in flight
 	DerivedInChIKey string      `json:"-"`
+	Rejected        bool        `json:"-"` // a forced query type ruled the query out, so the fallback skips it
 }
 
 // PubChemIndex wraps an SQLite database and prepared statements for each lookup type

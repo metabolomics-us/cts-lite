@@ -353,8 +353,9 @@ func isIdentifierToken(t string) bool {
 const maxNameWords = 10
 
 // splitQueries makes one query per line, except a line that is a list of identifiers
-// separated by spaces. A line that is a known name stays whole even when its words read as identifiers
-func splitQueries(index *model.PubChemIndex, raw string, limit int) []string {
+// separated by spaces. A line that is a known name stays whole even when its words read as identifiers.
+// A forced query type skips the guessing: a name is one per line, anything else splits on all whitespace
+func splitQueries(index *model.PubChemIndex, raw string, limit int, forced string) []string {
 	var queries []string
 	for line := range strings.SplitSeq(raw, "\n") {
 		if len(queries) > limit {
@@ -364,8 +365,14 @@ func splitQueries(index *model.PubChemIndex, raw string, limit int) []string {
 		tokens := slices.DeleteFunc(strings.Fields(line), func(t string) bool {
 			return strings.Trim(t, `"`) == ""
 		})
+		if forced == "name" {
+			if len(tokens) > 0 {
+				queries = append(queries, strings.Join(tokens, " "))
+			}
+			continue
+		}
 		// Same logic found in script.js for counting queries
-		if len(tokens) <= 1 || len(tokens) > maxNameWords {
+		if forced != "" || len(tokens) <= 1 || len(tokens) > maxNameWords {
 			queries = append(queries, tokens...)
 			continue
 		}
@@ -525,6 +532,16 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
 	var stream bool = r.URL.Query().Get("stream") == "true"
 
+	// Forces every query to one type, empty or "auto" detects each query's type
+	forced := r.URL.Query().Get("query_type")
+	if forced == "auto" {
+		forced = ""
+	}
+	if _, ok := forcedQueryTypes[forced]; forced != "" && !ok {
+		http.Error(w, "Invalid query_type, expected auto, pubchem_id, inchikey, inchi, smiles, formula, cas, hmdb or name", http.StatusBadRequest)
+		return
+	}
+
 	// ClassyFire is rate limited, so it has a lower query limit
 	limit, limitNote := maxQueries, "limit 100,000"
 	if classyfireEnabled {
@@ -541,7 +558,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Split query by newline, and by space on lines of identifiers
-	queries := splitQueries(index, rawQuery, limit)
+	queries := splitQueries(index, rawQuery, limit, forced)
 	if len(queries) > limit {
 		tooMany()
 		return
@@ -572,6 +589,16 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		result := &model.SingleResult{
 			Query:     q,
 			QueryType: parseQueryType(q),
+		}
+
+		if forced != "" {
+			matchForced(index, q, result, forced, allowFirstBlockMatches, topHitOnly)
+			addForcedNote(result, forced)
+			if result.MatchFound {
+				localMatches++
+			}
+			results = append(results, result)
+			continue
 		}
 
 		switch result.QueryType {
@@ -662,6 +689,8 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		// A PubChem hit gets its CAS and HMDB IDs before anything sees the result
 		settled := func(i int) {
 			attachExternalIDs(index, results[i:i+1])
+			// The fallback rewrites the error, so the forced note goes back on
+			addForcedNote(results[i], forced)
 			if onSettled != nil {
 				onSettled(i)
 			}

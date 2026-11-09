@@ -291,12 +291,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const maxQueryLength = 100000;
-    // Counted as one query per line since names contain spaces, but a line over 10 words
-    // always splits. Shorter lines may also split, so this can undercount and the server 
-    // enforces the limits again
+    const queryType = document.getElementById("query-type-select").value;
     const queryCount = query.split("\n").reduce((n, l) => {
       const words = l.trim().split(/\s+/).filter(Boolean).length;
-      return n + (words > 10 ? words : words ? 1 : 0);
+      if (queryType === "name") return n + (words ? 1 : 0); // one name per line if forced name
+      if (queryType !== "auto") return n + words; // all words on line counted if not auto or name
+      return n + (words > 10 ? words : words ? 1 : 0); // split on more than 10 and count all words on line
     }, 0);
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
@@ -331,6 +331,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (classyfireEnabled) {
       url += "&classyfire=true";
     }
+    if (queryType !== "auto") {
+      url += "&query_type=" + queryType;
+    }
 
     url += "&stream=true"; // Always stream frontend results for pubchem fallback
 
@@ -359,8 +362,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
       const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
       const classyfireText = classyfireEnabled ? ", ClassyFire" : "";
+      const queryTypeSelect = document.getElementById("query-type-select");
+      const queryTypeText = queryType !== "auto" ? `, Forced ${queryTypeSelect.querySelector(`option[value="${queryType}"]`).textContent}` : "";
       appliedSettingsLabel.title = "applied settings";
-      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}`;
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}${queryTypeText}`;
       appliedSettingsLabel.style.display = "block";
     };
 

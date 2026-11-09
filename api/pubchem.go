@@ -1023,7 +1023,7 @@ type pcbMiss struct {
 func collectPubChemMisses(results []*model.SingleResult) []pcbMiss {
 	var misses []pcbMiss
 	for i, r := range results {
-		if r.MatchFound || r.ErrMsg == "Internal server error" {
+		if r.MatchFound || r.Rejected || r.ErrMsg == "Internal server error" {
 			continue
 		}
 		switch r.QueryType {

@@ -306,7 +306,9 @@
         "exact_mass": 127.9123,
         "literature_count": 4430,
         "patent_count": 329042,
-        "annotation_type_count": 16
+        "annotation_type_count": 16,
+        "cas_ids": ["10034-85-2"],
+        "hmdb_ids": ["HMDB0059634"]
       }
     ],
     "error_message": ""
@@ -327,9 +329,9 @@
 
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px;">CSV</p>
                 <div class="code-block">
-                    <pre><code>query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count
-XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042,16
-will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,,
+                    <pre><code>query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,cas_ids,hmdb_ids
+XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042,16,10034-85-2,HMDB0059634
+will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,,,,
                     </code></pre>
                 </div>
                 <p style="color: #4B535D; margin-left: 1rem">

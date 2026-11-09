@@ -226,6 +226,74 @@ func matchName(index *model.PubChemIndex, query string, result *model.SingleResu
 	result.Matches = compounds
 }
 
+var forcedQueryTypes = map[string]struct {
+	label   string
+	accepts map[string]bool
+}{
+	"pubchem_id": {"PubChem CID", map[string]bool{"pubchem_id": true}},
+	"inchikey":   {"InChIKey", map[string]bool{"inchikey": true}},
+	"inchi":      {"InChI", map[string]bool{"inchi": true}},
+	"smiles":     {"SMILES", map[string]bool{"smiles": true, "smiles_or_formula": true}},
+	"formula":    {"molecular formula", map[string]bool{"formula": true, "smiles_or_formula": true}},
+	"cas":        {"CAS ID", map[string]bool{"cas": true}},
+	"hmdb":       {"HMDB ID", map[string]bool{"hmdb": true}},
+	"name":       {"name", nil}, // name could look like any type
+}
+
+// notNameTypes can never be stored as names (for parsing purposes)
+var notNameTypes = map[string]bool{
+	"pubchem_id": true, "bad_pubchem_id": true, "inchi": true, "bad_inchi": true,
+	"inchikey": true, "bad_inchikey": true, "cas": true, "bad_cas": true, "hmdb": true, "bad_hmdb": true,
+}
+
+// matchForced runs only the lookup of the forced query type, unless the type is incompatible
+// (i.e. CID detected query trying to be forced as SMILES does not run anything)
+func matchForced(index *model.PubChemIndex, query string, result *model.SingleResult, forced string, allowFirstBlockMatches bool, topHitOnly bool) {
+	detected := result.QueryType
+	result.QueryType = forced
+	accepted := forcedQueryTypes[forced].accepts[detected]
+	if forced == "name" {
+		accepted = !notNameTypes[detected]
+	}
+	if !accepted {
+		result.Rejected = true
+		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label
+		return
+	}
+
+	switch forced {
+	case "pubchem_id":
+		matchPubChemID(index, query, result, topHitOnly)
+	case "inchikey":
+		matchInchiKey(index, query, result, allowFirstBlockMatches, topHitOnly)
+	case "inchi":
+		matchInchi(index, query, result, topHitOnly)
+	case "smiles":
+		matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
+	case "formula":
+		matchFormula(index, query, result, topHitOnly)
+	case "cas":
+		matchCAS(index, query, result, topHitOnly)
+	case "hmdb":
+		matchHMDB(index, query, result, topHitOnly)
+	case "name":
+		// A name miss leaves the result untouched, so it needs its own error
+		matchName(index, query, result, topHitOnly)
+		if !result.MatchFound {
+			result.ErrMsg = "No compound found"
+		}
+	}
+}
+
+// addForcedNote marks a miss as coming from a forced query type. Internal errors stay
+// as they are since the PubChem fallback checks for them by value
+func addForcedNote(result *model.SingleResult, forced string) {
+	if forced == "" || result.MatchFound || result.ErrMsg == "" || result.ErrMsg == "Internal server error" {
+		return
+	}
+	result.ErrMsg += " (forced query type: " + forced + ")"
+}
+
 func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {
 	matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
 	if result.MatchFound {
