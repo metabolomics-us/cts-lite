@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google-site-verification" content="7x8U49PGGWOtDvOAekV2dNrRD7R1VX0_hnkstdzap5o" />
-    <meta name="description" content="Easily translate chemical identifiers via the web or REST API. From InChIKey to SMILES to Molecular Formula to InChI to PubChem ID | UC Davis Fiehn Lab">
+    <meta name="description" content="Easily translate chemical identifiers via the web or REST API. From Compound Name to InChIKey to SMILES to Molecular Formula to InChI to PubChem ID to HMDB to CAS | UC Davis Fiehn Lab">
     <link rel="canonical" href="https://cts-lite.metabolomics.us">
     <meta name="theme-color" content="#1a3e68">
     <meta property="og:title" content="CTS-Lite | Chemical Translation Service">
@@ -40,13 +40,16 @@
                     <div id="input-label-row">
                         <img src="assets/info-icon.svg" alt="" width="16" height="16">
                         <span><strong>Accepts:</strong></span>
+                        <span class="format-tag">Compound Name</span>
                         <span class="format-tag">InChI</span>
                         <span class="format-tag">InChIKey</span>
                         <span class="format-tag">SMILES</span>
                         <span class="format-tag">Molecular Formula</span>
                         <span class="format-tag">PubChem CID</span>
+                        <span class="format-tag">HMDB ID</span>
+                        <span class="format-tag">CAS ID</span>
                     </div>
-                    <p id="input-label-sub">Space, Tab, or Newline separated entries</p>
+                    <p id="input-label-sub">Space, Tab, or Newline separated entries <span style="color: #4D545A">(up to 100,000)</span></p>
                 </label>
                 <textarea id="query-input" rows="5" cols="40"
                 placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C &#10;H2O &#10;962"></textarea>
