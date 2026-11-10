@@ -1192,6 +1192,16 @@ button:disabled {
     left: auto;
     right: 0;
   }
+
+  /* Anchor the settings panel to the form's left edge instead of the cog, so it never
+     runs past the screen and widens the page, which shifts the fixed navbar */
+  .form-actions {
+    position: relative;
+  }
+
+  .form-actions .cog-wrapper {
+    position: static;
+  }
 }
 
 @media (max-width: 480px) {
