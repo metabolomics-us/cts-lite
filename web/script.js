@@ -575,7 +575,9 @@ function updateFilterCounts() {
   const wrap = document.getElementById("result-filters");
   wrap.hidden = allData.length === 0;
   wrap.querySelectorAll(".filter-option").forEach(btn => {
-    btn.querySelector(".filter-count").textContent = counts[btn.dataset.filter] || 0;
+    const count = counts[btn.dataset.filter] || 0;
+    btn.querySelector(".filter-count").textContent = count;
+    btn.disabled = count === 0; // disable if no results
   });
 }
 

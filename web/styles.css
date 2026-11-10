@@ -238,6 +238,18 @@ button:disabled {
   color: #ffffff;
 }
 
+.filter-option:disabled,
+.filter-option:disabled:hover {
+  background-color: transparent;
+  color: #7d8691;
+  cursor: default;
+  opacity: 1;
+}
+
+.filter-option:disabled .filter-swatch {
+  opacity: 0.5;
+}
+
 .filter-name {
   display: inline-flex;
   align-items: center;
