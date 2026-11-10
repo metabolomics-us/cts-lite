@@ -34,7 +34,10 @@ test('more than 100,000 identifiers on one line is blocked client-side', async (
 
 // Short lines count once client-side, but lines of HMDB IDs split on the server
 test('lines splitting over 100,000 identifiers show the server error', async ({ page }) => {
-  await page.fill('#query-input', Array.from({ length: 50001 }, () => 'HMDB1 HMDB2').join('\n'));
+  await page.locator('#query-input').evaluate(
+    (el, v) => { el.value = v; },
+    Array.from({ length: 50001 }, () => 'HMDB1 HMDB2').join('\n')
+  );
   await page.click('button[type="submit"]');
 
   await expect(page.locator('#output-label')).toHaveText('Error');
