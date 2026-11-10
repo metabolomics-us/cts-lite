@@ -493,12 +493,44 @@ func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, cla
 	return nil
 }
 
+// queryInput is the "queries" field from a POST request
+type queryInput struct {
+	raw    string
+	list   []string
+	isList bool
+}
+
+func (q *queryInput) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &q.raw); err == nil {
+		return nil
+	}
+	q.isList = true
+	return json.Unmarshal(b, &q.list)
+}
+
+// cleanQuery trims a query and removes one pair of surrounding double quotes
+func cleanQuery(q string) string {
+	q = strings.TrimSpace(q)
+
+	// Remove surrounding double quotes if both present
+	if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") && len(q) > 1 {
+		q = q[1 : len(q)-1]
+	}
+
+	// Handle single double quote character
+	if q == "\"" {
+		return ""
+	}
+	return q
+}
+
 // Match is the main entry point for the API
 // Detects the type of query and delegates it to the corresponding matching function
 func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var rawQuery string
+	var input queryInput
 
-	// Parse query according to GET or POST request (GET was the old method before moving to POST)
+	// Parse query according to GET or POST request (GET was the old method before adding POST)
 	switch r.Method {
 
 	case http.MethodGet:
@@ -506,7 +538,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var request struct {
-			Queries string `json:"queries"`
+			Queries queryInput `json:"queries"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -514,14 +546,15 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rawQuery = strings.TrimSpace(request.Queries)
+		input = request.Queries
+		rawQuery = strings.TrimSpace(input.raw)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if rawQuery == "" {
+	if rawQuery == "" && len(input.list) == 0 {
 		http.Error(w, "Query was empty", http.StatusBadRequest)
 		return
 	}
@@ -551,17 +584,33 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Query contains more than %d identifiers (%s)", limit, limitNote), http.StatusBadRequest)
 	}
 
-	// Every line makes at least one query, so too many lines fails before any name lookup
-	if countQueryLines(rawQuery) > limit {
-		tooMany()
-		return
-	}
+	var queries []string
+	if input.isList {
+		// Array input is never split
+		if len(input.list) > limit {
+			tooMany()
+			return
+		}
+		for i, q := range input.list {
+			if cleanQuery(q) == "" { // empty query throws 400
+				http.Error(w, fmt.Sprintf("queries[%d] is empty", i), http.StatusBadRequest)
+				return
+			}
+		}
+		queries = input.list
+	} else {
+		// Every line makes at least one query, so too many lines fails before any name lookup
+		if countQueryLines(rawQuery) > limit {
+			tooMany()
+			return
+		}
 
-	// Split query by newline, and by space on lines of identifiers
-	queries := splitQueries(index, rawQuery, limit, forced)
-	if len(queries) > limit {
-		tooMany()
-		return
+		// Split query by newline, and by space on lines of identifiers
+		queries = splitQueries(index, rawQuery, limit, forced)
+		if len(queries) > limit {
+			tooMany()
+			return
+		}
 	}
 
 	results := make([]*model.SingleResult, 0, len(queries))
@@ -574,15 +623,8 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	localMatches := 0
 
 	for _, q := range queries {
-		q = strings.TrimSpace(q)
-
-		// Remove surrounding double quotes if both present
-		if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") && len(q) > 1 {
-			q = q[1 : len(q)-1]
-		}
-
-		// Handle single double quote character, and empty queries
-		if q == "\"" || q == "" {
+		// Handle empty queries
+		if q = cleanQuery(q); q == "" {
 			continue
 		}
 

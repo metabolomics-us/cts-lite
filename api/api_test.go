@@ -524,6 +524,28 @@ func TestForcedQueryType(t *testing.T) {
 	}
 }
 
+func TestArrayQueries(t *testing.T) {
+	// One query per element, never split, even past maxNameWords
+	res := doMatchRequest(t, `{"queries":["O C", "water", "aa bb cc dd ee ff gg hh ii jj kk", "\"C\""]}`, nil, false)
+	results := parseMatchResults(t, res)
+	want := []string{"O C", "water", "aa bb cc dd ee ff gg hh ii jj kk", "C"}
+	if len(results) != len(want) {
+		t.Fatalf("expected %d results, got %d", len(want), len(results))
+	}
+	for i, q := range want {
+		if results[i].Query != q {
+			t.Errorf("results[%d]: got query %q, want %q", i, results[i].Query, q)
+		}
+	}
+
+	// A blank element would shift later results, so it fails the request
+	for _, payload := range []string{`{"queries":["O", "  "]}`, `{"queries":["O", "\"\""]}`, `{"queries":[]}`, `{"queries":["O", 1]}`} {
+		if res := doMatchRequest(t, payload, nil, false); res.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d", payload, res.StatusCode)
+		}
+	}
+}
+
 func TestLongLineAlwaysSplits(t *testing.T) {
 	// Over maxNameWords words splits even when no word is an identifier
 	res := doMatchRequest(t, `{"queries":"aa bb cc dd ee ff gg hh ii jj kk"}`, nil, false)
