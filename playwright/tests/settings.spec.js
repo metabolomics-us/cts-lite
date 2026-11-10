@@ -166,7 +166,7 @@ test('forced query type grays out every other format tag', async ({ page }) => {
   await expect(muted).toHaveCount(0);
 });
 
-test('clicking a format tag forces its type, clicking it again goes back to auto', async ({ page }) => {
+test('clicking a format tag forces its type', async ({ page }) => {
   const smiles = page.locator('.format-tag[data-type="smiles"]');
   const select = page.locator('#query-type-select');
 
@@ -182,9 +182,27 @@ test('clicking a format tag forces its type, clicking it again goes back to auto
   await expect(select).toHaveValue('cas');
   await expect(smiles).toHaveClass(/muted/);
 
+  // Clicking the forced tag again keeps it forced, only Reset goes back to auto
   await page.locator('.format-tag[data-type="cas"]').click();
+  await expect(select).toHaveValue('cas');
+  await page.locator('#format-tag-reset').click();
   await expect(select).toHaveValue('auto');
   await expect(page.locator('.format-tag.muted')).toHaveCount(0);
+});
+
+test('reset tag shows while a type is forced and goes back to auto', async ({ page }) => {
+  const reset = page.locator('#format-tag-reset');
+  await expect(reset).not.toHaveClass(/shown/);
+
+  // Shows however the type was forced, here from the settings menu
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('inchi');
+  await expect(reset).toHaveClass(/shown/);
+
+  await reset.click();
+  await expect(page.locator('#query-type-select')).toHaveValue('auto');
+  await expect(page.locator('.format-tag.muted')).toHaveCount(0);
+  await expect(reset).not.toHaveClass(/shown/);
 });
 
 test('query_type sent only when a type is forced', async ({ page }) => {

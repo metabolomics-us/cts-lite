@@ -458,6 +458,40 @@ button:disabled {
   opacity: 1;
 }
 
+/* Reset tag, red since it undoes the forced type instead of being one.
+   Collapsed to nothing until a type is forced. The negative margin cancels the row gap */
+.format-tag-reset {
+  background-color: #fbeaea;
+  color: #9b1c1c;
+  border-color: #9b1c1c;
+  opacity: 0;
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-width: 0;
+  margin-left: -0.4rem;
+  overflow: hidden;
+  transition: opacity 0.2s, max-width 0.2s, padding 0.2s, border-width 0.2s, margin-left 0.2s, background-color 0.2s;
+}
+
+.format-tag-reset.shown {
+  opacity: 1;
+  max-width: 6rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  border-width: 1px;
+  margin-left: 0;
+}
+
+.format-tag-reset:hover,
+.format-tag-reset:focus {
+  background-color: #f5d3d3;
+}
+
+.format-tag-reset:focus-visible {
+  outline-color: #9b1c1c;
+}
+
 #output-text {
   font-family: monospace;
   font-size: .95rem;
