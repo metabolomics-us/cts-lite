@@ -476,6 +476,49 @@ func TestSplitQueriesStopsPastLimit(t *testing.T) {
 	}
 }
 
+func TestSplitQueriesMixedLines(t *testing.T) {
+	type q struct{ query, queryType string }
+	cases := []struct {
+		line string
+		want []q
+	}{
+		// Over maxNameWords, so every word is its own query
+		{"HMDB 00143 HMDB 00213 hello methane HMDB 5 HMDB -1 HMDB 0", []q{
+			{"HMDB", "bad_hmdb"}, {"00143", "bad_pubchem_id"}, {"HMDB", "bad_hmdb"}, {"00213", "bad_pubchem_id"},
+			{"hello", "unidentified"}, {"methane", "unidentified"}, {"HMDB", "bad_hmdb"}, {"5", "pubchem_id"},
+			{"HMDB", "bad_hmdb"}, {"-1", "smiles"}, {"HMDB", "bad_hmdb"}, {"0", "bad_pubchem_id"},
+		}},
+		// A spaced HMDB ID is never joined, the bare prefix is a strong type so the line splits
+		{"HMDB 00143", []q{{"HMDB", "bad_hmdb"}, {"00143", "bad_pubchem_id"}}},
+		{"HMDB 00143 HMDB 00213", []q{{"HMDB", "bad_hmdb"}, {"00143", "bad_pubchem_id"}, {"HMDB", "bad_hmdb"}, {"00213", "bad_pubchem_id"}}},
+		{"HMDB 5", []q{{"HMDB", "bad_hmdb"}, {"5", "pubchem_id"}}},
+		{"HMDB -1", []q{{"HMDB", "bad_hmdb"}, {"-1", "smiles"}}},
+		{"HMDB 0", []q{{"HMDB", "bad_hmdb"}, {"0", "bad_pubchem_id"}}},
+		{"HMDB00143 HMDB00213", []q{{"HMDB00143", "hmdb"}, {"HMDB00213", "hmdb"}}},
+		// One strong identifier splits a line that would otherwise be a name
+		{"methane HMDB00143", []q{{"methane", "unidentified"}, {"HMDB00143", "hmdb"}}},
+		// Words that are not all identifiers stay one name query
+		{"hello methane", []q{{"hello methane", "unidentified"}}},
+		{"methane 5", []q{{"methane 5", "unidentified"}}},
+		{"water 0", []q{{"water 0", "unidentified"}}},
+		{"hello -1", []q{{"hello -1", "unidentified"}}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			queries := splitQueries(mockIndex, tc.line, maxQueries, "")
+			if len(queries) != len(tc.want) {
+				t.Fatalf("got %d queries %q, want %d", len(queries), queries, len(tc.want))
+			}
+			for i, w := range tc.want {
+				if got := (q{queries[i], parseQueryType(queries[i])}); got != w {
+					t.Errorf("query %d: got %+v, want %+v", i, got, w)
+				}
+			}
+		})
+	}
+}
+
 func TestForcedQueryType(t *testing.T) {
 	forcedResults := func(queryType, queries string) []*model.SingleResult {
 		req := httptest.NewRequest(http.MethodPost, "/match?query_type="+queryType, strings.NewReader(`{"queries":"`+queries+`"}`))
