@@ -166,6 +166,27 @@ test('forced query type grays out every other format tag', async ({ page }) => {
   await expect(muted).toHaveCount(0);
 });
 
+test('clicking a format tag forces its type, clicking it again goes back to auto', async ({ page }) => {
+  const smiles = page.locator('.format-tag[data-type="smiles"]');
+  const select = page.locator('#query-type-select');
+
+  await smiles.click();
+  await expect(select).toHaveValue('smiles');
+  await expect(smiles).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.format-tag.muted')).toHaveCount(7);
+  // The textarea's label must not take focus from the tag
+  await expect(page.locator('#query-input')).not.toBeFocused();
+
+  // Another tag switches the forced type
+  await page.locator('.format-tag[data-type="cas"]').click();
+  await expect(select).toHaveValue('cas');
+  await expect(smiles).toHaveClass(/muted/);
+
+  await page.locator('.format-tag[data-type="cas"]').click();
+  await expect(select).toHaveValue('auto');
+  await expect(page.locator('.format-tag.muted')).toHaveCount(0);
+});
+
 test('query_type sent only when a type is forced', async ({ page }) => {
   const submit = async () => {
     const [request] = await Promise.all([

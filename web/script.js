@@ -178,15 +178,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // A forced query type grays out every other format tag in the input label
   const queryTypeSelect = document.getElementById("query-type-select");
+  const formatTags = document.querySelectorAll(".format-tag[data-type]");
   const updateFormatTags = () => {
     const forced = queryTypeSelect.value;
-    document.querySelectorAll(".format-tag[data-type]").forEach((tag) => {
-      tag.classList.toggle("muted", forced !== "auto" && tag.dataset.type !== forced);
+    formatTags.forEach((tag) => {
+      const isForced = tag.dataset.type === forced;
+      tag.classList.toggle("muted", forced !== "auto" && !isForced);
+      tag.setAttribute("aria-pressed", String(isForced));
+      tag.title = isForced ? "Click again to query all types" : `Only query for ${tag.textContent}`;
     });
   };
   queryTypeSelect.addEventListener("change", updateFormatTags);
   // The browser may restore a previous choice on reload
   updateFormatTags();
+
+  // Clicking a format tag forces its type, clicking the forced one again goes back to Auto
+  formatTags.forEach((tag) => {
+    tag.addEventListener("click", () => {
+      queryTypeSelect.value = queryTypeSelect.value === tag.dataset.type ? "auto" : tag.dataset.type;
+      updateFormatTags();
+    });
+  });
 
   // Result filter menu, opened like the settings panel
   const filterToggle = document.getElementById("filter-toggle");
