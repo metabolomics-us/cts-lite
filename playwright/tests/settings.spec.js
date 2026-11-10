@@ -153,6 +153,58 @@ test('applied settings label reflects settings at submit time, not later togglin
   await expect(page.locator('#applied-settings-label')).toContainText('All Hits');
 });
 
+test('forced query type grays out every other format tag', async ({ page }) => {
+  const muted = page.locator('.format-tag.muted');
+  await expect(muted).toHaveCount(0);
+
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('smiles');
+  await expect(muted).toHaveCount(7);
+  await expect(page.locator('.format-tag[data-type="smiles"]')).not.toHaveClass(/muted/);
+
+  await page.locator('#query-type-select').selectOption('auto');
+  await expect(muted).toHaveCount(0);
+});
+
+test('query_type sent only when a type is forced', async ({ page }) => {
+  const submit = async () => {
+    const [request] = await Promise.all([
+      page.waitForRequest(req => req.url().includes('/match')),
+      page.click('button[type="submit"]'),
+    ]);
+    return request.url();
+  };
+  await page.fill('#query-input', 'O');
+  expect(await submit()).not.toContain('query_type=');
+
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('pubchem_id');
+  expect(await submit()).toContain('query_type=pubchem_id');
+});
+
+test('applied settings label shows the forced query type', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('pubchem_id');
+  await page.fill('#query-input', '1');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText('Forced PubChem CID');
+});
+
+// Each line is one name, and a CID can never be one
+test('forced name matches a name and rejects a CID', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('name');
+  await page.fill('#query-input', 'water\n1');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.result-item')).toHaveCount(2);
+  await expect(page.locator('.result-item').nth(0).locator('.match-item')).toContainText('WATER');
+  await expect(page.locator('.result-item').nth(1).locator('.error-message')).toContainText(
+    'Not a valid name (forced query type: name)'
+  );
+});
+
 test('page size persists across queries', async ({ page }) => {
   await page.locator('#settings-toggle').click();
   await page.locator('#page-size-select').selectOption('20');

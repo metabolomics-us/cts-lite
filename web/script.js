@@ -176,6 +176,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (allData.length > 0) renderPage();
   });
 
+  // A forced query type grays out every other format tag in the input label
+  const queryTypeSelect = document.getElementById("query-type-select");
+  const updateFormatTags = () => {
+    const forced = queryTypeSelect.value;
+    document.querySelectorAll(".format-tag[data-type]").forEach((tag) => {
+      tag.classList.toggle("muted", forced !== "auto" && tag.dataset.type !== forced);
+    });
+  };
+  queryTypeSelect.addEventListener("change", updateFormatTags);
+  // The browser may restore a previous choice on reload
+  updateFormatTags();
+
   // Result filter menu, opened like the settings panel
   const filterToggle = document.getElementById("filter-toggle");
   const filterPanel = document.getElementById("filter-panel");

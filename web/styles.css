@@ -426,6 +426,15 @@ button:disabled {
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
   white-space: nowrap;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
+}
+
+/* Formats left out by a forced query type */
+.format-tag.muted {
+  background-color: #f0f0f0;
+  color: #8a8f95;
+  border-color: #c4c8cc;
+  opacity: 0.7;
 }
 
 #output-text {
