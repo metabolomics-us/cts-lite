@@ -257,7 +257,7 @@ func matchForced(index *model.PubChemIndex, query string, result *model.SingleRe
 	}
 	if !accepted {
 		result.Rejected = true
-		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label
+		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label + ", see documentation"
 		return
 	}
 

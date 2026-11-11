@@ -543,20 +543,20 @@ func TestForcedQueryType(t *testing.T) {
 	check(forcedResults("name", `water\nmethane water\n1`), []row{
 		{"name", ""},
 		{"name", "No compound found (forced query type: name)"},
-		{"name", "Not a valid name (forced query type: name)"},
+		{"name", "Not a valid name, see documentation (forced query type: name)"},
 	})
 
 	// A CID is rejected before the PubChem fallback, which would say it was unavailable
 	check(forcedResults("smiles", `O 1`), []row{
 		{"smiles", ""},
-		{"smiles", "Not a valid SMILES (forced query type: smiles)"},
+		{"smiles", "Not a valid SMILES, see documentation (forced query type: smiles)"},
 	})
 
 	// No name fallback for a word under a forced structure type
 	check(forcedResults("formula", `CH4 CCO water`), []row{
 		{"formula", ""},
-		{"formula", "Not a valid molecular formula (forced query type: formula)"},
-		{"formula", "Not a valid molecular formula (forced query type: formula)"},
+		{"formula", "Not a valid molecular formula, see documentation (forced query type: formula)"},
+		{"formula", "Not a valid molecular formula, see documentation (forced query type: formula)"},
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/match?query_type=bogus", strings.NewReader(`{"queries":"O"}`))

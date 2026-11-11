@@ -240,7 +240,7 @@ test('forced name matches a name and rejects a CID', async ({ page }) => {
   await expect(page.locator('.result-item')).toHaveCount(2);
   await expect(page.locator('.result-item').nth(0).locator('.match-item')).toContainText('WATER');
   await expect(page.locator('.result-item').nth(1).locator('.error-message')).toContainText(
-    'Not a valid name (forced query type: name)'
+    'Not a valid name, see documentation (forced query type: name)'
   );
 });
 
