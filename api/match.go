@@ -250,7 +250,6 @@ var notNameTypes = map[string]bool{
 // (i.e. CID detected query trying to be forced as SMILES does not run anything)
 func matchForced(index *model.PubChemIndex, query string, result *model.SingleResult, forced string, allowFirstBlockMatches bool, topHitOnly bool) {
 	detected := result.QueryType
-	result.QueryType = forced
 	accepted := forcedQueryTypes[forced].accepts[detected]
 	if forced == "name" {
 		accepted = !notNameTypes[detected]
@@ -258,8 +257,13 @@ func matchForced(index *model.PubChemIndex, query string, result *model.SingleRe
 	if !accepted {
 		result.Rejected = true
 		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label + ", see documentation"
+		// A broken form of the forced type keeps its own type, so it still reads as e.g. an invalid CAS ID
+		if detected != "bad_"+forced {
+			result.QueryType = forced
+		}
 		return
 	}
+	result.QueryType = forced
 
 	switch forced {
 	case "pubchem_id":

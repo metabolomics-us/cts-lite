@@ -552,6 +552,12 @@ func TestForcedQueryType(t *testing.T) {
 		{"smiles", "Not a valid SMILES, see documentation (forced query type: smiles)"},
 	})
 
+	// A broken form of the forced type keeps its detected type
+	check(forcedResults("cas", `50-00-0 50-00-1`), []row{
+		{"cas", ""},
+		{"bad_cas", "Not a valid CAS ID, see documentation (forced query type: cas)"},
+	})
+
 	// No name fallback for a word under a forced structure type
 	check(forcedResults("formula", `CH4 CCO water`), []row{
 		{"formula", ""},
