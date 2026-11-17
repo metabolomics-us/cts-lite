@@ -665,28 +665,12 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		case "cas":
 			matchCAS(index, q, result, topHitOnly)
 
-		case "bad_cas":
-			result.MatchFound = false
-			result.ErrMsg = "Invalid CAS ID, see documentation"
-
 		case "hmdb":
 			matchHMDB(index, q, result, topHitOnly)
 
-		case "bad_hmdb":
+		case "bad_pubchem_id", "bad_inchi", "bad_inchikey", "bad_cas", "bad_hmdb":
 			result.MatchFound = false
-			result.ErrMsg = "Invalid HMDB ID, see documentation"
-
-		case "bad_inchi":
-			result.MatchFound = false
-			result.ErrMsg = "Malformed InChI, see documentation"
-
-		case "bad_inchikey":
-			result.MatchFound = false
-			result.ErrMsg = "Malformed InChIKey, see documentation"
-
-		case "bad_pubchem_id":
-			result.MatchFound = false
-			result.ErrMsg = "Invalid PubChem CID, see documentation"
+			result.ErrMsg = malformedQueryErrors[result.QueryType]
 
 		case "unidentified":
 			result.MatchFound = false

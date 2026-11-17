@@ -802,12 +802,12 @@ function formatQueryType(queryType) {
     case "smiles_or_formula": return "SMILES/Mol. Formula";
     case "bad_inchi":         return "Malformed InChI";
     case "bad_inchikey":      return "Malformed InChIKey";
-    case "bad_pubchem_id":    return "Invalid PubChem CID";
+    case "bad_pubchem_id":    return "Malformed PubChem CID";
     case "name":              return "Compound Name";
     case "cas":               return "CAS ID";
-    case "bad_cas":           return "Invalid CAS ID";
+    case "bad_cas":           return "Malformed CAS ID";
     case "hmdb":              return "HMDB ID";
-    case "bad_hmdb":          return "Invalid HMDB ID";
+    case "bad_hmdb":          return "Malformed HMDB ID";
     case "unidentified":      return "Unidentified";
     default:                  return queryType;
   }

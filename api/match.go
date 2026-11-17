@@ -240,6 +240,14 @@ var forcedQueryTypes = map[string]struct {
 	"name":       {"name", nil}, // name could look like any type
 }
 
+var malformedQueryErrors = map[string]string{
+	"bad_pubchem_id": "Malformed PubChem CID, see documentation",
+	"bad_inchi":      "Malformed InChI, see documentation",
+	"bad_inchikey":   "Malformed InChIKey, see documentation",
+	"bad_cas":        "Malformed CAS ID, see documentation",
+	"bad_hmdb":       "Malformed HMDB ID, see documentation",
+}
+
 // notNameTypes can never be stored as names (for parsing purposes)
 var notNameTypes = map[string]bool{
 	"pubchem_id": true, "bad_pubchem_id": true, "inchi": true, "bad_inchi": true,
@@ -256,11 +264,13 @@ func matchForced(index *model.PubChemIndex, query string, result *model.SingleRe
 	}
 	if !accepted {
 		result.Rejected = true
-		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label + ", see documentation"
-		// A broken form of the forced type keeps its own type, so it still reads as e.g. an invalid CAS ID
-		if detected != "bad_"+forced {
-			result.QueryType = forced
+		// A broken form of the forced type keeps its own type and message
+		if detected == "bad_"+forced {
+			result.ErrMsg = malformedQueryErrors[detected]
+			return
 		}
+		result.QueryType = forced
+		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label + ", see documentation"
 		return
 	}
 	result.QueryType = forced
