@@ -684,7 +684,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		}
 
 		// A name is only tried once the structure lookup found nothing
-		if !result.MatchFound && result.ErrMsg != "Internal server error" && nameFallbackTypes[result.QueryType] {
+		if !result.MatchFound && result.ErrMsg != "Internal server error" && nameFallbackTypes[result.QueryType] && result.DerivedInChIKey == "" {
 			matchName(index, q, result, topHitOnly)
 		}
 
