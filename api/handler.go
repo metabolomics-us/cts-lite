@@ -235,6 +235,10 @@ func splitChargeSuffix(q string) (body string, sign byte, digits string, ok bool
 	if i < 2 || (q[i-1] != '+' && q[i-1] != '-') {
 		return "", 0, "", false
 	}
+	// no leading zeros or more than 2 digits
+	if count := q[i:]; len(count) > 2 || (count != "" && count[0] == '0') {
+		return "", 0, "", false
+	}
 	return q[:i-1], q[i-1], q[i:], true
 }
 

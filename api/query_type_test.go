@@ -56,6 +56,12 @@ func TestParseQueryTypeClassification(t *testing.T) {
 		{"ambiguous_chloromethane", "CCl", "smiles_or_formula"},
 		{"ambiguous_paired_digits", "N2O2", "smiles_or_formula"},
 
+		{"charge_bare_minus", "C7H5O2-", "formula"},
+		{"charge_plus_count", "Ca+2", "formula"},
+		{"charge_two_digits", "C10H12N5O13P3-10", "formula"},
+		{"charge_leading_zero", "Fe-03", "unidentified"},
+		{"charge_too_many_digits", "NP-019433", "smiles"},
+
 		{"junk_formula_typo", "C322cc", "smiles"},
 
 		{"junk_trailing_nonelement", "C6H12O6Q", "unidentified"},
