@@ -613,12 +613,7 @@ function renderPage() {
   output.textContent = "";
   const rows = filteredResults();
   const start = (currentPage - 1) * pageSize;
-  if (rows.length === 0 && allData.length > 0) {
-    output.innerHTML = "<div class='filter-empty'>No results for this filter &mdash; <button type='button' class='filter-empty-clear'>Clear filter</button></div>";
-    output.querySelector(".filter-empty-clear").addEventListener("click", () => setFilter("all"));
-  } else {
-    displayResults(rows.slice(start, start + pageSize), output);
-  }
+  displayResults(rows.slice(start, start + pageSize), output);
   updateFilterCounts();
   updatePagination(rows.length);
 }

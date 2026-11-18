@@ -276,32 +276,6 @@ button:disabled {
 .filter-swatch.name-variant-match { background-color: #ebe4f6; border-color: #b9a6dc; }
 .filter-swatch.no-match { background-color: #f8d7da; border-color: #e09aa1; }
 
-.filter-empty {
-  padding: 1rem 0;
-  color: #4B535D;
-  font-style: italic;
-}
-
-/* Link styled button that resets the filter to All, in the same type as the message */
-.filter-empty-clear,
-.filter-empty-clear:hover,
-.filter-empty-clear:focus {
-  margin: 0;
-  padding: 0;
-  background-color: transparent;
-  color: #1a3e68;
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: normal;
-  font-style: inherit;
-  text-decoration: underline;
-  outline-offset: 4px;
-}
-
-.filter-empty-clear:hover {
-  color: #235288;
-}
-
 /* ClassyFire streaming progress bar (top of the results) */
 #cf-progress {
   margin: 0.25rem 0 0.75rem 0;
