@@ -155,3 +155,22 @@ test('mixed query renders both match and no-match results', async ({ page }) => 
   await expect(page.locator('.match-status.exact-match')).toHaveCount(1);
   await expect(page.locator('.match-status.no-match')).toHaveCount(1);
 });
+
+// The examples mix types, so a forced type goes back to Auto before they are sent
+test('try an example fills the box and submits in auto mode', async ({ page }) => {
+  let matchUrl = null;
+  await page.route('**/match*', (route) => { matchUrl = route.request().url(); route.fulfill({ status: 200, body: '' }); });
+
+  await page.click('.format-tag[data-type="smiles"]');
+  await page.click('#try-example');
+
+  await expect(page.locator('#query-input')).toHaveValue(/^Caffeine\n/);
+  await expect(page.locator('#query-type-select')).toHaveValue('auto');
+  await expect(page.locator('#try-example')).toBeHidden();
+  await expect.poll(() => matchUrl).not.toBeNull();
+  expect(matchUrl).not.toContain('query_type');
+
+  // Clearing the box offers it again
+  await page.fill('#query-input', '');
+  await expect(page.locator('#try-example')).toBeVisible();
+});

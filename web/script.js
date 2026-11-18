@@ -5,6 +5,20 @@ let activeController = null;
 let classyfireRequested = false; // did this request use ClassyFire? classyfireEnabled tracks current checkbox state
 let activeFilter = "all"; // match-status class from getMatchStatus, defaults to "all"
 
+// Queries used by the 'try an example' button
+const EXAMPLE_QUERIES = [
+  "Caffeine",
+  "CC(=O)Oc1ccccc1C(=O)O",
+  "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
+  "RYYVLZVUVIJVGH-AAAAAAAAAA-N",
+  "C6H12O6",
+  "gly pro",
+  "50-78-2",
+  "HMDB0000001",
+  "170000000",
+  "AAAAAAAAAAAAAA-UHFFFAOYSA-N",
+];
+
 // Disable download buttons while ClassyFire is running
 function setDownloadsLoading(loading) {
   const buttons = document.getElementById("download-buttons");
@@ -297,6 +311,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const downloadButtons = document.getElementById("download-buttons");
   const paginationControls = document.getElementById("pagination-controls");
   const submitButton = form.querySelector("button[type='submit']");
+
+  // Try an example only shows while the box is empty
+  const exampleButton = document.getElementById("try-example");
+  const updateExampleButton = () => { exampleButton.hidden = input.value.trim() !== ""; };
+  input.addEventListener("input", updateExampleButton);
+  updateExampleButton();
+  exampleButton.addEventListener("click", () => {
+    queryTypeSelect.value = "auto";
+    updateFormatTags();
+    input.value = EXAMPLE_QUERIES.join("\n");
+    updateExampleButton();
+    form.requestSubmit();
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();

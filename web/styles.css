@@ -979,6 +979,36 @@ button:disabled {
   position: relative;
 }
 
+/* Holds the textarea so the example button can sit in the corner */
+.query-input-wrapper {
+  position: relative;
+}
+
+/* Add spacing below so 'Try an example' button doesn't overlap with placeholder text on narrow screens */
+.query-input-wrapper textarea {
+  vertical-align: top;
+  padding-bottom: 2.5rem;
+}
+
+.example-btn {
+  position: absolute;
+  right: 1.4rem;
+  bottom: 0.5rem;
+  margin-top: 0;
+  background-color: #f0f0f0;
+  color: #495056;
+  border: 1px solid #acacac;
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.example-btn:hover,
+.example-btn:focus {
+  background-color: #e2e2e2;
+  color: #2f3438;
+}
+
 .cog-btn {
   background: transparent;
   border: none;
