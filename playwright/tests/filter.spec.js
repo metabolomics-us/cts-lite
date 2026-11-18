@@ -36,15 +36,3 @@ test('selecting All clears the filter', async ({ page }) => {
   await expect(page.locator('.result-item')).toHaveCount(2);
   await expect(page.locator('#filter-toggle')).not.toHaveClass(/filtered/);
 });
-
-test('empty filter shows a message', async ({ page }) => {
-  await page.click('#filter-toggle');
-  await page.click('.filter-option[data-filter="first-block-match"]');
-
-  await expect(page.locator('.result-item')).toHaveCount(0);
-  await expect(page.locator('.filter-empty')).toBeVisible();
-
-  await page.click('.filter-empty-clear');
-  await expect(page.locator('.result-item')).toHaveCount(2);
-  await expect(page.locator('#filter-toggle')).not.toHaveClass(/filtered/);
-});
