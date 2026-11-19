@@ -962,6 +962,7 @@ button:disabled {
 .query-input-wrapper textarea {
   vertical-align: top;
   padding-bottom: 2.5rem;
+  resize: vertical; /* Only able to adjust height of box, not width */
 }
 
 .example-btn {
