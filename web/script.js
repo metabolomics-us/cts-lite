@@ -328,6 +328,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   input.addEventListener("input", updateExampleButton);
   updateExampleButton();
+  // Ctrl+Enter (Cmd+Enter on Mac) submits the form
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
   exampleButton.addEventListener("click", () => {
     queryTypeSelect.value = "auto";
     updateFormatTags();
