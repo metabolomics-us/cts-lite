@@ -331,7 +331,10 @@ document.addEventListener("DOMContentLoaded", () => {
   exampleButton.addEventListener("click", () => {
     queryTypeSelect.value = "auto";
     updateFormatTags();
-    input.value = EXAMPLE_QUERIES.join("\n");
+    const examples = EXAMPLE_QUERIES.join("\n");
+    input.focus();
+    input.select();
+    if (!document.execCommand("insertText", false, examples)) input.value = examples; // retains history like 'clear'
     updateExampleButton();
     form.requestSubmit();
   });
