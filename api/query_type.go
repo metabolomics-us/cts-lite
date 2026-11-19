@@ -34,7 +34,7 @@ func isValidPubChemID(s string) bool {
 }
 
 // smilesPunctuation is the set of characters that appear in SMILES but never in a
-// molecular formula, so any query containing one is unambiguously SMILES.
+// molecular formula, so any query containing one is not a formula (could still be a name).
 // Plus (+) and minus (-) are left out because formulas carry them as a charge suffix
 const smilesPunctuation = "=#/\\:.@[]()"
 
@@ -83,7 +83,7 @@ func init() {
 
 // classifyUnreadable handles queries the formula grammar could not read. A
 // string built only from SMILES characters is handed to SMILES so RDKit can
-// make the final call, and anything else is not a chemical identifier at all
+// make the final call, and anything else is not a structure, so it is left for name lookup
 func classifyUnreadable(q string) string {
 	if q == "" {
 		return "unidentified"
@@ -249,7 +249,7 @@ func parseQueryType(q string) string {
 	case isAllDigits(q):
 		return "bad_pubchem_id"
 
-	// A fast-fail for names not to be misclassified as SMILES (Like "PC 16:0_18:1")
+	// A check for names not to be misclassified as SMILES (Like "PC 16:0_18:1")
 	case strings.ContainsAny(q, " \t"):
 		return "unidentified"
 
@@ -272,7 +272,7 @@ func parseQueryType(q string) string {
 		if queryType, ok := classifyChargeSuffix(q); ok {
 			return queryType
 		}
-		// Everything left is letters and digits, which both grammars can use
+		// Formula or SMILES by element symbols, else SMILES when every character can be one, else unidentified
 		return classifyElementString(q)
 	}
 }
