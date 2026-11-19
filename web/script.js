@@ -312,9 +312,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const paginationControls = document.getElementById("pagination-controls");
   const submitButton = form.querySelector("button[type='submit']");
 
-  // Try an example only shows while the box is empty
+  // Try an example only shows while the box is empty, Clear takes its corner once there is any input
   const exampleButton = document.getElementById("try-example");
-  const updateExampleButton = () => { exampleButton.hidden = input.value.trim() !== ""; };
+  const clearButton = document.getElementById("clear-input");
+  const updateExampleButton = () => {
+    const empty = input.value.trim() === "";
+    exampleButton.hidden = !empty;
+    clearButton.hidden = empty;
+  };
+  clearButton.addEventListener("click", () => {
+    input.focus();
+    input.select();
+    if (!document.execCommand("delete")) input.value = ""; // retains history, allows Ctrl+Z for undo
+    updateExampleButton();
+  });
   input.addEventListener("input", updateExampleButton);
   updateExampleButton();
   exampleButton.addEventListener("click", () => {

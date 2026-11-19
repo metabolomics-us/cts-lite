@@ -174,3 +174,18 @@ test('try an example fills the box and submits in auto mode', async ({ page }) =
   await page.fill('#query-input', '');
   await expect(page.locator('#try-example')).toBeVisible();
 });
+
+test('clear button empties the box and undo restores it', async ({ page }) => {
+  await expect(page.locator('#clear-input')).toBeHidden();
+  await page.fill('#query-input', 'Caffeine\nWater');
+  await page.click('#clear-input');
+
+  await expect(page.locator('#query-input')).toHaveValue('');
+  await expect(page.locator('#query-input')).toBeFocused();
+  await expect(page.locator('#clear-input')).toBeHidden();
+  await expect(page.locator('#try-example')).toBeVisible();
+
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('#query-input')).toHaveValue('Caffeine\nWater');
+  await expect(page.locator('#clear-input')).toBeVisible();
+});
