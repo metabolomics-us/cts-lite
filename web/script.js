@@ -744,7 +744,7 @@ function displayResults(data, outputElement) {
     resultDiv.innerHTML = `
       <div class="query-section">
         <div class="query-header">
-          <h3>Query ${queryIndex + 1}: ${escapeHtml(result.query)}</h3>
+          <h3><span class="query-label">Query ${queryIndex + 1}:</span> <span class="query-text">${escapeHtml(result.query)}</span></h3>
           <button type="button" class="collapse-btn" aria-label="Toggle result"><img src="assets/chevron-icon.svg" alt=""></button>
         </div>
         <div class="query-details">
