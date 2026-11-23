@@ -743,6 +743,8 @@ function getPaginationRange(current, total) {
 function displayResults(data, outputElement) {
   // The card title keeps the compound name and PubChem link whatever the field menu hides
   const shown = (key) => !hiddenFields.has(key);
+  // Hide horizontal line if no fields are selected and classyfire is off
+  const hasDetails = hiddenFields.size < COMPOUND_FIELDS.length || classyfireRequested;
   data.forEach(({ result, i: queryIndex }, index) => {
     // A pending row still carries the local miss message, which the PubChem answer will replace
     const errorHtml = result.error_message && !result.pending
@@ -757,7 +759,7 @@ function displayResults(data, outputElement) {
               MATCH${result.matches.length > 1 ? ` ${i + 1}` : ""} &mdash;
               <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}" target="_blank" class="match-title-link">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
             </div>
-            <hr>
+            ${hasDetails ? "<hr>" : ""}
             <div class="match-details">
               ${shown("identifier") ? `<div class="match-field"><label>PubChem CID:</label><span class="monospace">${escapeHtml(match.identifier)}</span></div>` : ""}
               ${shown("inchikey") ? `<div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>` : ""}
