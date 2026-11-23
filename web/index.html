@@ -147,7 +147,30 @@
                                 <button type="button" class="filter-option" data-filter="pubchem-live-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch pubchem-live-match"></span>PubChem Live</span><span class="filter-count"></span></button>
                                 <button type="button" class="filter-option" data-filter="no-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch no-match"></span>No Match</span><span class="filter-count"></span></button>
                             </div>
-                        </div>                    </div>
+                        </div>
+                        <!-- Choose fields menu, applies to downloads as well -->
+                        <div class="cog-wrapper" id="result-fields" hidden>
+                            <button type="button" class="cog-btn" id="fields-toggle" aria-label="Choose fields" aria-expanded="false" aria-haspopup="true" title="Choose fields to show">
+                                <img src="assets/list-icon.svg" alt="" width="20" height="20">
+                            </button>
+                            <div class="settings-panel filter-panel" id="fields-panel" role="group" aria-label="Choose fields">
+                                <div class="filter-panel-heading">Show fields</div>
+                                <label class="field-option"><input type="checkbox" data-field="identifier" checked>PubChem CID</label>
+                                <label class="field-option"><input type="checkbox" data-field="inchikey" checked>InChIKey</label>
+                                <label class="field-option"><input type="checkbox" data-field="inchi" checked>InChI</label>
+                                <label class="field-option"><input type="checkbox" data-field="smiles" checked>SMILES</label>
+                                <label class="field-option"><input type="checkbox" data-field="cas_ids" checked>CAS IDs</label>
+                                <label class="field-option"><input type="checkbox" data-field="hmdb_ids" checked>HMDB IDs</label>
+                                <label class="field-option"><input type="checkbox" data-field="compound_name" checked>Compound Name</label>
+                                <label class="field-option"><input type="checkbox" data-field="molecular_formula" checked>Mol. Formula</label>
+                                <label class="field-option"><input type="checkbox" data-field="exact_mass" checked>Exact Mass</label>
+                                <label class="field-option"><input type="checkbox" data-field="literature_count" checked>Literature Count</label>
+                                <label class="field-option"><input type="checkbox" data-field="patent_count" checked>Patent Count</label>
+                                <label class="field-option"><input type="checkbox" data-field="annotation_type_count" checked>Anno. Type Count</label>
+                                <button type="button" class="filter-option field-bulk-btn" id="fields-select-toggle">Deselect all</button>
+                            </div>
+                        </div>
+                    </div>
                     <div id="download-buttons">
                         <button class="download-btn" id="download-csv" type="button">
                             CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">

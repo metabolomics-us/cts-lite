@@ -276,6 +276,53 @@ button:disabled {
 .filter-swatch.name-variant-match { background-color: #ebe4f6; border-color: #b9a6dc; }
 .filter-swatch.no-match { background-color: #f8d7da; border-color: #e09aa1; }
 
+/* Field menu as two columns, filled row by row */
+#fields-panel.open {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  column-gap: 0.5rem;
+}
+
+#fields-panel .filter-panel-heading {
+  grid-column: 1 / -1;
+}
+
+/* Select all / Deselect all */
+.field-bulk-btn {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: auto;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+/* Field menu rows */
+.field-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.field-option:hover {
+  background-color: #e9eef5;
+}
+
+.field-option input {
+  margin: 0;
+  accent-color: #1a3e68;
+  cursor: pointer;
+}
+
+/* Tinted like the filter button while any field is hidden */
+#fields-toggle.filtered {
+  background-color: #e6f3ff;
+}
+
 /* ClassyFire streaming progress bar (top of the results) */
 #cf-progress {
   margin: 0.25rem 0 0.75rem 0;

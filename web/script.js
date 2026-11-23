@@ -4,6 +4,29 @@ let pageSize = 10;
 let activeController = null;
 let classyfireRequested = false; // did this request use ClassyFire? classyfireEnabled tracks current checkbox state
 let activeFilter = "all"; // match-status class from getMatchStatus, defaults to "all"
+let hiddenFields = new Set(); // JSON keys of compound fields hidden by user
+
+// Result columns that are always present, regardless of hidden fields
+const RESULT_COLUMNS = ["query", "query_type", "converted_query", "found_match", "match_level", "error_message"];
+
+// Compound fields in the server's CSV column order. key is the JSON key, column the CSV header
+const COMPOUND_FIELDS = [
+  { key: "identifier", column: "pubchem_cid" },
+  { key: "inchikey", column: "inchikey" },
+  { key: "inchi", column: "inchi" },
+  { key: "smiles", column: "smiles" },
+  { key: "compound_name", column: "compound_name" },
+  { key: "molecular_formula", column: "molecular_formula" },
+  { key: "exact_mass", column: "exact_mass" },
+  { key: "literature_count", column: "literature_count" },
+  { key: "patent_count", column: "patent_count" },
+  { key: "annotation_type_count", column: "annotation_type_count" },
+  { key: "cas_ids", column: "cas_ids" },
+  { key: "hmdb_ids", column: "hmdb_ids" },
+];
+
+// ClassyFire keys, written as classyfire_<key> CSV columns
+const CLASSYFIRE_KEYS = ["kingdom", "superclass", "class", "subclass", "direct_parent", "description", "error"];
 
 // Queries used by the 'try an example' button
 const EXAMPLE_QUERIES = [
@@ -241,63 +264,65 @@ document.addEventListener("DOMContentLoaded", () => {
       closeFilterPanel();
     });
   });
-  // Download buttons (set up once, always reference current allData)
+  // Field selection menu, a checkbox change re-renders results
+  const fieldsToggle = document.getElementById("fields-toggle");
+  const fieldsPanel = document.getElementById("fields-panel");
+  fieldsToggle.addEventListener("click", () => {
+    const isOpen = fieldsPanel.classList.toggle("open");
+    fieldsToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+  document.addEventListener("click", (e) => {
+    if (!fieldsToggle.contains(e.target) && !fieldsPanel.contains(e.target)) closeFieldsPanel();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeFieldsPanel();
+  });
+  loadHiddenFields();
+  fieldsPanel.querySelectorAll("input[data-field]").forEach(box => {
+    box.addEventListener("change", () => {
+      if (box.checked) hiddenFields.delete(box.dataset.field);
+      else hiddenFields.add(box.dataset.field);
+      setHiddenFields(hiddenFields);
+    });
+  });
+  // Selects every field while any is hidden, otherwise deselects them all
+  document.getElementById("fields-select-toggle").addEventListener("click", () => {
+    setHiddenFields(hiddenFields.size > 0 ? new Set() : new Set(COMPOUND_FIELDS.map(f => f.key)));
+  });
+
+  // Download buttons (set up once, always reference current allData). Both follow the field menu
   document.getElementById("download-csv").addEventListener("click", () => {
     const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
-    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,cas_ids,hmdb_ids";
+    const fields = COMPOUND_FIELDS.filter(f => !hiddenFields.has(f.key));
+    const header = [...RESULT_COLUMNS, ...fields.map(f => f.column)];
     if (hasClassyfire) {
-      csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error";
+      header.push(...CLASSYFIRE_KEYS.map(k => "classyfire_" + k));
     }
-    csv += "\n";
+    let csv = header.join(",") + "\n";
     allData.forEach(result => {
-      if (result.matches && result.matches.length > 0) {
-        result.matches.forEach(match => {
-          const cf = match.classyfire || {};
-          const row = [
-            csvField(result.query),
-            csvField(result.query_type),
-            csvField(result.converted_query),
-            csvField(result.found_match),
-            csvField(result.match_level),
-            csvField(result.error_message),
-            csvField(match.identifier),
-            csvField(match.inchikey),
-            csvField(match.inchi),
-            csvField(match.smiles),
-            csvField(match.compound_name),
-            csvField(match.molecular_formula),
-            csvField(match.exact_mass),
-            csvField(match.literature_count),
-            csvField(match.patent_count),
-            csvField(match.annotation_type_count),
-            // Same separator as the server's CSV
-            csvField((match.cas_ids || []).join(";")),
-            csvField((match.hmdb_ids || []).join(";"))
-          ];
-          if (hasClassyfire) {
-            row.push(csvField(cf.kingdom), csvField(cf.superclass), csvField(cf.class),
-                     csvField(cf.subclass), csvField(cf.direct_parent), csvField(cf.description), csvField(cf.error));
-          }
-          csv += row.join(",") + "\n";
-        });
-      } else {
-        const row = [
-          csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
-          csvField(""), csvField(result.error_message),
-          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
-        ];
+      const resultCells = RESULT_COLUMNS.map(c => csvField(result[c]));
+      // A result without matches still writes one row, with empty compound fields
+      const matches = result.matches && result.matches.length > 0 ? result.matches : [{}];
+      matches.forEach(match => {
+        const row = [...resultCells, ...fields.map(f => csvField(csvValue(match[f.key])))];
         if (hasClassyfire) {
-          row.push(csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""));
+          const cf = match.classyfire || {};
+          row.push(...CLASSYFIRE_KEYS.map(k => csvField(cf[k])));
         }
         csv += row.join(",") + "\n";
-      }
+      });
     });
     triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(csv), `ctsl_${timestamp()}.csv`);
   });
 
   document.getElementById("download-json").addEventListener("click", () => {
+    // Hidden fields are left out of each match, everything else keeps its order
+    const data = hiddenFields.size === 0 ? allData : allData.map(r => !r.matches ? r : {
+      ...r,
+      matches: r.matches.map(m => Object.fromEntries(Object.entries(m).filter(([k]) => !hiddenFields.has(k)))),
+    });
     triggerDownload(
-      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allData, null, 2)),
+      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)),
       `ctsl_${timestamp()}.json`
     );
   });
@@ -357,6 +382,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showPcbProgress(0, 0);
     paginationControls.style.display = "none";
     document.getElementById("result-filters").hidden = true;
+    document.getElementById("result-fields").hidden = true;
     setFilterChip("all");
 
     // Bare quotes are dropped by the API, so a query of only those counts as blank
@@ -606,6 +632,35 @@ function setFilter(filter) {
   renderPage();
 }
 
+function closeFieldsPanel() {
+  document.getElementById("fields-panel").classList.remove("open");
+  document.getElementById("fields-toggle").setAttribute("aria-expanded", "false");
+}
+
+// Read the hidden fields from the checkboxes
+function loadHiddenFields() {
+  const hidden = new Set();
+  document.querySelectorAll("#fields-panel input[data-field]").forEach(box => {
+    if (!box.checked) hidden.add(box.dataset.field);
+  });
+  setHiddenFields(hidden);
+}
+
+// Apply a set of hidden fields to the checkboxes, the toggle and the shown page
+function setHiddenFields(hidden) {
+  hiddenFields = hidden;
+  document.querySelectorAll("#fields-panel input[data-field]").forEach(box => {
+    box.checked = !hidden.has(box.dataset.field);
+  });
+  const toggle = document.getElementById("fields-toggle");
+  const label = hidden.size === 0 ? "Choose fields to show" : `Choose fields to show (${hidden.size} hidden)`;
+  toggle.classList.toggle("filtered", hidden.size > 0);
+  toggle.title = label;
+  toggle.setAttribute("aria-label", label);
+  document.getElementById("fields-select-toggle").textContent = hidden.size > 0 ? "Select all" : "Deselect all";
+  if (allData.length > 0) renderPage();
+}
+
 // Results under the active filter, each paired with its index in allData so query numbers stay stable.
 function filteredResults() {
   const entries = allData.map((result, i) => ({ result, i }));
@@ -622,6 +677,7 @@ function updateFilterCounts() {
   });
   const wrap = document.getElementById("result-filters");
   wrap.hidden = allData.length === 0;
+  document.getElementById("result-fields").hidden = allData.length === 0;
   wrap.querySelectorAll(".filter-option").forEach(btn => {
     const count = counts[btn.dataset.filter] || 0;
     btn.querySelector(".filter-count").textContent = count;
@@ -685,6 +741,8 @@ function getPaginationRange(current, total) {
 
 // data holds { result, i } entries from filteredResults, i being the index in allData
 function displayResults(data, outputElement) {
+  // The card title keeps the compound name and PubChem link whatever the field menu hides
+  const shown = (key) => !hiddenFields.has(key);
   data.forEach(({ result, i: queryIndex }, index) => {
     // A pending row still carries the local miss message, which the PubChem answer will replace
     const errorHtml = result.error_message && !result.pending
@@ -701,18 +759,18 @@ function displayResults(data, outputElement) {
             </div>
             <hr>
             <div class="match-details">
-              <div class="match-field"><label>PubChem CID:</label><span class="monospace">${escapeHtml(match.identifier)}</span></div>
-              <div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>
-              <div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>
-              <div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>
-              <div class="match-field"><label>CAS IDs:</label>${match.cas_ids?.length ? `<div class="monospace id-list">${idListHtml(match.cas_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>
-              <div class="match-field"><label>HMDB IDs:</label>${match.hmdb_ids?.length ? `<div class="monospace id-list">${idListHtml(match.hmdb_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>
-              <div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>
-              <div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>
-              <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
-              <div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>
-              <div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>
-              <div class="match-field"><label>Anno. Type Count:</label><span class="monospace">${match.annotation_type_count}</span></div>
+              ${shown("identifier") ? `<div class="match-field"><label>PubChem CID:</label><span class="monospace">${escapeHtml(match.identifier)}</span></div>` : ""}
+              ${shown("inchikey") ? `<div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>` : ""}
+              ${shown("inchi") ? `<div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>` : ""}
+              ${shown("smiles") ? `<div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>` : ""}
+              ${shown("cas_ids") ? `<div class="match-field"><label>CAS IDs:</label>${match.cas_ids?.length ? `<div class="monospace id-list">${idListHtml(match.cas_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>` : ""}
+              ${shown("hmdb_ids") ? `<div class="match-field"><label>HMDB IDs:</label>${match.hmdb_ids?.length ? `<div class="monospace id-list">${idListHtml(match.hmdb_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>` : ""}
+              ${shown("compound_name") ? `<div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>` : ""}
+              ${shown("molecular_formula") ? `<div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>` : ""}
+              ${shown("exact_mass") ? `<div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>` : ""}
+              ${shown("literature_count") ? `<div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>` : ""}
+              ${shown("patent_count") ? `<div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>` : ""}
+              ${shown("annotation_type_count") ? `<div class="match-field"><label>Anno. Type Count:</label><span class="monospace">${match.annotation_type_count}</span></div>` : ""}
               ${classyfireRequested ? `
               <div class="match-field classyfire-heading"><label>Chemical Classification</label></div>
               ${!match.classyfire ? `<div class="match-field cf-queued"><span>Queued</span><span class="inline-spinner" aria-hidden="true"></span></div>`
@@ -866,6 +924,11 @@ function csvField(value) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
   return s;
+}
+
+// One CSV cell from a compound field, ID lists use the same separator as the server's CSV
+function csvValue(value) {
+  return Array.isArray(value) ? value.join(";") : value;
 }
 
 function timestamp() {
