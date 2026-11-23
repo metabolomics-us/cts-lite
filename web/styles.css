@@ -797,22 +797,6 @@ button:disabled {
   color: #333;
 }
 
-.match-level.exact {
-  background-color: #d4edda;
-  padding: 0.3rem 0.6rem;
-  border-radius: 15px;
-  border: 1px solid #c3e6cb;
-  color: #155724;
-}
-
-.match-level.first-block {
-  background-color: #fff3cd;
-  padding: 0.3rem 0.6rem;
-  border-radius: 15px;
-  border: 1px solid #ffeaa7;
-  color: #745903;
-}
-
 .error-message {
   background-color: #f8f9fa;
   color: #495057;
@@ -1091,6 +1075,13 @@ button:disabled {
   gap: 1.5rem;
   font-size: 0.95rem;
   white-space: nowrap;
+}
+
+/* Question-mark link to the docs beside a setting's name */
+.settings-help-link {
+  display: inline-flex;
+  vertical-align: middle;
+  color: inherit;
 }
 
 /* Toggle switch */
