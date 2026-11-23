@@ -1,8 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#777777" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="9" y1="6" x2="21" y2="6"/>
-    <line x1="9" y1="12" x2="21" y2="12"/>
-    <line x1="9" y1="18" x2="21" y2="18"/>
-    <circle cx="4" cy="6" r="1.25" fill="#777777"/>
-    <circle cx="4" cy="12" r="1.25" fill="#777777"/>
-    <circle cx="4" cy="18" r="1.25" fill="#777777"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" color="#777777" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <g id="icon">
+        <line x1="9" y1="6" x2="21" y2="6"/>
+        <line x1="9" y1="12" x2="21" y2="12"/>
+        <line x1="9" y1="18" x2="21" y2="18"/>
+        <circle cx="4" cy="6" r="1.25" fill="currentColor"/>
+        <circle cx="4" cy="12" r="1.25" fill="currentColor"/>
+        <circle cx="4" cy="18" r="1.25" fill="currentColor"/>
+    </g>
 </svg>

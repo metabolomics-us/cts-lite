@@ -470,7 +470,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const classyfireText = classyfireEnabled ? ", ClassyFire" : "";
       const queryTypeSelect = document.getElementById("query-type-select");
       const queryTypeText = queryType !== "auto" ? `, Forced ${queryTypeSelect.querySelector(`option[value="${queryType}"]`).textContent}` : "";
-      appliedSettingsLabel.title = "applied settings";
+      appliedSettingsLabel.title = "Applied settings";
       appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}${queryTypeText}`;
       appliedSettingsLabel.style.display = "block";
     };

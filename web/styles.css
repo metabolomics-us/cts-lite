@@ -184,7 +184,27 @@ button:disabled {
 /* Dot on the filter icon of the applied filter color */
 #filter-toggle.filtered {
   position: relative;
-  background-color: #e6f3ff;
+}
+
+/* Filter and field menu buttons have an 'active' state when any settings from them are selected */
+.menu-icon {
+  color: #777777;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cog-btn.filtered .menu-icon {
+  color: #1a3e68;
+  stroke-width: 2.75;
+}
+
+/* Faint blue background when enabled */
+#filter-toggle.filtered,
+#fields-toggle.filtered {
+  background-color: rgba(26, 62, 104, 0.12);
 }
 
 #filter-toggle.filtered::after {
@@ -316,11 +336,6 @@ button:disabled {
   margin: 0;
   accent-color: #1a3e68;
   cursor: pointer;
-}
-
-/* Tinted like the filter button while any field is hidden */
-#fields-toggle.filtered {
-  background-color: #e6f3ff;
 }
 
 /* ClassyFire streaming progress bar (top of the results) */
