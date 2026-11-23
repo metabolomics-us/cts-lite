@@ -797,7 +797,7 @@ function displayResults(data, outputElement) {
     // An HMDB ID is padded to 7 digits and uppercased, still an exact match, so only the bubble shows it
     const isHMDBRewrite = result.query_type === "hmdb" && result.converted_query;
     const transId = `trans-${queryIndex}`;
-    const expandable = (title, label) => `<div class="query-type-expandable-wrapper" title="${title}"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>${label}<br>${escapeHtml(result.converted_query)}</div></div>`;
+    const expandable = (title, label) => `<div class="query-type-expandable-wrapper" title="${title}"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}" tabindex="-1">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>${label}<br>${escapeHtml(result.converted_query)}</div></div>`;
 
     const queryTypeBubble = isConverted
       ? expandable("Converted with RDKit", "to InChIKey:")
