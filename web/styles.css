@@ -157,6 +157,7 @@ button:disabled {
   font-weight: bold;
   margin-bottom: 0rem;
   margin-top: 0rem;
+  margin-right: 0.5rem;
 }
 
 .results-header {
@@ -183,6 +184,11 @@ button:disabled {
   align-items: center;
   flex-wrap: nowrap;
   gap: 0.25rem;
+}
+
+/* Room between filter and field buttons */
+#result-fields {
+  margin-left: 0.35rem;
 }
 
 /* Dot on the filter icon of the applied filter color */
