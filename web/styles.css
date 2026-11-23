@@ -163,22 +163,25 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 0.1rem;
 }
 
 #download-buttons {
   display: none;
   position: relative;
+  flex-shrink: 0;
   gap: 0.5rem;
   min-height: 44px;
   margin-bottom: 5px;
 }
 
-/* Results label with the filter button */
+/* Filter and field buttons stay side by side next to the heading. When
+   space runs out the heading text wraps */
 .results-title {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.25rem;
 }
 
@@ -985,6 +988,7 @@ button:disabled {
   cursor: pointer;
   font-size: 1.0rem;
   margin: 0px 15px 0px 0px;
+  white-space: nowrap;
 }
 
 .download-btn:hover {
@@ -1427,14 +1431,9 @@ button:disabled {
     gap: 0.5rem;
   }
 
+  /* Center below title header on mobile */
   #download-buttons {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .download-btn {
-    flex: 1;
-    min-width: 120px;
+    align-self: center;
   }
 
   #applied-settings-label {
