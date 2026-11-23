@@ -1324,6 +1324,29 @@ button:disabled {
     right: 0;
   }
 
+  /* Ensure field selection menu does not overflow past screen on smaller devices */
+  .results-title {
+    position: relative;
+  }
+
+  #result-fields {
+    position: static;
+  }
+
+  #fields-panel {
+    left: 0;
+    right: auto;
+    max-width: calc(100vw - 60px);
+  }
+
+  #fields-panel.open {
+    grid-template-columns: repeat(2, minmax(0, max-content));
+  }
+
+  .field-option {
+    white-space: normal;
+  }
+
   /* Anchor the settings panel to the form's left edge instead of the cog, so it never
      runs past the screen and widens the page, which shifts the fixed navbar */
   .form-actions {
