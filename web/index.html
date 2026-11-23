@@ -172,12 +172,15 @@
                         </div>
                     </div>
                     <div id="download-buttons">
-                        <button class="download-btn" id="download-csv" type="button">
-                            CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
+                        <!-- Download button, dropdown for csv and json options -->
+                        <button class="download-btn" id="download-toggle" type="button" aria-haspopup="true" aria-expanded="false">
+                            Download <img src="assets/download-icon.svg" alt="" width="17" height="17">
                         </button>
-                        <button class="download-btn" id="download-json" type="button">
-                            JSON <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
-                        </button>
+                        <div class="settings-panel filter-panel download-panel" id="download-panel" role="group" aria-label="Download format">
+                            <div class="filter-panel-heading" style="color: #777777">Download Results</div>
+                            <button type="button" class="filter-option" id="download-csv"><span class="filter-name"><img class="download-option-icon" src="assets/download-icon.svg" alt="" width="15" height="15">CSV</span><span class="filter-count" id="download-csv-size"></span></button>
+                            <button type="button" class="filter-option" id="download-json"><span class="filter-name"><img class="download-option-icon" src="assets/download-icon.svg" alt="" width="15" height="15">JSON</span><span class="filter-count" id="download-json-size"></span></button>
+                        </div>
                         <!-- Spinner next to download buttons if ClassyFire is still running -->
                         <span class="download-spinner" aria-hidden="true"></span>
                     </div>

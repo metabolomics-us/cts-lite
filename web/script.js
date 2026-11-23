@@ -290,39 +290,32 @@ document.addEventListener("DOMContentLoaded", () => {
     setHiddenFields(hiddenFields.size > 0 ? new Set() : new Set(COMPOUND_FIELDS.map(f => f.key)));
   });
 
+  // Download menu
+  const downloadToggle = document.getElementById("download-toggle");
+  const downloadPanel = document.getElementById("download-panel");
+  downloadToggle.addEventListener("click", () => {
+    const isOpen = downloadPanel.classList.toggle("open");
+    downloadToggle.setAttribute("aria-expanded", String(isOpen));
+    if (isOpen) {
+      document.getElementById("download-csv-size").textContent = formatBytes(new Blob([buildCsv()]).size);
+      document.getElementById("download-json-size").textContent = formatBytes(new Blob([buildJson()]).size);
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!downloadToggle.contains(e.target) && !downloadPanel.contains(e.target)) closeDownloadPanel();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDownloadPanel();
+  });
+
   // Download buttons (set up once, always reference current allData). Both follow the field menu
   document.getElementById("download-csv").addEventListener("click", () => {
-    const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
-    const fields = COMPOUND_FIELDS.filter(f => !hiddenFields.has(f.key));
-    const header = [...RESULT_COLUMNS, ...fields.map(f => f.column)];
-    if (hasClassyfire) {
-      header.push(...CLASSYFIRE_KEYS.map(k => "classyfire_" + k));
-    }
-    let csv = header.join(",") + "\n";
-    allData.forEach(result => {
-      const resultCells = RESULT_COLUMNS.map(c => csvField(result[c]));
-      // A result without matches still writes one row, with empty compound fields
-      const matches = result.matches && result.matches.length > 0 ? result.matches : [{}];
-      matches.forEach(match => {
-        const row = [...resultCells, ...fields.map(f => csvField(csvValue(match[f.key])))];
-        if (hasClassyfire) {
-          const cf = match.classyfire || {};
-          row.push(...CLASSYFIRE_KEYS.map(k => csvField(cf[k])));
-        }
-        csv += row.join(",") + "\n";
-      });
-    });
-    triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(csv), `ctsl_${timestamp()}.csv`);
+    triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(buildCsv()), `ctsl_${timestamp()}.csv`);
   });
 
   document.getElementById("download-json").addEventListener("click", () => {
-    // Hidden fields are left out of each match, everything else keeps its order
-    const data = hiddenFields.size === 0 ? allData : allData.map(r => !r.matches ? r : {
-      ...r,
-      matches: r.matches.map(m => Object.fromEntries(Object.entries(m).filter(([k]) => !hiddenFields.has(k)))),
-    });
     triggerDownload(
-      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)),
+      "data:text/json;charset=utf-8," + encodeURIComponent(buildJson()),
       `ctsl_${timestamp()}.json`
     );
   });
@@ -601,6 +594,52 @@ function goToPage(n) {
   renderPage();
   const after = paginationEl.getBoundingClientRect().bottom;
   window.scrollBy(0, after - before);
+}
+
+// The CSV download of the current results (does not download hidden fields)
+function buildCsv() {
+  const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
+  const fields = COMPOUND_FIELDS.filter(f => !hiddenFields.has(f.key));
+  const header = [...RESULT_COLUMNS, ...fields.map(f => f.column)];
+  if (hasClassyfire) {
+    header.push(...CLASSYFIRE_KEYS.map(k => "classyfire_" + k));
+  }
+  let csv = header.join(",") + "\n";
+  allData.forEach(result => {
+    const resultCells = RESULT_COLUMNS.map(c => csvField(result[c]));
+    // A result without matches still writes one row, with empty compound fields
+    const matches = result.matches && result.matches.length > 0 ? result.matches : [{}];
+    matches.forEach(match => {
+      const row = [...resultCells, ...fields.map(f => csvField(csvValue(match[f.key])))];
+      if (hasClassyfire) {
+        const cf = match.classyfire || {};
+        row.push(...CLASSYFIRE_KEYS.map(k => csvField(cf[k])));
+      }
+      csv += row.join(",") + "\n";
+    });
+  });
+  return csv;
+}
+
+// The JSON download of the current results (does not download hidden fields)
+function buildJson() {
+  const data = hiddenFields.size === 0 ? allData : allData.map(r => !r.matches ? r : {
+    ...r,
+    matches: r.matches.map(m => Object.fromEntries(Object.entries(m).filter(([k]) => !hiddenFields.has(k)))),
+  });
+  return JSON.stringify(data, null, 2);
+}
+
+// B, KB or MB
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function closeDownloadPanel() {
+  document.getElementById("download-panel").classList.remove("open");
+  document.getElementById("download-toggle").setAttribute("aria-expanded", "false");
 }
 
 function closeFilterPanel() {

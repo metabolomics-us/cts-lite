@@ -168,6 +168,7 @@ button:disabled {
 
 #download-buttons {
   display: none;
+  position: relative;
   gap: 0.5rem;
   min-height: 44px;
   margin-bottom: 5px;
@@ -988,6 +989,24 @@ button:disabled {
 
 .download-btn:hover {
   background-color: #235288;
+}
+
+.download-panel {
+  left: auto;
+  right: 0;
+  width: max-content;
+}
+
+/* File sizes in muted grey. Equal width digits keep the sizes in a tidy right aligned column */
+.download-panel .filter-count {
+  color: #777777;
+  opacity: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The download icon darkened */
+.download-option-icon {
+  filter: brightness(0) opacity(0.6);
 }
 
 *:focus {
