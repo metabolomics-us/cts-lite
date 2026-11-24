@@ -919,7 +919,7 @@ button:disabled {
 
 /* Empty HMDB or CAS ID field */
 .monospace.id-none {
-  color: #5f6870;
+  color: #4E565D;
   background-color: transparent;
 }
 
