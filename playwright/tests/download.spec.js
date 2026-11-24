@@ -226,3 +226,127 @@ for (const { label, apiParams, uiSetup } of SETTINGS_CASES) {
     expect(csv).toBe(apiCsv);
   });
 }
+
+// Every compound field checkbox in the field menu, as JSON keys
+const ALL_FIELDS = [
+  'identifier', 'inchikey', 'inchi', 'smiles', 'compound_name', 'molecular_formula', 'exact_mass',
+  'literature_count', 'patent_count', 'annotation_type_count', 'cas_ids', 'hmdb_ids',
+];
+
+// The CSV column of a compound field, only the CID is renamed
+const csvColumn = (key) => (key === 'identifier' ? 'pubchem_cid' : key);
+
+// Minimal CSV parser for quoted cells (InChI and SMILES can carry commas)
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  return rows;
+}
+
+// Downloads the CSV or JSON option and returns the file's text
+async function downloadText(page, format) {
+  await openDownloads(page);
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator(`#download-${format}`).click(),
+  ]);
+  return fs.readFileSync(await download.path(), 'utf-8');
+}
+
+// Unchecks the given fields in the field menu
+async function hideFields(page, keys) {
+  await page.locator('#fields-toggle').click();
+  for (const key of keys) {
+    await page.locator(`#fields-panel input[data-field="${key}"]`).uncheck();
+  }
+}
+
+// Each case hides fields through the menu, the download must equal the API response minus those fields
+const FIELD_CASES = [
+  {
+    label: 'a mix of fields',
+    hidden: ['identifier', 'inchi', 'exact_mass', 'cas_ids'],
+    setup: (page) => hideFields(page, ['identifier', 'inchi', 'exact_mass', 'cas_ids']),
+  },
+  {
+    label: 'only one field',
+    hidden: ALL_FIELDS.filter((k) => k !== 'inchikey'),
+    setup: (page) => hideFields(page, ALL_FIELDS.filter((k) => k !== 'inchikey')),
+  },
+  {
+    label: '0 fields',
+    hidden: ALL_FIELDS,
+    setup: async (page) => {
+      await page.locator('#fields-toggle').click();
+      await page.locator('#fields-select-toggle').click(); // Deselect all
+    },
+  },
+  {
+    label: 'select all after hiding',
+    hidden: [],
+    setup: async (page) => {
+      await hideFields(page, ['smiles', 'hmdb_ids']);
+      await page.locator('#fields-select-toggle').click(); // Select all
+    },
+  },
+];
+
+for (const { label, hidden, setup } of FIELD_CASES) {
+  test(`CSV download keeps only the selected fields (${label})`, async ({ page }) => {
+    const apiResponse = await page.request.post('/match?format=csv', {
+      data: { queries: QUERY_WITH_NOMATCH },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const apiRows = parseCsv(await apiResponse.text());
+    const hiddenColumns = new Set(hidden.map(csvColumn));
+    const keep = apiRows[0].map((col, i) => (hiddenColumns.has(col) ? -1 : i)).filter((i) => i >= 0);
+    const expected = apiRows.map((row) => keep.map((i) => row[i]));
+
+    await submitAndWaitForResults(page, QUERY_WITH_NOMATCH);
+    await setup(page);
+    const rows = parseCsv(await downloadText(page, 'csv'));
+
+    expect(rows).toEqual(expected);
+  });
+
+  test(`JSON download keeps only the selected fields (${label})`, async ({ page }) => {
+    const apiResponse = await page.request.post('/match', {
+      data: { queries: QUERY_WITH_NOMATCH },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const expected = (await apiResponse.json()).map((r) => (!r.matches ? r : {
+      ...r,
+      matches: r.matches.map((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !hidden.includes(k)))),
+    }));
+
+    await submitAndWaitForResults(page, QUERY_WITH_NOMATCH);
+    await setup(page);
+    const data = JSON.parse(await downloadText(page, 'json'));
+
+    expect(data).toEqual(expected);
+  });
+}
+
+// With every field hidden the CSV is just the result columns, one row per query
+test('CSV download with 0 fields has only result columns', async ({ page }) => {
+  await submitAndWaitForResults(page, QUERY_WITH_NOMATCH);
+  await page.locator('#fields-toggle').click();
+  await page.locator('#fields-select-toggle').click();
+  const lines = (await downloadText(page, 'csv')).trim().split('\n');
+
+  expect(lines[0]).toBe('query,query_type,converted_query,found_match,match_level,error_message');
+  expect(lines).toHaveLength(4); // header + 3 queries
+});

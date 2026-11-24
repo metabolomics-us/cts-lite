@@ -435,6 +435,60 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
   expect(clientJson).toEqual(apiJson);
 });
 
+// Hides fields through the field menu, then downloads CSV and JSON
+// The menu takes data-field JSON keys, Deselect all is used when every field goes
+async function downloadWithHiddenFields(page, keys) {
+  await mockMatch(page, nd(
+    { type: 'matches', results: [result([match()])], unique: 1, queue: 1 },
+    { type: 'classyfire', inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', info: CF, queue: 1 },
+    { type: 'done' },
+  ));
+  await enableClassyFireAndSubmit(page);
+  await expect(page.locator('#download-buttons')).not.toHaveClass(/loading/); // wait for done
+
+  await page.locator('#fields-toggle').click();
+  if (keys === 'all') await page.locator('#fields-select-toggle').click();
+  else for (const key of keys) await page.locator(`#fields-panel input[data-field="${key}"]`).uncheck();
+
+  const read = async (format) => {
+    await page.locator('#download-toggle').click();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator(`#download-${format}`).click(),
+    ]);
+    return fs.readFileSync(await download.path(), 'utf-8');
+  };
+  return { csv: await read('csv'), json: JSON.parse(await read('json')) };
+}
+
+const RESULT_HEADER = 'query,query_type,converted_query,found_match,match_level,error_message';
+const CF_HEADER = 'classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error';
+const RESULT_CELLS = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N,inchikey,,true,exact,';
+const CF_CELLS = 'Organic compounds,Organoheterocyclic compounds,Imidazopyrimidines,Purines and purine derivatives,Xanthines,A xanthine alkaloid,';
+
+// With every compound field hidden the downloads still carry the classification
+test('downloads with 0 fields keep the ClassyFire columns', async ({ page }) => {
+  const { csv, json } = await downloadWithHiddenFields(page, 'all');
+
+  expect(csv).toBe(`${RESULT_HEADER},${CF_HEADER}\n${RESULT_CELLS},${CF_CELLS}\n`);
+  expect(json).toEqual([result([{ classyfire: CF }])]);
+});
+
+// A mix of hidden fields drops only those, ClassyFire stays after the kept compound fields
+test('downloads with a mix of fields keep the ClassyFire columns', async ({ page }) => {
+  const { csv, json } = await downloadWithHiddenFields(page, [
+    'identifier', 'inchi', 'smiles', 'literature_count', 'patent_count', 'annotation_type_count', 'cas_ids', 'hmdb_ids',
+  ]);
+
+  expect(csv).toBe(
+    `${RESULT_HEADER},inchikey,compound_name,molecular_formula,exact_mass,${CF_HEADER}\n` +
+    `${RESULT_CELLS},RYYVLZVUVIJVGH-UHFFFAOYSA-N,Caffeine,C8H10N4O2,194.08,${CF_CELLS}\n`
+  );
+  expect(json).toEqual([result([{
+    inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', compound_name: 'Caffeine', molecular_formula: 'C8H10N4O2', exact_mass: 194.08, classyfire: CF,
+  }])]);
+});
+
 // The ClassyFire toggle label, the clickable surface of the row
 const cfLabel = 'label[aria-label="ClassyFire chemical classes"]';
 
