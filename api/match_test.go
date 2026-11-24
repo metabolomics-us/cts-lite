@@ -248,6 +248,165 @@ func TestRdkitConversionParamIgnored(t *testing.T) {
 	}
 }
 
+func TestMatchCAS(t *testing.T) {
+	var hit model.SingleResult
+	matchCAS(mockIndex, "7732-18-5", &hit, false)
+	// Other tests reload the CSV into the shared memory DB, so only the first match is checked
+	if !hit.MatchFound || hit.MatchLevel != "Exact CAS" || len(hit.Matches) == 0 {
+		t.Fatalf("expected an Exact CAS match, got %+v", hit)
+	}
+	if hit.Matches[0].Identifier != "1" {
+		t.Errorf("expected water (CID 1), got CID %s", hit.Matches[0].Identifier)
+	}
+
+	// 64-17-5 is a valid CAS ID that the test data does not hold
+	var miss model.SingleResult
+	matchCAS(mockIndex, "64-17-5", &miss, false)
+	if miss.MatchFound || miss.ErrMsg != "No compound found" {
+		t.Errorf("expected a miss, got %+v", miss)
+	}
+}
+
+func TestMatchHMDB(t *testing.T) {
+	cases := []struct {
+		query, wantID, wantConverted string
+	}{
+		{"HMDB0002111", "1", ""},
+		// The CSV stores methane as HMDB02714, both sides pad to 7 digits
+		{"hmdb02714", "2", "HMDB0002714"},
+		{"HMDB:2714", "2", "HMDB0002714"},
+	}
+	for _, tc := range cases {
+		var res model.SingleResult
+		matchHMDB(mockIndex, tc.query, &res, false)
+		if !res.MatchFound || res.MatchLevel != "Exact HMDB" || len(res.Matches) == 0 {
+			t.Fatalf("%s: expected an Exact HMDB match, got %+v", tc.query, res)
+		}
+		if res.Matches[0].Identifier != tc.wantID {
+			t.Errorf("%s: expected CID %s, got %s", tc.query, tc.wantID, res.Matches[0].Identifier)
+		}
+		if res.ConvertedQuery != tc.wantConverted {
+			t.Errorf("%s: expected converted_query %q, got %q", tc.query, tc.wantConverted, res.ConvertedQuery)
+		}
+	}
+
+	// A miss still shows the padded ID it looked up
+	var miss model.SingleResult
+	matchHMDB(mockIndex, "HMDB1", &miss, false)
+	if miss.MatchFound || miss.ErrMsg != "No compound found" || miss.ConvertedQuery != "HMDB0000001" {
+		t.Errorf("expected a miss read as HMDB0000001, got %+v", miss)
+	}
+}
+
+// Lookups that have no query shape reaching them through Match on a closed DB
+func TestMatchDirectErrorPaths(t *testing.T) {
+	closed, err := model.LoadCSVToMemory("../dataset/test_datasets/unittest_data.csv")
+	if err != nil {
+		t.Fatalf("failed to load index: %v", err)
+	}
+	closed.Close()
+
+	for name, run := range map[string]func(*model.SingleResult){
+		"cas":               func(r *model.SingleResult) { matchCAS(closed, "7732-18-5", r, false) },
+		"hmdb":              func(r *model.SingleResult) { matchHMDB(closed, "HMDB0002111", r, false) },
+		"smiles_or_formula": func(r *model.SingleResult) { matchSmilesOrFormula(closed, "CO", r, true, false) },
+	} {
+		var res model.SingleResult
+		run(&res)
+		if res.MatchFound || res.ErrMsg != "Internal server error" {
+			t.Errorf("%s: expected an internal error, got %+v", name, res)
+		}
+	}
+
+	// A name error leaves the result as it was, so the earlier error survives
+	res := model.SingleResult{ErrMsg: "No compound found"}
+	matchName(closed, "water", &res, false)
+	if res.MatchFound || res.ErrMsg != "No compound found" {
+		t.Errorf("expected the result untouched, got %+v", res)
+	}
+}
+
+func TestMatchSmilesMisses(t *testing.T) {
+	t.Run("too long for RDKit", func(t *testing.T) {
+		mockSmilesConverter(t, func(string) (string, error) {
+			t.Fatal("a SMILES over 4096 characters must not reach RDKit")
+			return "", nil
+		})
+		var res model.SingleResult
+		matchSmiles(mockIndex, strings.Repeat("C", 4097), &res, true, false)
+		if res.MatchFound || res.ErrMsg != "No compound found" {
+			t.Errorf("expected a miss, got %+v", res)
+		}
+	})
+
+	t.Run("RDKit cannot read it", func(t *testing.T) {
+		mockSmilesConverter(t, func(string) (string, error) { return "", io.EOF })
+		var res model.SingleResult
+		matchSmiles(mockIndex, "C1CC", &res, true, false)
+		if res.MatchFound || res.ErrMsg != "RDKit conversion failed" || res.DerivedInChIKey != "" {
+			t.Errorf("expected an RDKit failure, got %+v", res)
+		}
+	})
+
+	t.Run("first block disabled", func(t *testing.T) {
+		var res model.SingleResult
+		matchInchiKey(mockIndex, "MYFAKEINCHIKEY-NOTNOTNOTN-O", &res, false, false)
+		if res.MatchFound || res.ErrMsg != "No compound found, first block matches disabled" {
+			t.Errorf("expected first block to be skipped, got %+v", res)
+		}
+	})
+}
+
+func TestSmilesOrFormulaFallsBackToFormula(t *testing.T) {
+	mockSmilesConverter(t, func(string) (string, error) { return "", io.EOF })
+
+	// The SMILES side fails, so the formula lookup decides and its error replaces RDKit's
+	var hit model.SingleResult
+	matchSmilesOrFormula(mockIndex, "CH4", &hit, true, false)
+	if !hit.MatchFound || hit.QueryType != "formula" || hit.MatchLevel != "Exact Formula" || hit.ErrMsg != "" {
+		t.Fatalf("expected a formula match, got %+v", hit)
+	}
+	if hit.Matches[0].Identifier != "2" {
+		t.Errorf("expected methane (CID 2), got CID %s", hit.Matches[0].Identifier)
+	}
+
+	var miss model.SingleResult
+	matchSmilesOrFormula(mockIndex, "C9", &miss, true, false)
+	if miss.MatchFound || miss.ErrMsg != "No compound found" {
+		t.Errorf("expected a formula miss, got %+v", miss)
+	}
+}
+
+func TestMatchNameVariant(t *testing.T) {
+	// "isomer a" is stripped by synonyms.Variants, so the lookup lands on "methane"
+	var res model.SingleResult
+	matchName(mockIndex, "Methane isomer A", &res, false)
+	if !res.MatchFound || res.MatchLevel != "Name Variant" || res.ConvertedQuery != "methane" || res.QueryType != "name" {
+		t.Fatalf("expected a name variant match, got %+v", res)
+	}
+	if res.Matches[0].Identifier != "2" {
+		t.Errorf("expected methane (CID 2), got CID %s", res.Matches[0].Identifier)
+	}
+}
+
+func TestMatchForcedRunsOnlyThatLookup(t *testing.T) {
+	cases := []struct {
+		forced, detected, query, wantLevel string
+	}{
+		{"pubchem_id", "pubchem_id", "1", "Exact PubChem ID"},
+		{"inchikey", "inchikey", "MYFAKEINCHIKEY-ISRIGHTHER-E", "Exact InChIKey"},
+		{"inchi", "inchi", "InChI=1S/H2O/h1H2", "Exact InChI"},
+		{"hmdb", "hmdb", "HMDB0002111", "Exact HMDB"},
+	}
+	for _, tc := range cases {
+		res := model.SingleResult{QueryType: tc.detected}
+		matchForced(mockIndex, tc.query, &res, tc.forced, true, false)
+		if !res.MatchFound || res.MatchLevel != tc.wantLevel || res.QueryType != tc.forced {
+			t.Errorf("%s: expected %s, got %+v", tc.forced, tc.wantLevel, res)
+		}
+	}
+}
+
 func TestSmilesOrFormulaKeepsConvertedSmilesType(t *testing.T) {
 	// "CO" reads as both SMILES and formula, so it classifies as
 	// smiles_or_formula. It misses the local SMILES lookup and is matched
