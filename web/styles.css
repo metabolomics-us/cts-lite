@@ -198,7 +198,7 @@ button:disabled {
 
 /* Filter and field menu buttons have an 'active' state when any settings from them are selected */
 .menu-icon {
-  color: #777777;
+  color: #444444;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -214,7 +214,7 @@ button:disabled {
 /* Faint blue background when enabled */
 #filter-toggle.filtered,
 #fields-toggle.filtered {
-  background-color: rgba(26, 62, 104, 0.12);
+  background-color: rgba(26, 62, 104, 0.2);
 }
 
 #filter-toggle.filtered::after {
@@ -1071,8 +1071,9 @@ button:disabled {
   color: #2f3438;
 }
 
+/* Light grey fill so the icon buttons read as clickable before hover */
 .cog-btn {
-  background: transparent;
+  background: #E6E6E6;
   border: none;
   box-shadow: none;
   padding: 0.5rem;
@@ -1090,7 +1091,8 @@ button:disabled {
 
 .cog-btn:hover,
 .cog-btn:focus {
-  background-color: #e0e0e0;
+  background-color: #D6D6D6;
+  border-color: #b5b5b5;
   outline-color: #a0b8d3;
 }
 
