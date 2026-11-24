@@ -130,8 +130,7 @@ test('downloads are disabled while classyfire is working', async ({ page }) => {
 
   await expect(page.locator('#download-buttons')).toBeVisible();
   await expect(page.locator('#download-buttons')).toHaveClass(/loading/);
-  await expect(page.locator('#download-csv')).toBeDisabled();
-  await expect(page.locator('#download-json')).toBeDisabled();
+  await expect(page.locator('#download-toggle')).toBeDisabled();
 });
 
 // Once classification finishes, downloads become available again
@@ -145,8 +144,7 @@ test('downloads are re-enabled after classyfire finishes', async ({ page }) => {
   await enableClassyFireAndSubmit(page);
 
   await expect(page.locator('#download-buttons')).not.toHaveClass(/loading/);
-  await expect(page.locator('#download-csv')).toBeEnabled();
-  await expect(page.locator('#download-json')).toBeEnabled();
+  await expect(page.locator('#download-toggle')).toBeEnabled();
 });
 
 // The progress bar denominator is the unique-InChIKey count, not the match-row count
@@ -416,7 +414,8 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
     return r.text();
   });
 
-  // Client CSV download === API CSV
+  // Client CSV download === API CSV. Each download closes the menu, so it is opened per option
+  await page.locator('#download-toggle').click();
   const [csvDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-csv').click(),
@@ -425,6 +424,7 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
   expect(clientCsv).toBe(apiCsvFetched);
 
   // Client JSON download === API JSON (compare parsed, key order independent)
+  await page.locator('#download-toggle').click();
   const [jsonDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-json').click(),

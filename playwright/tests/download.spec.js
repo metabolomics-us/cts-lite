@@ -8,6 +8,12 @@ async function submitAndWaitForResults(page, query) {
   await expect(page.locator('.result-item').first()).toBeVisible();
 }
 
+// The CSV and JSON options live in the download menu, open it unless it already is
+async function openDownloads(page) {
+  const toggle = page.locator('#download-toggle');
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+}
+
 // Covers every query type the backend can parse against the test dataset:
 //   inchikey, inchi, smiles, formula, pubchem_id, smiles_or_formula
 const QUERY_ALL_TYPES = [
@@ -73,6 +79,7 @@ test('download buttons appear after successful query', async ({ page }) => {
 test('CSV download contains correct headers', async ({ page }) => {
   await submitAndWaitForResults(page, 'MYFAKEINCHIKEY-ISRIGHTHER-E');
 
+  await openDownloads(page);
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-csv').click(),
@@ -90,6 +97,7 @@ test('CSV download contains correct headers', async ({ page }) => {
 test('CSV download contains correct data for matched compound', async ({ page }) => {
   await submitAndWaitForResults(page, 'MYFAKEINCHIKEY-ISRIGHTHER-E');
 
+  await openDownloads(page);
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-csv').click(),
@@ -111,6 +119,7 @@ test('CSV download has empty compound fields for no-match', async ({ page }) => 
   await submitAndWaitForResults(page, 'ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z');
   await expect(page.locator('.match-status')).toHaveText('✗ No match');
 
+  await openDownloads(page);
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-csv').click(),
@@ -146,6 +155,7 @@ test('CSV download matches API response including no-match rows', async ({ page 
 
   await submitAndWaitForResults(page, QUERY_WITH_NOMATCH);
 
+  await openDownloads(page);
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-csv').click(),
@@ -158,6 +168,7 @@ test('CSV download matches API response including no-match rows', async ({ page 
 test('JSON download matches API response structure', async ({ page }) => {
   await submitAndWaitForResults(page, 'MYFAKEINCHIKEY-ISRIGHTHER-E MYFAKEINCHIKEY-ANOTHERONE-E');
 
+  await openDownloads(page);
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-json').click(),
@@ -185,6 +196,7 @@ for (const { label, apiParams, uiSetup } of SETTINGS_CASES) {
 
     await submitWithSettings(page, QUERY_ALL_TYPES, uiSetup);
 
+    await openDownloads(page);
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       page.locator('#download-json').click(),
@@ -204,6 +216,7 @@ for (const { label, apiParams, uiSetup } of SETTINGS_CASES) {
 
     await submitWithSettings(page, QUERY_ALL_TYPES, uiSetup);
 
+    await openDownloads(page);
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       page.locator('#download-csv').click(),
