@@ -124,7 +124,7 @@ test('applied settings label reflects all toggles disabled at once', async ({ pa
   );
 });
 
-// Every label segment renders its non-default text when all toggles are flipped.
+// Every label segment renders its non-default text when all toggles are flipped
 // The query matches nothing, so the server never calls the live ClassyFire service
 test('applied settings label shows full permutation with ClassyFire enabled', async ({ page }) => {
   await page.locator('#settings-toggle').click();

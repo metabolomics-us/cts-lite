@@ -14,15 +14,15 @@ async function openDownloads(page) {
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
 }
 
-// Covers every query type the backend can parse against the test dataset:
-//   inchikey, inchi, smiles, formula, pubchem_id, smiles_or_formula
+// Covers the structure and ID query types that match the test dataset:
+//   inchikey, inchi, smiles, formula, pubchem_id
 const QUERY_ALL_TYPES = [
   'MYFAKEINCHIKEY-ISRIGHTHER-E',   // inchikey      → Water
   'InChI=1S/CH4/h1H4',             // inchi         → Methane
   'C=O',                            // smiles        → Formaldehyde
   'H2O',                            // formula       → Water
   '3',                              // pubchem_id    → Formaldehyde
-  'CH4',                            // smiles_or_formula → Methane
+  'CH4',                            // formula (hydrogen rule) → Methane
 ].join(' ');
 
 const SETTINGS_CASES = [
@@ -133,13 +133,13 @@ test('CSV download has empty compound fields for no-match', async ({ page }) => 
   const dataCols = lines[1].split(',').length;
   expect(dataCols).toBe(headerCols);
   expect(lines[1]).toContain('false');
-  // pubchem_cid and compound fields are empty — row ends with many commas
+  // pubchem_cid and compound fields are empty, so the row ends with many commas
   expect(lines[1]).toMatch(/false,[^,]*,[^,]*,,,,,,,,,,,,$/);
 });
 
-// Mix of matches and no-matches — exercises the no-match CSV branch in script.js
-// against the server's CSV output. The bug this catches: the no-match branch was
-// missing the converted_query column, producing 14 fields vs the 15-field header.
+// Mix of matches and no-matches, compares the client CSV's empty-compound rows against
+// the server's CSV output. Guards against a no-match row dropping a column (it once
+// missed converted_query and came out one field short of the header)
 const QUERY_WITH_NOMATCH = [
   'MYFAKEINCHIKEY-ISRIGHTHER-E',  // inchikey → match
   'ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z',  // inchikey → no match
