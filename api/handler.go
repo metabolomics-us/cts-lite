@@ -363,6 +363,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			result.MatchFound = false
 			result.ErrMsg = malformedQueryErrors[result.QueryType]
 
+		// The name lookup itself runs later, if it doesn't find anything it keeps these properties
+		case "name":
+			result.MatchFound = false
+			result.ErrMsg = "No compound found"
+
 		case "unidentified":
 			result.MatchFound = false
 			result.ErrMsg = "Invalid query type, could not identify, see documentation"
@@ -405,7 +410,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Attempt a live PubChem lookup for anything that missed locally (except unidentified queries of course)
+	// Attempt a live PubChem lookup for anything that missed locally (except names and unidentified)
 	// onSettled hears about each result as soon as its lookup is over, nil when not streaming
 	fallback := func(onSettled func(index int)) {
 		// A PubChem hit gets its CAS and HMDB IDs before anything sees the result

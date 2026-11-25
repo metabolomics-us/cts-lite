@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"ctslite/synonyms"
 )
@@ -90,10 +91,18 @@ func classifyUnreadable(q string) string {
 	}
 	for i := 0; i < len(q); i++ {
 		if !isSmilesChar[q[i]] {
-			return "unidentified"
+			return nameOrUnidentified(q)
 		}
 	}
 	return "smiles"
+}
+
+// Checks a string for letters to classify as name or unidentified query type
+func nameOrUnidentified(q string) string {
+	if strings.ContainsFunc(q, unicode.IsLetter) {
+		return "name"
+	}
+	return "unidentified"
 }
 
 func packElementSymbol(symbol string) int {
@@ -251,7 +260,7 @@ func parseQueryType(q string) string {
 
 	// A check for names not to be misclassified as SMILES (Like "PC 16:0_18:1")
 	case strings.ContainsAny(q, " \t"):
-		return "unidentified"
+		return nameOrUnidentified(q)
 
 	case synonyms.IsCASShaped(q) && synonyms.ValidCAS(q):
 		return "cas"
@@ -272,7 +281,7 @@ func parseQueryType(q string) string {
 		if queryType, ok := classifyChargeSuffix(q); ok {
 			return queryType
 		}
-		// Formula or SMILES by element symbols, else SMILES when every character can be one, else unidentified
+		// Formula or SMILES by element symbols, else SMILES when every character can be one, else name or unidentified
 		return classifyElementString(q)
 	}
 }

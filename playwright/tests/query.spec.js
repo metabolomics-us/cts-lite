@@ -142,7 +142,7 @@ test('malformed InChIKey shows error message', async ({ page }) => {
 });
 
 test('unidentified query type shows error message', async ({ page }) => {
-  await page.fill('#query-input', 'junk');
+  await page.fill('#query-input', '???');
   await page.click('button[type="submit"]');
 
   await expect(page.locator('.error-message')).toContainText('could not identify');

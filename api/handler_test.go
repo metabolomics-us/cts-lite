@@ -240,8 +240,13 @@ func TestMatchErrors(t *testing.T) {
 		},
 		{
 			name:       "unidentified query",
-			query:      "12345a",
+			query:      "???",
 			wantErrMsg: "Invalid query type, could not identify, see documentation",
+		},
+		{
+			name:       "name miss",
+			query:      "methanee",
+			wantErrMsg: "No compound found",
 		},
 	}
 
@@ -360,7 +365,7 @@ func TestSplitQueriesMixedLines(t *testing.T) {
 		// Over maxNameWords, so every word is its own query
 		{"HMDB 00143 HMDB 00213 hello methane HMDB 5 HMDB -1 HMDB 0", []q{
 			{"HMDB", "bad_hmdb"}, {"00143", "bad_pubchem_id"}, {"HMDB", "bad_hmdb"}, {"00213", "bad_pubchem_id"},
-			{"hello", "unidentified"}, {"methane", "unidentified"}, {"HMDB", "bad_hmdb"}, {"5", "pubchem_id"},
+			{"hello", "name"}, {"methane", "name"}, {"HMDB", "bad_hmdb"}, {"5", "pubchem_id"},
 			{"HMDB", "bad_hmdb"}, {"-1", "smiles"}, {"HMDB", "bad_hmdb"}, {"0", "bad_pubchem_id"},
 		}},
 		// A spaced HMDB ID is never joined, the bare prefix is a strong type so the line splits
@@ -371,13 +376,13 @@ func TestSplitQueriesMixedLines(t *testing.T) {
 		{"HMDB 0", []q{{"HMDB", "bad_hmdb"}, {"0", "bad_pubchem_id"}}},
 		{"HMDB00143 HMDB00213", []q{{"HMDB00143", "hmdb"}, {"HMDB00213", "hmdb"}}},
 		// One strong identifier splits a line that would otherwise be a name
-		{"methane HMDB00143", []q{{"methane", "unidentified"}, {"HMDB00143", "hmdb"}}},
+		{"methane HMDB00143", []q{{"methane", "name"}, {"HMDB00143", "hmdb"}}},
 		// Words that are not all identifiers stay one name query
-		{"hello methane", []q{{"hello methane", "unidentified"}}},
-		{"methane 5", []q{{"methane 5", "unidentified"}}},
-		{"water 0", []q{{"water 0", "unidentified"}}},
-		{"hello -1", []q{{"hello -1", "unidentified"}}},
-		{"marsh gas", []q{{"marsh gas", "unidentified"}}},
+		{"hello methane", []q{{"hello methane", "name"}}},
+		{"methane 5", []q{{"methane 5", "name"}}},
+		{"water 0", []q{{"water 0", "name"}}},
+		{"hello -1", []q{{"hello -1", "name"}}},
+		{"marsh gas", []q{{"marsh gas", "name"}}},
 	}
 
 	for _, tc := range cases {

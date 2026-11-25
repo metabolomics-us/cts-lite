@@ -119,6 +119,9 @@
                     <li>
                         <strong>SMILES/Mol. Formula</strong> some queries, like <code class="inline-code">C</code>, are ambiguous and can be either SMILES or Molecular Formulas. In these cases, the query first tries to match against SMILES, and then Molecular Formula.
                     </li>
+                    <li>
+                        <strong>Compound Names</strong> are queries with letters that fit none of the above, like <code class="inline-code">lactic acid</code>. Structure queries that miss also try a name lookup, and are labeled Compound Name when it matches
+                    </li>
                 </ul>
 
                 <h4 class="doc-subheading" id="malformed-queries">Malformed Queries</h4>
@@ -137,7 +140,7 @@
                         <strong>PubChem CIDs</strong> that cannot be valid. This includes negative numbers, zero itself, numbers with leading zeros, and numbers above 500 million
                     </li>
                     <li>
-                        <strong>Unidentified</strong> are queries that didn't fit any of the above criteria
+                        <strong>Unidentified</strong> are queries with no letters that didn't fit any of the above criteria, like <code class="inline-code">???</code>
                     </li>
                 </ul>
             </section>
@@ -293,7 +296,7 @@
                 </div>
 
                 <h4 class="doc-subheading" id="response-formats">Response Formats</h4>
-                <p>Example request with default parameters (2 queries): <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   will_fail</code></p>
+                <p>Example request with default parameters (2 queries): <code class="inline-code">XMBWDFGMSWQBCA-UHDFADDYSA-N   fake_compound</code></p>
                 <p style="font-weight: bold; font-size: 1rem; display: block; margin-bottom: -10px">JSON</p>
                 <div class="code-block">
                     <pre><code>[
@@ -321,12 +324,12 @@
     "error_message": ""
   },
   {
-    "query": "will_fail",
-    "query_type": "unidentified",
+    "query": "fake_compound",
+    "query_type": "name",
     "found_match": false,
     "match_level": "",
     "matches": null,
-    "error_message": "Invalid query type, could not identify, see documentation"
+    "error_message": "No compound found"
   }
 ]</code></pre>
                 </div>
@@ -338,7 +341,7 @@
                 <div class="code-block">
                     <pre><code>query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,cas_ids,hmdb_ids
 XMBWDFGMSWQBCA-UHDFADDYSA-N,inchikey,,true,First Block,,24841,XMBWDFGMSWQBCA-UHFFFAOYSA-N,InChI=1S/HI/h1H,I,Hydrogen iodide,HI,127.9123,4430,329042,16,10034-85-2,HMDB0059634
-will_fail,unidentified,,false,,"Invalid query type, could not identify, see documentation",,,,,,,,,,,,
+fake_compound,name,,false,,No compound found,,,,,,,,,,,,
                     </code></pre>
                 </div>
                 <p style="color: #4B535D; margin-left: 1rem">

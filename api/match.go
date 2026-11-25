@@ -199,7 +199,7 @@ func matchHMDB(index *model.PubChemIndex, query string, result *model.SingleResu
 
 // nameFallbackTypes are the query types that try a name lookup once their own lookup missed
 var nameFallbackTypes = map[string]bool{
-	"smiles": true, "formula": true, "smiles_or_formula": true, "unidentified": true,
+	"smiles": true, "formula": true, "smiles_or_formula": true, "name": true,
 }
 
 // matchName looks the query up as a compound name.
