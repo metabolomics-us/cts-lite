@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -345,8 +346,8 @@ func TestSplitQueryLimitExceeded(t *testing.T) {
 func TestSplitQueriesStopsPastLimit(t *testing.T) {
 	// Stops after the second line takes it past 3, the other 8 lines are never split
 	raw := strings.TrimRight(strings.Repeat("HMDB1 HMDB2\n", 10), "\n")
-	if got := len(splitQueries(mockIndex, raw, 3, "")); got != 4 {
-		t.Errorf("expected splitting to stop at 4 queries, got %d", got)
+	if queries, _ := splitQueries(mockIndex, raw, 3, ""); len(queries) != 4 {
+		t.Errorf("expected splitting to stop at 4 queries, got %d", len(queries))
 	}
 }
 
@@ -376,11 +377,12 @@ func TestSplitQueriesMixedLines(t *testing.T) {
 		{"methane 5", []q{{"methane 5", "unidentified"}}},
 		{"water 0", []q{{"water 0", "unidentified"}}},
 		{"hello -1", []q{{"hello -1", "unidentified"}}},
+		{"marsh gas", []q{{"marsh gas", "unidentified"}}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {
-			queries := splitQueries(mockIndex, tc.line, maxQueries, "")
+			queries, _ := splitQueries(mockIndex, tc.line, maxQueries, "")
 			if len(queries) != len(tc.want) {
 				t.Fatalf("got %d queries %q, want %d", len(queries), queries, len(tc.want))
 			}
@@ -390,6 +392,47 @@ func TestSplitQueriesMixedLines(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSplitQueriesQuotes(t *testing.T) {
+	cases := map[string][]string{
+		`"tween 80" 2244 HMDB0000001`: {"tween 80", "2244", "HMDB0000001"},
+		`"  hello   world  " water`:   {"hello world", "water"},
+		`" hello world " water`:       {"hello world", "water"},
+		`"hello world`:                {"hello world"},
+		`hello world"`:                {"hello world"},
+		`"" water`:                    {"water"},
+		`abc"def ghi"`:                {`abc"def ghi`},
+		`"tween 80"s`:                 {`tween 80"s`},
+		`"marsh gas" water`:           {"marsh gas", "water"},
+	}
+	for line, want := range cases {
+		if got, _ := splitQueries(mockIndex, line, maxQueries, ""); !slices.Equal(got, want) {
+			t.Errorf("%s: got %q, want %q", line, got, want)
+		}
+	}
+
+	// Quotes apply under a forced type too
+	if got, _ := splitQueries(mockIndex, `"tween 80" 2244`, maxQueries, "pubchem_id"); !slices.Equal(got, []string{"tween 80", "2244"}) {
+		t.Errorf("forced pubchem_id: got %q", got)
+	}
+	if got, _ := splitQueries(mockIndex, `"water" "marsh gas"`, maxQueries, "name"); !slices.Equal(got, []string{"water", "marsh gas"}) {
+		t.Errorf("forced name: got %q", got)
+	}
+}
+
+func TestMultiEntryNote(t *testing.T) {
+	// A whole line holding an identifier gets the note on a miss, a plain name miss does not
+	results := parseMatchResults(t, doMatchRequest(t, `{"queries":"2244 CCO caffeine\nhello methane"}`, nil, false))
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Query != "2244 CCO caffeine" || results[0].ErrMsg != multiEntryNote {
+		t.Errorf("got %q %q, want the whole line with the note", results[0].Query, results[0].ErrMsg)
+	}
+	if results[1].ErrMsg == multiEntryNote {
+		t.Errorf("plain name miss got the note")
 	}
 }
 
@@ -424,6 +467,12 @@ func TestForcedQueryType(t *testing.T) {
 	check(forcedResults("smiles", `O 1`), []row{
 		{"smiles", ""},
 		{"smiles", "Not a valid SMILES, see documentation (forced query type: smiles)"},
+	})
+
+	// A quoted span stays one query and is rejected as a whole
+	check(forcedResults("pubchem_id", `\"tween 80\" 1`), []row{
+		{"pubchem_id", "Not a valid PubChem CID, see documentation (forced query type: pubchem_id)"},
+		{"pubchem_id", ""},
 	})
 
 	// A broken form of the forced type keeps its detected type

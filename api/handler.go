@@ -68,51 +68,102 @@ func isIdentifierToken(t string) bool {
 		(queryType == "smiles" && isPlausibleSmiles(t))
 }
 
+// Error msg for a whole line that missed as a name but held identifiers
+const multiEntryNote = "No compound found. If this line holds several entries, put each on its own line"
+
 // maxNameWords is the most words a line can have and still be read as one name.
 // 99.92% of PubChem names have 10 words or fewer
 const maxNameWords = 10
 
-// splitQueries makes one query per line, except a line that is a list of identifiers
-// separated by spaces. A line that is a known name stays whole even when its words read as identifiers.
-// A forced query type skips the guessing: a name is one per line, anything else splits on all whitespace
-func splitQueries(index *model.PubChemIndex, raw string, limit int, forced string) []string {
-	var queries []string
+// tokenizeLine splits a line on whitespace, keeping each quoted span as one token.
+// A quote opens only at the start of a word and closes only at the end of one, so a quote
+// inside a word stays as written. An unmatched quote is dropped and its words read as unquoted.
+// quoted reports whether the line had a non-empty quoted span. Mirrored by tokenizeLine in script.js
+func tokenizeLine(line string) (tokens []string, quoted bool) {
+	words := strings.Fields(line)
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		if strings.HasPrefix(w, `"`) {
+			// The closer is the first word ending in a quote, this word only if the quote is not its opener
+			end := -1
+			for j := i; j < len(words); j++ {
+				if strings.HasSuffix(words[j], `"`) && (j > i || len(w) > 1) {
+					end = j
+					break
+				}
+			}
+			if end >= 0 {
+				span := slices.Clone(words[i : end+1])
+				span[0] = span[0][1:]
+				span[len(span)-1] = strings.TrimSuffix(span[len(span)-1], `"`)
+				// Bare quotes inside the span are dropped like anywhere else
+				span = slices.DeleteFunc(span, func(t string) bool { return strings.Trim(t, `"`) == "" })
+				if len(span) > 0 {
+					tokens = append(tokens, strings.Join(span, " "))
+					quoted = true
+				}
+				i = end
+				continue
+			}
+			w = w[1:] // unmatched opener
+		}
+		// A closer with nothing open is dropped
+		if w = strings.TrimSuffix(w, `"`); strings.Trim(w, `"`) != "" {
+			tokens = append(tokens, w)
+		}
+	}
+	return tokens, quoted
+}
+
+// splitQueries makes one query per line, except a line that is a list of identifiers separated by spaces.
+// Each quoted span is one query and every unquoted word beside it is its own, with no name guessing.
+// A forced query type skips the guessing: a name is one per line, anything else splits on all whitespace.
+// multiEntry holds the indexes of whole-line queries that carry identifiers, for multiEntryNote on a miss
+func splitQueries(index *model.PubChemIndex, raw string, limit int, forced string) (queries []string, multiEntry map[int]bool) {
+	multiEntry = map[int]bool{}
 	for line := range strings.SplitSeq(raw, "\n") {
 		if len(queries) > limit {
 			break // early check against >100k queries
 		}
-		// Bare quotes are dropped
-		tokens := slices.DeleteFunc(strings.Fields(line), func(t string) bool {
-			return strings.Trim(t, `"`) == ""
-		})
-		if forced == "name" {
-			if len(tokens) > 0 {
-				queries = append(queries, strings.Join(tokens, " "))
-			}
-			continue
-		}
 		// Same logic found in script.js for counting queries
-		if forced != "" || len(tokens) <= 1 || len(tokens) > maxNameWords {
+		tokens, quoted := tokenizeLine(line)
+		if quoted || len(tokens) <= 1 {
 			queries = append(queries, tokens...)
 			continue
 		}
 		whole := strings.Join(tokens, " ")
-		if compounds, err := index.QueryByName(whole, true); err == nil && len(compounds) > 0 {
+		if forced == "name" {
 			queries = append(queries, whole)
 			continue
 		}
-		anyStrong, allIdentifiers := false, true
+		if forced != "" || len(tokens) > maxNameWords {
+			queries = append(queries, tokens...)
+			continue
+		}
+		// A strong identifier never sits inside a name, so the line splits without a name lookup
+		anyStrong, anyIdentifier, allIdentifiers := false, false, true
 		for _, t := range tokens {
 			anyStrong = anyStrong || strongQueryTypes[parseQueryType(t)]
-			allIdentifiers = allIdentifiers && isIdentifierToken(t)
+			isID := isIdentifierToken(t)
+			anyIdentifier = anyIdentifier || isID
+			allIdentifiers = allIdentifiers && isID
 		}
-		if anyStrong || allIdentifiers {
+		if anyStrong || (allIdentifiers && !isKnownName(index, whole)) {
 			queries = append(queries, tokens...)
-		} else {
-			queries = append(queries, whole)
+			continue
 		}
+		if anyIdentifier {
+			multiEntry[len(queries)] = true
+		}
+		queries = append(queries, whole)
 	}
-	return queries
+	return queries, multiEntry
+}
+
+// isKnownName reports whether a whole line is a name in the database
+func isKnownName(index *model.PubChemIndex, q string) bool {
+	compounds, err := index.QueryByName(q, true)
+	return err == nil && len(compounds) > 0
 }
 
 // maxQueries for one request (then with ClassyFire enabled)
@@ -224,6 +275,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	}
 
 	var queries []string
+	var multiEntry map[int]bool
 	if input.isList {
 		// Array input is never split
 		if len(input.list) > limit {
@@ -245,7 +297,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Split query by newline, and by space on lines of identifiers
-		queries = splitQueries(index, rawQuery, limit, forced)
+		queries, multiEntry = splitQueries(index, rawQuery, limit, forced)
 		if len(queries) > limit {
 			tooMany()
 			return
@@ -261,7 +313,7 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	_, localSpan := telemetry.StartSpan(r.Context(), "local_match")
 	localMatches := 0
 
-	for _, q := range queries {
+	for i, q := range queries {
 		// Handle empty queries
 		if q = cleanQuery(q); q == "" {
 			continue
@@ -325,6 +377,11 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		// A name is only tried once the structure lookup found nothing
 		if !result.MatchFound && result.ErrMsg != "Internal server error" && nameFallbackTypes[result.QueryType] && result.DerivedInChIKey == "" {
 			matchName(index, q, result, topHitOnly)
+		}
+
+		// A line kept whole as a name that also held identifiers was likely several entries, warn user
+		if !result.MatchFound && multiEntry[i] && result.ErrMsg != "Internal server error" {
+			result.ErrMsg = multiEntryNote
 		}
 
 		if result.MatchFound {

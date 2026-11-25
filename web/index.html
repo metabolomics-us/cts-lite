@@ -39,7 +39,6 @@
                 <label for="query-input" id="input-label">
                     <div id="input-label-row">
                         <span title="Click on a label to exclusively query by that identifier type" style="display: contents">
-                            <img src="assets/info-icon.svg" alt="" width="16" height="16" >
                             <strong>Accepts:</strong>
                         </span>
                         <button type="button" class="format-tag" data-type="name" aria-pressed="false">Compound Name</button>
@@ -52,7 +51,13 @@
                         <button type="button" class="format-tag" data-type="cas" aria-pressed="false">CAS ID</button>
                         <button type="button" class="format-tag format-tag-reset" id="format-tag-reset" title="Query all types again" inert>&times; Reset</button>
                     </div>
-                    <p id="input-label-sub">Space, Tab, or Newline separated entries <span style="color: #4D545A">(up to 100,000)</span></p>
+                    <p id="input-label-sub">
+                        <!-- &#10; is a newline -->
+                        <span title="• Spaces can also separate non-name entries: CCO H2O 2244&#10;• A name entry on a line stays whole: lactic acid&#10;• Use quotes for multiple names on one line: &quot;lactic acid&quot; &quot;malic acid&quot;&#10;• Up to 100,000 entries (1,000 with ClassyFire)" style="display: contents">
+                            <img src="assets/info-icon.svg" alt="" width="14" height="14" style="vertical-align: -2px">
+                            One entry per line
+                        </span>
+                    </p>
                 </label>
                 <div class="query-input-wrapper">
                     <textarea id="query-input" rows="5" cols="40"

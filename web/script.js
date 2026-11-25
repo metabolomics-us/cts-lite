@@ -42,6 +42,44 @@ const EXAMPLE_QUERIES = [
   "AAAAAAAAAAAAAA-UHFFFAOYSA-N",
 ];
 
+// Splits a line on whitespace, keeping each quoted span as one token. Mirrors tokenizeLine in api/handler.go:
+// a quote opens only at the start of a word and closes only at the end of one, an unmatched quote is dropped
+function tokenizeLine(line) {
+  const words = line.split(/\s+/).filter(Boolean);
+  const isBare = (t) => t.replace(/"/g, "") === "";
+  const tokens = [];
+  let quoted = false;
+  for (let i = 0; i < words.length; i++) {
+    let w = words[i];
+    if (w.startsWith('"')) {
+      // The closer is the first word ending in a quote, this word only if the quote is not its opener
+      let end = -1;
+      for (let j = i; j < words.length; j++) {
+        if (words[j].endsWith('"') && (j > i || w.length > 1)) {
+          end = j;
+          break;
+        }
+      }
+      if (end >= 0) {
+        const span = words.slice(i, end + 1);
+        span[0] = span[0].slice(1);
+        span[span.length - 1] = span[span.length - 1].replace(/"$/, "");
+        const kept = span.filter((t) => !isBare(t));
+        if (kept.length) {
+          tokens.push(kept.join(" "));
+          quoted = true;
+        }
+        i = end;
+        continue;
+      }
+      w = w.slice(1); // unmatched opener
+    }
+    w = w.replace(/"$/, ""); // a closer with nothing open is dropped
+    if (!isBare(w)) tokens.push(w);
+  }
+  return { tokens, quoted };
+}
+
 // Disable download buttons while ClassyFire is running
 function setDownloadsLoading(loading) {
   const buttons = document.getElementById("download-buttons");
@@ -379,8 +417,8 @@ document.addEventListener("DOMContentLoaded", () => {
     setFilterChip("all");
 
     // Bare quotes are dropped by the API, so a query of only those counts as blank
-    const isBareQuote = (t) => t === '"' || t === '""' || t === '"""';
-    const hasQuery = query.split(/\s+/).some((t) => t && !isBareQuote(t));
+    const lines = query.split("\n").map(tokenizeLine);
+    const hasQuery = lines.some((l) => l.tokens.length > 0);
 
     if (!hasQuery) {
       outputLabel.textContent = "Error";
@@ -391,11 +429,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const maxQueryLength = 100000;
     const queryType = document.getElementById("query-type-select").value;
-    const queryCount = query.split("\n").reduce((n, l) => {
-      const words = l.trim().split(/\s+/).filter(Boolean).length;
-      if (queryType === "name") return n + (words ? 1 : 0); // one name per line if forced name
-      if (queryType !== "auto") return n + words; // all words on line counted if not auto or name
-      return n + (words > 10 ? words : words ? 1 : 0); // split on more than 10 and count all words on line
+    const queryCount = lines.reduce((n, { tokens, quoted }) => {
+      if (quoted || tokens.length <= 1) return n + tokens.length; // each quoted span and unquoted word is one query
+      if (queryType === "name") return n + 1; // one name per line if forced name
+      if (queryType !== "auto") return n + tokens.length; // all words on line counted if not auto or name
+      return n + (tokens.length > 10 ? tokens.length : 1); // known names are checked on the server, so up to 10 words counts once
     }, 0);
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
