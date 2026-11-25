@@ -31,7 +31,8 @@ var junkRules = []struct {
 	{"unii", regexp.MustCompile(`^(UNII-)?[A-Z0-9]{10}$`)},
 	{"solution_product", regexp.MustCompile(`(?i)\b(ug|µg|mg|ng|ig)/m?l\b|\bsolution in\b|\bin (acetonitrile|isooctane|methanol|hexane|cyclohexane|toluene|dichloromethane|acetone|nonane)\b`)},
 	{"dsstox", regexp.MustCompile(`^DTX[SC]ID\d+$`)},
-	{"chebi_chembl", regexp.MustCompile(`(?i)^(CHEBI|CHEMBL|SCHEMBL)[: ]?\d+$`)},
+	// Keep ChEBI IDs so they can be queried like names/synonyms
+	{"chembl", regexp.MustCompile(`(?i)^(CHEMBL|SCHEMBL)[: ]?\d+$`)},
 	{"registry_prefixed", regexp.MustCompile(`(?i)^(NSC|HSDB|CCRIS|BRN|AI3|RTECS|EPA PESTICIDE CHEMICAL CODE|CAS|FEMA( NO\.?)?|RefChem|Caswell No\.?|UN|DEA No\.?|KBio\w*|Prestwick\w*|SPECTRUM|SPBio\w*|BSPBio\w*|NCI\w*|Tox21|NCGC|BIDD|BDBM|HMDB|LMFA|KEGG|ZINC|AKOS|MFCD|STK|SY|CS|HY|AC|AS|BCP|BBL|DB|EN300|Q|SR|MLS|SMR|CBiol|Pharmakon\w*|IDI1|NINDS|DivK1c|SDCCGMLS|Lopac\w*|BRD|GTPL|s|AB|AM|AN|AKOS|FT|LS|MCULE|NS|BS|TRA|PS|SB|C|D|CCG|EBC|ALBB|DA|DS|BP|FS|VS|HS|J|GLXC|A1|TS|TYD|GEO|W|KS|WS|TCL|JS)[-_: .]*[A-Z]?\d[\d-_.]*[A-Z]?$`)},
 	{"beilstein_ref", regexp.MustCompile(`(?i)beilstein handbook reference|^\d-\d{2}-\d{2}-\d{5}`)},
 	{"inchi_like", regexp.MustCompile(`^(InChI=|[A-Z]{14}-[A-Z]{10}-[A-Z]$)`)},

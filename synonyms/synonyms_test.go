@@ -94,7 +94,7 @@ func TestIsJunk(t *testing.T) {
 		"R16CO5Y76E":                    true, // unii
 		"Aspirin 100 ug/ml in methanol": true, // solution_product
 		"DTXCID90123":                   true, // dsstox
-		"CHEMBL25":                      true, // chebi_chembl
+		"CHEMBL25":                      true, // chembl
 		"NSC 27223":                     true, // registry_prefixed
 		"4-10-00-00138 (Beilstein Handbook Reference)": true, // beilstein_ref
 		"BSYNRYMUTXBXSQ-UHFFFAOYSA-N":                  true, // inchi_like
@@ -111,6 +111,7 @@ func TestIsJunk(t *testing.T) {
 		"a-ketoglutaric acid":           false, // informal Greek, not mangled
 		"WY-14643":                      false, // devCode
 		"E1520":                         false, // shortCode
+		"CHEBI:15365":                   false, // ChEBI IDs are queryable names
 	} {
 		if got := isJunk(in); got != want {
 			t.Errorf("isJunk(%q) = %v, want %v", in, got, want)
@@ -125,7 +126,7 @@ func TestIsJunk(t *testing.T) {
 
 func TestFilter(t *testing.T) {
 	names, cas := Filter("Aspirin", "aspirin|ACETYLSALICYLIC ACID|50-78-2|UNII-R16CO5Y76E|CHEBI:15365|DTXSID5020108|WY-14643|E 330|Acetylsalicylic acid [INCI]|MFCD00002430|a,|141-40-0")
-	want := []Name{{"aspirin", 0}, {"acetylsalicylic acid", 1}, {"wy-14643", 2}, {"e 330", 3}}
+	want := []Name{{"aspirin", 0}, {"acetylsalicylic acid", 1}, {"chebi:15365", 2}, {"wy-14643", 3}, {"e 330", 4}}
 	if diff := cmp.Diff(want, names); diff != "" {
 		t.Errorf("names mismatch (-want +got):\n%s", diff)
 	}
