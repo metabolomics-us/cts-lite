@@ -425,6 +425,11 @@ func TestSplitQueriesQuotes(t *testing.T) {
 	if got, _ := splitQueries(mockIndex, `"water" "marsh gas"`, maxQueries, "name"); !slices.Equal(got, []string{"water", "marsh gas"}) {
 		t.Errorf("forced name: got %q", got)
 	}
+
+	// Many unclosed openers on one line stay linear, this took tens of seconds when each rescanned the line
+	if got, _ := tokenizeLine(strings.Repeat(`"a `, 300_000)); len(got) != 300_000 || got[0] != "a" {
+		t.Errorf("unclosed openers: got %d tokens", len(got))
+	}
 }
 
 func TestMultiEntryNote(t *testing.T) {

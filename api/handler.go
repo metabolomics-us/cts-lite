@@ -81,16 +81,23 @@ const maxNameWords = 10
 // quoted reports whether the line had a non-empty quoted span. Mirrored by tokenizeLine in script.js
 func tokenizeLine(line string) (tokens []string, quoted bool) {
 	words := strings.Fields(line)
+	// nextCloser[j] is the first word at or after j ending in a quote, or -1. Built once so that
+	// many unclosed openers on one line stay linear instead of each rescanning the rest of the line
+	nextCloser := make([]int, len(words)+1)
+	nextCloser[len(words)] = -1
+	for j := len(words) - 1; j >= 0; j-- {
+		nextCloser[j] = nextCloser[j+1]
+		if strings.HasSuffix(words[j], `"`) {
+			nextCloser[j] = j
+		}
+	}
 	for i := 0; i < len(words); i++ {
 		w := words[i]
 		if strings.HasPrefix(w, `"`) {
 			// The closer is the first word ending in a quote, this word only if the quote is not its opener
-			end := -1
-			for j := i; j < len(words); j++ {
-				if strings.HasSuffix(words[j], `"`) && (j > i || len(w) > 1) {
-					end = j
-					break
-				}
+			end := nextCloser[i+1]
+			if len(w) > 1 {
+				end = nextCloser[i]
 			}
 			if end >= 0 {
 				span := slices.Clone(words[i : end+1])
@@ -170,6 +177,7 @@ func isKnownName(index *model.PubChemIndex, q string) bool {
 const (
 	maxQueries           = 100_000
 	maxClassyFireQueries = 1_000
+	maxRequestBytes = 64 << 20 // Enough for 100k long InChIs
 )
 
 // Cheap check to see if a request is over the query limit by line count
@@ -231,7 +239,14 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			Queries queryInput `json:"queries"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		// Cap the body so one request cannot make the server read and parse without bound
+		body := http.MaxBytesReader(w, r.Body, maxRequestBytes)
+		if err := json.NewDecoder(body).Decode(&request); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, fmt.Sprintf("Request body over %d MB", maxRequestBytes>>20), http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
