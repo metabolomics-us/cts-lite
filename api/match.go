@@ -3,6 +3,7 @@ package api
 import (
 	"ctslite/model"
 	"ctslite/rdkit"
+	"ctslite/synonyms"
 	"log"
 )
 
@@ -152,6 +153,159 @@ func matchFormula(index *model.PubChemIndex, query string, result *model.SingleR
 	result.MatchFound = true
 	result.MatchLevel = "Exact Formula"
 	result.Matches = compounds
+}
+
+func matchCAS(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, err := index.QueryByCAS(query, topHitOnly)
+	if err != nil {
+		log.Printf("Error querying by CAS: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact CAS"
+	result.Matches = compounds
+}
+
+// matchHMDB looks the ID up in the 7-digit form (i.e. HMDB01847 finds HMDB0001847)
+func matchHMDB(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	id, _ := synonyms.NormalizeHMDB(query)
+	compounds, err := index.QueryByHMDB(id, topHitOnly)
+	if err != nil {
+		log.Printf("Error querying by HMDB ID: %v", err)
+		result.MatchFound = false
+		result.ErrMsg = "Internal server error"
+		return
+	}
+	// The padded ID shows what a short or lowercase query was read as
+	if id != query {
+		result.ConvertedQuery = id
+	}
+	if len(compounds) == 0 {
+		result.MatchFound = false
+		result.ErrMsg = "No compound found"
+		return
+	}
+	result.MatchFound = true
+	result.MatchLevel = "Exact HMDB"
+	result.Matches = compounds
+}
+
+// nameFallbackTypes are the query types that try a name lookup once their own lookup missed
+var nameFallbackTypes = map[string]bool{
+	"smiles": true, "formula": true, "smiles_or_formula": true, "name": true,
+}
+
+// matchName looks the query up as a compound name.
+// A miss leaves the result as it was, so a structure query still reaches the PubChem
+// fallback with its own error
+func matchName(index *model.PubChemIndex, query string, result *model.SingleResult, topHitOnly bool) {
+	compounds, key, err := index.QueryByNameKey(query, topHitOnly)
+	if err != nil {
+		log.Printf("Error querying by name: %v", err)
+		return
+	}
+	if len(compounds) == 0 {
+		return
+	}
+	result.MatchFound = true
+	result.QueryType = "name"
+	result.ErrMsg = ""
+	result.MatchLevel = "Exact Name"
+	// A variant is a rewrite of the query, so it shows what the query was read as
+	if key != synonyms.Normalize(query) {
+		result.MatchLevel = "Name Variant"
+		result.ConvertedQuery = key
+	}
+	result.Matches = compounds
+}
+
+var forcedQueryTypes = map[string]struct {
+	label   string
+	accepts map[string]bool
+}{
+	"pubchem_id": {"PubChem CID", map[string]bool{"pubchem_id": true}},
+	"inchikey":   {"InChIKey", map[string]bool{"inchikey": true}},
+	"inchi":      {"InChI", map[string]bool{"inchi": true}},
+	"smiles":     {"SMILES", map[string]bool{"smiles": true, "smiles_or_formula": true}},
+	"formula":    {"molecular formula", map[string]bool{"formula": true, "smiles_or_formula": true}},
+	"cas":        {"CAS ID", map[string]bool{"cas": true}},
+	"hmdb":       {"HMDB ID", map[string]bool{"hmdb": true}},
+	"name":       {"name", nil}, // name could look like any type
+}
+
+var malformedQueryErrors = map[string]string{
+	"bad_pubchem_id": "Malformed PubChem CID, see documentation",
+	"bad_inchi":      "Malformed InChI, see documentation",
+	"bad_inchikey":   "Malformed InChIKey, see documentation",
+	"bad_cas":        "Malformed CAS ID, see documentation",
+	"bad_hmdb":       "Malformed HMDB ID, see documentation",
+}
+
+// notNameTypes can never be stored as names (for parsing purposes)
+var notNameTypes = map[string]bool{
+	"pubchem_id": true, "bad_pubchem_id": true, "inchi": true, "bad_inchi": true,
+	"inchikey": true, "bad_inchikey": true, "cas": true, "bad_cas": true, "hmdb": true, "bad_hmdb": true,
+}
+
+// matchForced runs only the lookup of the forced query type, unless the type is incompatible
+// (i.e. CID detected query trying to be forced as SMILES does not run anything)
+func matchForced(index *model.PubChemIndex, query string, result *model.SingleResult, forced string, allowFirstBlockMatches bool, topHitOnly bool) {
+	detected := result.QueryType
+	accepted := forcedQueryTypes[forced].accepts[detected]
+	if forced == "name" {
+		accepted = !notNameTypes[detected]
+	}
+	if !accepted {
+		result.Rejected = true
+		// A broken form of the forced type keeps its own type and message
+		if detected == "bad_"+forced {
+			result.ErrMsg = malformedQueryErrors[detected]
+			return
+		}
+		result.QueryType = forced
+		result.ErrMsg = "Not a valid " + forcedQueryTypes[forced].label + ", see documentation"
+		return
+	}
+	result.QueryType = forced
+
+	switch forced {
+	case "pubchem_id":
+		matchPubChemID(index, query, result, topHitOnly)
+	case "inchikey":
+		matchInchiKey(index, query, result, allowFirstBlockMatches, topHitOnly)
+	case "inchi":
+		matchInchi(index, query, result, topHitOnly)
+	case "smiles":
+		matchSmiles(index, query, result, allowFirstBlockMatches, topHitOnly)
+	case "formula":
+		matchFormula(index, query, result, topHitOnly)
+	case "cas":
+		matchCAS(index, query, result, topHitOnly)
+	case "hmdb":
+		matchHMDB(index, query, result, topHitOnly)
+	case "name":
+		// A name miss leaves the result untouched, so it needs its own error
+		matchName(index, query, result, topHitOnly)
+		if !result.MatchFound {
+			result.ErrMsg = "No compound found"
+		}
+	}
+}
+
+// addForcedNote marks a miss as coming from a forced query type. Internal errors stay
+// as they are since the PubChem fallback checks for them by value
+func addForcedNote(result *model.SingleResult, forced string) {
+	if forced == "" || result.MatchFound || result.ErrMsg == "" || result.ErrMsg == "Internal server error" {
+		return
+	}
+	result.ErrMsg += " (forced query type: " + forced + ")"
 }
 
 func matchSmilesOrFormula(index *model.PubChemIndex, query string, result *model.SingleResult, allowFirstBlockMatches bool, topHitOnly bool) {

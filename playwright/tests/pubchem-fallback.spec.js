@@ -2,7 +2,8 @@ const { test, expect } = require('@playwright/test');
 
 // These tests never reach the real PubChem API: /match is intercepted with
 // page.route and answered with a canned JSON array carrying the match_level
-// the backend would emit for a live fallback hit
+// the backend would emit for a live fallback hit, or fed line by line through a
+// fetch override for the streaming test
 
 const COMPOUND = {
   identifier: '2519',

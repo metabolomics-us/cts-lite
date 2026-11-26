@@ -2,9 +2,10 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 
 // These tests never touch the real ClassyFire service: every /match call is
-// intercepted with page.route and answered with a canned NDJSON / CSV / JSON body.
+// intercepted with page.route and answered with a canned NDJSON / CSV / JSON body,
+// or fed line by line through a fetch override where a test needs to see each step
 // "Mid-stream" UI states are observed as stable end states by deliberately
-// omitting the trailing `done` line or a key's `classyfire` line.
+// omitting the trailing `done` line or a key's `classyfire` line
 
 const CAPPED_NOTE = 'Only the top hit of each query is classified for latency considerations';
 
@@ -34,7 +35,7 @@ function match(over = {}) {
   };
 }
 
-// cts-lite matches by identifier (no name lookup), so the query is the InChIKey itself
+// result wraps matches as an InChIKey query, so the query is the InChIKey itself
 function result(matches, over = {}) {
   return { query: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', query_type: 'inchikey', found_match: true, match_level: 'exact', matches, error_message: '', ...over };
 }
@@ -130,8 +131,7 @@ test('downloads are disabled while classyfire is working', async ({ page }) => {
 
   await expect(page.locator('#download-buttons')).toBeVisible();
   await expect(page.locator('#download-buttons')).toHaveClass(/loading/);
-  await expect(page.locator('#download-csv')).toBeDisabled();
-  await expect(page.locator('#download-json')).toBeDisabled();
+  await expect(page.locator('#download-toggle')).toBeDisabled();
 });
 
 // Once classification finishes, downloads become available again
@@ -145,15 +145,15 @@ test('downloads are re-enabled after classyfire finishes', async ({ page }) => {
   await enableClassyFireAndSubmit(page);
 
   await expect(page.locator('#download-buttons')).not.toHaveClass(/loading/);
-  await expect(page.locator('#download-csv')).toBeEnabled();
-  await expect(page.locator('#download-json')).toBeEnabled();
+  await expect(page.locator('#download-toggle')).toBeEnabled();
 });
 
 // The progress bar denominator is the unique-InChIKey count, not the match-row count
 test('progress bar counts unique inchikeys', async ({ page }) => {
   // 4 match rows but only 3 unique inchikeys (the caffeine inchikey appears twice), so total = 3
-  const dupKey = 'EEEEEEEEEEEEEE-EEEEEEEEEE-E';
-  const matches = [match(), match(), match({ inchikey: dupKey }), match()]; // caffeine inchikey x3 + dupKey
+  const keyB = 'EEEEEEEEEEEEEE-EEEEEEEEEE-E';
+  const keyC = 'FFFFFFFFFFFFFF-FFFFFFFFFF-F';
+  const matches = [match(), match(), match({ inchikey: keyB }), match({ inchikey: keyC })]; // caffeine inchikey x2 + keyB + keyC
   await mockMatch(page, nd(
     { type: 'matches', results: [result(matches)], unique: 3, queue: 1 },
     { type: 'classyfire', inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', info: CF, queue: 1 },
@@ -167,8 +167,8 @@ test('progress bar counts unique inchikeys', async ({ page }) => {
   await expect(page.locator('.cf-progress-label')).not.toContainText('/ 4');
 });
 
-// While a PubChem row is pending the total is an upper bound, so the bar never fills early.
-// The asterisk marks it, explained by the note below the PubChem line
+// While a PubChem row is pending the total is an upper bound, so the bar never fills early
+// The asterisk marks it, explained by the note below the ClassyFire bar
 test('progress total carries an asterisk while PubChem lookups are pending', async ({ page }) => {
   const pending = result(null, { query: 'BBBBBBBBBBBBBB-BBBBBBBBBB-B', found_match: false, pending: true });
   await mockMatch(page, nd(
@@ -250,8 +250,8 @@ test('queue indicator shows when multiple requests are queued', async ({ page })
   await expect(page.locator('#cf-queue')).toContainText('1'); // 1 other request
 });
 
-// When the queue depth drops to 1 (e.g. another client closed its tab) the indicator hides.
-// The backend depth bookkeeping on disconnect is covered by TestClassyFireQueueDepthDropsWhenClientDisconnects.
+// When the queue depth drops to 1 (e.g. another client closed its tab) the indicator hides
+// The backend depth bookkeeping on disconnect is covered by TestClassyFireQueueDepthDropsWhenClientDisconnects
 test('queue indicator hides when the queue drops to one', async ({ page }) => {
   await mockMatch(page, nd(
     { type: 'matches', results: [result([match()])], unique: 1, queue: 2 },
@@ -372,20 +372,20 @@ test('classyfire blocks more than 1,000 identifiers client-side', async ({ page 
   expect(requested).toBe(false);
 });
 
-// The CSV/JSON the browser downloads matches what the API returns for the same data.
+// The CSV/JSON the browser downloads matches what the API returns for the same data
 test('downloaded CSV and JSON match the API response', async ({ page }) => {
   const FINAL = [result([match({ classyfire: CF })])];
 
-  // The matches line carries the compound without classyfire; the classyfire line attaches it.
+  // The matches line carries the compound without classyfire, the classyfire line attaches it
   const streamBody = nd(
     { type: 'matches', results: [result([match()])], unique: 1, queue: 1 },
     { type: 'classyfire', inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', info: CF, queue: 1 },
     { type: 'done' },
   );
 
-  // Server-format CSV, authored to match api/handler.go writeResultsAsCSV exactly.
-  const header = 'query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error';
-  const dataRow = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N,inchikey,,true,exact,,2519,RYYVLZVUVIJVGH-UHFFFAOYSA-N,InChI=1S/C8H10N4O2,CN1C=NC2=C1C(=O)N(C(=O)N2C)C,Caffeine,C8H10N4O2,194.08,100,50,30,Organic compounds,Organoheterocyclic compounds,Imidazopyrimidines,Purines and purine derivatives,Xanthines,A xanthine alkaloid,';
+  // Server-format CSV, authored to match api/output.go writeResultsAsCSV exactly
+  const header = 'query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count,cas_ids,hmdb_ids,classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error';
+  const dataRow = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N,inchikey,,true,exact,,2519,RYYVLZVUVIJVGH-UHFFFAOYSA-N,InChI=1S/C8H10N4O2,CN1C=NC2=C1C(=O)N(C(=O)N2C)C,Caffeine,C8H10N4O2,194.08,100,50,30,,,Organic compounds,Organoheterocyclic compounds,Imidazopyrimidines,Purines and purine derivatives,Xanthines,A xanthine alkaloid,';
   const apiCsv = header + '\n' + dataRow + '\n';
 
   await page.route('**/match*', (route) => {
@@ -416,7 +416,8 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
     return r.text();
   });
 
-  // Client CSV download === API CSV
+  // Client CSV download === API CSV. Each download closes the menu, so it is opened per option
+  await page.locator('#download-toggle').click();
   const [csvDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-csv').click(),
@@ -425,12 +426,67 @@ test('downloaded CSV and JSON match the API response', async ({ page }) => {
   expect(clientCsv).toBe(apiCsvFetched);
 
   // Client JSON download === API JSON (compare parsed, key order independent)
+  await page.locator('#download-toggle').click();
   const [jsonDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#download-json').click(),
   ]);
   const clientJson = JSON.parse(fs.readFileSync(await jsonDownload.path(), 'utf-8'));
   expect(clientJson).toEqual(apiJson);
+});
+
+// Hides fields through the field menu, then downloads CSV and JSON
+// The menu takes data-field JSON keys, Deselect all is used when every field goes
+async function downloadWithHiddenFields(page, keys) {
+  await mockMatch(page, nd(
+    { type: 'matches', results: [result([match()])], unique: 1, queue: 1 },
+    { type: 'classyfire', inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', info: CF, queue: 1 },
+    { type: 'done' },
+  ));
+  await enableClassyFireAndSubmit(page);
+  await expect(page.locator('#download-buttons')).not.toHaveClass(/loading/); // wait for done
+
+  await page.locator('#fields-toggle').click();
+  if (keys === 'all') await page.locator('#fields-select-toggle').click();
+  else for (const key of keys) await page.locator(`#fields-panel input[data-field="${key}"]`).uncheck();
+
+  const read = async (format) => {
+    await page.locator('#download-toggle').click();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator(`#download-${format}`).click(),
+    ]);
+    return fs.readFileSync(await download.path(), 'utf-8');
+  };
+  return { csv: await read('csv'), json: JSON.parse(await read('json')) };
+}
+
+const RESULT_HEADER = 'query,query_type,converted_query,found_match,match_level,error_message';
+const CF_HEADER = 'classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error';
+const RESULT_CELLS = 'RYYVLZVUVIJVGH-UHFFFAOYSA-N,inchikey,,true,exact,';
+const CF_CELLS = 'Organic compounds,Organoheterocyclic compounds,Imidazopyrimidines,Purines and purine derivatives,Xanthines,A xanthine alkaloid,';
+
+// With every compound field hidden the downloads still carry the classification
+test('downloads with 0 fields keep the ClassyFire columns', async ({ page }) => {
+  const { csv, json } = await downloadWithHiddenFields(page, 'all');
+
+  expect(csv).toBe(`${RESULT_HEADER},${CF_HEADER}\n${RESULT_CELLS},${CF_CELLS}\n`);
+  expect(json).toEqual([result([{ classyfire: CF }])]);
+});
+
+// A mix of hidden fields drops only those, ClassyFire stays after the kept compound fields
+test('downloads with a mix of fields keep the ClassyFire columns', async ({ page }) => {
+  const { csv, json } = await downloadWithHiddenFields(page, [
+    'identifier', 'inchi', 'smiles', 'literature_count', 'patent_count', 'annotation_type_count', 'cas_ids', 'hmdb_ids',
+  ]);
+
+  expect(csv).toBe(
+    `${RESULT_HEADER},inchikey,compound_name,molecular_formula,exact_mass,${CF_HEADER}\n` +
+    `${RESULT_CELLS},RYYVLZVUVIJVGH-UHFFFAOYSA-N,Caffeine,C8H10N4O2,194.08,${CF_CELLS}\n`
+  );
+  expect(json).toEqual([result([{
+    inchikey: 'RYYVLZVUVIJVGH-UHFFFAOYSA-N', compound_name: 'Caffeine', molecular_formula: 'C8H10N4O2', exact_mass: 194.08, classyfire: CF,
+  }])]);
 });
 
 // The ClassyFire toggle label, the clickable surface of the row

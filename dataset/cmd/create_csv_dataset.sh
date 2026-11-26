@@ -48,7 +48,7 @@ cleanup_on_failure() {
   for category in "${!pubchem_categories[@]}"; do
     [[ -f "${category}.csv" ]] && temp_files+=("${category}.csv")
   done
-  for f in pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv gnps_compounds.csv; do
+  for f in pubchem.csv reordered_pubchem.csv deduped_reordered_pubchem.csv hmdb_deduped_reordered_pubchem.csv gnps_compounds.csv; do
     [[ -f "$f" ]] && temp_files+=("$f")
   done
 
@@ -97,7 +97,7 @@ download_pubchem_category() {
     echo "Failed to fetch cache key for ${hnid}"
     exit 1
   fi
-  wget "https://pubchem.ncbi.nlm.nih.gov/sdq/sphinxql.cgi?infmt=json&outfmt=csv&query={%22download%22:%20%22cid,cmpdname,inchikey,inchi,smiles,mf,exactmass,gpidcnt,pclidcnt,annothitcnt%22,%22collection%22:%22compound%22,%22order%22:[%22relevancescore,desc%22],%22start%22:1,%22limit%22:10000000,%22where%22:{%22ands%22:[{%22input%22:{%22type%22:%22netcachekey%22,%22idtype%22:%22cid%22,%22key%22:%22${key}%22}}]}}&showcolumndisplayname=1" -O "${outfile}"
+  wget "https://pubchem.ncbi.nlm.nih.gov/sdq/sphinxql.cgi?infmt=json&outfmt=csv&query={%22download%22:%20%22cid,cmpdname,inchikey,inchi,smiles,mf,exactmass,gpidcnt,pclidcnt,annothitcnt,cmpdsynonym%22,%22collection%22:%22compound%22,%22order%22:[%22relevancescore,desc%22],%22start%22:1,%22limit%22:10000000,%22where%22:{%22ands%22:[{%22input%22:{%22type%22:%22netcachekey%22,%22idtype%22:%22cid%22,%22key%22:%22${key}%22}}]}}&showcolumndisplayname=1" -O "${outfile}"
 }
 
 download_csvs() {
@@ -132,11 +132,16 @@ adjust_csv_headers () {
 remove_duplicates() {
   echo "Removing duplicates..."
   go run "${SCRIPT_DIR}/csv-magic/dedupe/dedupe.go" reordered_pubchem.csv
-  echo "Renaming dataset..."
-  mv deduped_reordered_pubchem.csv "$DATASET_NAME"
-  # Move into the dataset/ folder
-  mv "$DATASET_NAME" "${SCRIPT_DIR}/../"
   rm reordered_pubchem.csv
+  divider
+}
+
+add_hmdb_ids() {
+  echo "Adding HMDB IDs..."
+  go run "${SCRIPT_DIR}/hmdb-join/hmdb-join.go" deduped_reordered_pubchem.csv hmdb_deduped_reordered_pubchem.csv
+  rm deduped_reordered_pubchem.csv
+  echo "Moving dataset into place..."
+  mv hmdb_deduped_reordered_pubchem.csv "${SCRIPT_DIR}/../${DATASET_NAME}"
   divider
 }
 
@@ -172,6 +177,7 @@ main() {
   merge_csvs
   adjust_csv_headers
   remove_duplicates
+  add_hmdb_ids
   print_summary
   push_to_s3
 }

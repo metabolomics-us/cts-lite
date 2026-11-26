@@ -3,365 +3,232 @@ package api
 import (
 	"ctslite/model"
 	"ctslite/telemetry"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"regexp"
 	"runtime/debug"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"go.opentelemetry.io/otel/attribute"
 )
 
-var inchikeyPattern = regexp.MustCompile(`^[A-Z]{14}-[A-Z]{10}-[A-Z]$`)
-var badInchikeyPattern = regexp.MustCompile(`^[a-zA-Z]{12,16}-[a-zA-Z]{9,11}-[a-zA-Z]{0,2}$`)
-
-var CSVHeader = []string{
-	"query", "query_type", "converted_query", "found_match", "match_level", "error_message",
-	"pubchem_cid", "inchikey", "inchi", "smiles", "compound_name",
-	"molecular_formula", "exact_mass", "literature_count", "patent_count", "annotation_type_count",
+// attachExternalIDs adds CAS and HMDB IDs to the results' matches. They only add
+// detail, so a failed lookup is logged and the matches go out without them
+func attachExternalIDs(index *model.PubChemIndex, results []*model.SingleResult) {
+	var compounds []*model.Compound
+	for _, r := range results {
+		compounds = append(compounds, r.Matches...)
+	}
+	if err := index.AttachExternalIDs(compounds); err != nil {
+		log.Printf("Failed to attach CAS/HMDB IDs: %v", err)
+	}
 }
 
-func isAllDigits(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
+// Query types with no ambiguity, so one on a line means the line is a list instead of a long name
+var strongQueryTypes = map[string]bool{
+	"inchikey": true, "inchi": true, "bad_inchikey": true, "bad_inchi": true, "cas": true, "bad_cas": true, "hmdb": true, "bad_hmdb": true,
+}
+
+// Query types that might be found inside a name (i.e. Tween 80, 80 is a CID)
+var identifierQueryTypes = map[string]bool{
+	"pubchem_id": true, "bad_pubchem_id": true, "formula": true, "smiles_or_formula": true,
+}
+
+// smilesStart are the characters a SMILES can start with
+const smilesStart = "BCNOPSFIbcnops[*"
+
+// smilesChars are every character a SMILES can contain
+const smilesChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789=#/\\:.@[]()+-%*"
+
+// isPlausibleSmiles rules out words that only read as SMILES because of their
+// punctuation, like the "16:0_18:1" in "PC 16:0_18:1"
+func isPlausibleSmiles(q string) bool {
+	if q == "" || !strings.ContainsRune(smilesStart, rune(q[0])) {
+		return false
+	}
+	for i := 0; i < len(q); i++ {
+		if !strings.ContainsRune(smilesChars, rune(q[i])) {
 			return false
 		}
 	}
-	return len(s) > 0
+	return true
 }
 
-// maxPubChemID is the highest CID possible with plenty of wiggle room.
-// As of 2026, there compounds with a CID of ~180 million
-const maxPubChemID = 500_000_000
+// isIdentifierToken reports whether a word on a line can be an identifier of its own
+func isIdentifierToken(t string) bool {
+	queryType := parseQueryType(t)
+	return strongQueryTypes[queryType] || identifierQueryTypes[queryType] ||
+		(queryType == "smiles" && isPlausibleSmiles(t))
+}
 
-// isValidPubChemID reports whether an all-digit query can be a real CID
-func isValidPubChemID(s string) bool {
-	// reject leading zeroes or 0 itself
-	if s == "" || s[0] == '0' {
-		return false
+// Error msg for a whole line that missed as a name but held identifiers
+const multiEntryNote = "No compound found. If this line holds several entries, put each on its own line"
+
+// maxNameWords is the most words a line can have and still be read as one name.
+// 99.92% of PubChem names have 10 words or fewer
+const maxNameWords = 10
+
+// tokenizeLine splits a line on whitespace, keeping each quoted span as one token.
+// A quote opens only at the start of a word and closes only at the end of one, so a quote
+// inside a word stays as written. An unmatched quote is dropped and its words read as unquoted.
+// quoted reports whether the line had a non-empty quoted span. Mirrored by tokenizeLine in script.js
+func tokenizeLine(line string) (tokens []string, quoted bool) {
+	words := strings.Fields(line)
+	// nextCloser[j] is the first word at or after j ending in a quote, or -1. Built once so that
+	// many unclosed openers on one line stay linear instead of each rescanning the rest of the line
+	nextCloser := make([]int, len(words)+1)
+	nextCloser[len(words)] = -1
+	for j := len(words) - 1; j >= 0; j-- {
+		nextCloser[j] = nextCloser[j+1]
+		if strings.HasSuffix(words[j], `"`) {
+			nextCloser[j] = j
+		}
 	}
-	n, err := strconv.ParseUint(s, 10, 64)
-	return err == nil && n <= maxPubChemID
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		if strings.HasPrefix(w, `"`) {
+			// The closer is the first word ending in a quote, this word only if the quote is not its opener
+			end := nextCloser[i+1]
+			if len(w) > 1 {
+				end = nextCloser[i]
+			}
+			if end >= 0 {
+				span := slices.Clone(words[i : end+1])
+				span[0] = span[0][1:]
+				span[len(span)-1] = strings.TrimSuffix(span[len(span)-1], `"`)
+				// Bare quotes inside the span are dropped like anywhere else
+				span = slices.DeleteFunc(span, func(t string) bool { return strings.Trim(t, `"`) == "" })
+				if len(span) > 0 {
+					tokens = append(tokens, strings.Join(span, " "))
+					quoted = true
+				}
+				i = end
+				continue
+			}
+			w = w[1:] // unmatched opener
+		}
+		// A closer with nothing open is dropped
+		if w = strings.TrimSuffix(w, `"`); strings.Trim(w, `"`) != "" {
+			tokens = append(tokens, w)
+		}
+	}
+	return tokens, quoted
 }
 
-// smilesPunctuation is the set of characters that appear in SMILES but never in a
-// molecular formula, so any query containing one is unambiguously SMILES.
-// Plus (+) and minus (-) are left out because formulas carry them as a charge suffix
-const smilesPunctuation = "=#/\\:.@[]()"
+// splitQueries makes one query per line, except a line that is a list of identifiers separated by spaces.
+// Each quoted span is one query and every unquoted word beside it is its own, with no name guessing.
+// A forced query type skips the guessing: a name is one per line, anything else splits on all whitespace.
+// multiEntry holds the indexes of whole-line queries that carry identifiers, for multiEntryNote on a miss
+func splitQueries(index *model.PubChemIndex, raw string, limit int, forced string) (queries []string, multiEntry map[int]bool) {
+	multiEntry = map[int]bool{}
+	for line := range strings.SplitSeq(raw, "\n") {
+		if len(queries) > limit {
+			break // early check against >100k queries
+		}
+		// Same logic found in script.js for counting queries
+		tokens, quoted := tokenizeLine(line)
+		if quoted || len(tokens) <= 1 {
+			queries = append(queries, tokens...)
+			continue
+		}
+		whole := strings.Join(tokens, " ")
+		if forced == "name" {
+			queries = append(queries, whole)
+			continue
+		}
+		if forced != "" || len(tokens) > maxNameWords {
+			queries = append(queries, tokens...)
+			continue
+		}
+		// A strong identifier never sits inside a name, so the line splits without a name lookup
+		anyStrong, anyIdentifier, allIdentifiers := false, false, true
+		for _, t := range tokens {
+			anyStrong = anyStrong || strongQueryTypes[parseQueryType(t)]
+			isID := isIdentifierToken(t)
+			anyIdentifier = anyIdentifier || isID
+			allIdentifiers = allIdentifiers && isID
+		}
+		if anyStrong || (allIdentifiers && !isKnownName(index, whole)) {
+			queries = append(queries, tokens...)
+			continue
+		}
+		if anyIdentifier {
+			multiEntry[len(queries)] = true
+		}
+		queries = append(queries, whole)
+	}
+	return queries, multiEntry
+}
 
-// Element symbols are one uppercase letter plus an optional lowercase letter,
-// so they pack into an index: the uppercase letter picks the row and the
-// lowercase letter the column, with the last column meaning "single letter"
+// isKnownName reports whether a whole line is a name in the database
+func isKnownName(index *model.PubChemIndex, q string) bool {
+	compounds, err := index.QueryByName(q, true)
+	return err == nil && len(compounds) > 0
+}
+
+// maxQueries for one request (then with ClassyFire enabled)
 const (
-	elementCols      = 27
-	elementTableSize = 26 * elementCols
-	noLowercase      = elementCols - 1
-	hydrogenCode     = int('H'-'A')*elementCols + noLowercase
+	maxQueries           = 100_000
+	maxClassyFireQueries = 1_000
+	maxRequestBytes = 64 << 20 // Enough for 100k long InChIs
 )
 
-// maxDistinctElements bounds the repeat-detection scratch array. Overflowing
-// it is harmless: a query with more distinct elements than this cannot be
-// SMILES anyway, since only ten elements may appear unbracketed
-const maxDistinctElements = 12
-
-const periodicTable = "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn " +
-	"Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu " +
-	"Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm " +
-	"Bk Cf Es Fm Md No Lr Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og"
-
-// organicSubset are the elements SMILES writes without brackets.
-// Every other element must appear as [Xx]
-const organicSubset = "B C N O P S F Cl Br I"
-
-// smilesAlphabet is every character a punctuation free SMILES can contain
-const smilesAlphabet = "BCNOPSFIbclnoprs0123456789%-"
-
-var isElementSymbol [elementTableSize]bool
-var isOrganicSubset [elementTableSize]bool
-var isSmilesChar [256]bool
-
-func init() {
-	for _, symbol := range strings.Fields(periodicTable) {
-		isElementSymbol[packElementSymbol(symbol)] = true
+// Cheap check to see if a request is over the query limit by line count
+func countQueryLines(raw string) int {
+	n := 0
+	for line := range strings.SplitSeq(raw, "\n") {
+		if strings.ContainsFunc(line, func(r rune) bool { return r != '"' && !unicode.IsSpace(r) }) {
+			n++
+		}
 	}
-	for _, symbol := range strings.Fields(organicSubset) {
-		isOrganicSubset[packElementSymbol(symbol)] = true
-	}
-	for i := 0; i < len(smilesAlphabet); i++ {
-		isSmilesChar[smilesAlphabet[i]] = true
-	}
+	return n
 }
 
-// classifyUnreadable handles queries the formula grammar could not read. A
-// string built only from SMILES characters is handed to SMILES so RDKit can
-// make the final call, and anything else is not a chemical identifier at all
-func classifyUnreadable(q string) string {
-	if q == "" {
-		return "unidentified"
-	}
-	for i := 0; i < len(q); i++ {
-		if !isSmilesChar[q[i]] {
-			return "unidentified"
-		}
-	}
-	return "smiles"
+// queryInput is the "queries" field from a POST request
+type queryInput struct {
+	raw    string
+	list   []string
+	isList bool
 }
 
-func packElementSymbol(symbol string) int {
-	column := noLowercase
-	if len(symbol) == 2 {
-		column = int(symbol[1] - 'a')
+func (q *queryInput) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &q.raw); err == nil {
+		return nil
 	}
-	return int(symbol[0]-'A')*elementCols + column
+	q.isList = true
+	return json.Unmarshal(b, &q.list)
 }
 
-// classifyElementString splits a query carrying no SMILES punctuation between
-// formula and SMILES, which is the only case where both grammars can describe
-// the same string. It reads the query as element symbols with optional counts
-// and applies four rules in order:
-//
-//	a bare H is a syntax error in SMILES, so the query is a formula
-//	an element repeating without hydrogen never happens in a formula
-//	an element outside the organic subset would need brackets in SMILES
-//	an unpaired digit is an unclosed ring bond, so it is a formula subscript
-//
-// Queries satisfying both grammars stay ambiguous. Anything the formula
-// grammar cannot read goes to classifyUnreadable
-func classifyElementString(q string) string {
-	var seenCodes [maxDistinctElements]int16
-	var digitCounts [10]int
-	seenCount, tokenCount := 0, 0
-	hasHydrogen, repeatsElement, allOrganic := false, false, true
+// cleanQuery trims a query and removes one pair of surrounding double quotes
+func cleanQuery(q string) string {
+	q = strings.TrimSpace(q)
 
-	for i := 0; i < len(q); {
-		if q[i] < 'A' || q[i] > 'Z' {
-			return classifyUnreadable(q)
-		}
-		code := int(q[i]-'A') * elementCols
-		i++
-		if i < len(q) && q[i] >= 'a' && q[i] <= 'z' {
-			code += int(q[i] - 'a')
-			i++
-		} else {
-			code += noLowercase
-		}
-		if !isElementSymbol[code] {
-			return classifyUnreadable(q)
-		}
-		for i < len(q) && q[i] >= '0' && q[i] <= '9' {
-			digitCounts[q[i]-'0']++
-			i++
-		}
-
-		tokenCount++
-		if code == hydrogenCode {
-			hasHydrogen = true
-		}
-		if !isOrganicSubset[code] {
-			allOrganic = false
-		}
-		for s := 0; s < seenCount; s++ {
-			if seenCodes[s] == int16(code) {
-				repeatsElement = true
-				break
-			}
-		}
-		if seenCount < len(seenCodes) {
-			seenCodes[seenCount] = int16(code)
-			seenCount++
-		}
-	}
-	if tokenCount == 0 {
-		return classifyUnreadable(q)
+	// Remove surrounding double quotes if both present
+	if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") && len(q) > 1 {
+		q = q[1 : len(q)-1]
 	}
 
-	// Ring closure labels always pair up, so an odd count means the digit is a
-	// formula subscript rather than a ring bond
-	unpairedDigit := false
-	for _, n := range digitCounts {
-		if n%2 != 0 {
-			unpairedDigit = true
-			break
-		}
+	// Handle single double quote character
+	if q == "\"" {
+		return ""
 	}
-
-	switch {
-	case hasHydrogen:
-		return "formula"
-	case repeatsElement:
-		return "smiles"
-	case allOrganic && !unpairedDigit:
-		return "smiles_or_formula"
-	default:
-		return "formula"
-	}
-}
-
-// splitChargeSuffix splits a trailing sign and optional count such as -, +2 or
-// -3 off a query, reporting false when the query does not end in one or the
-// sign is all there is
-func splitChargeSuffix(q string) (body string, sign byte, digits string, ok bool) {
-	i := len(q)
-	for i > 0 && q[i-1] >= '0' && q[i-1] <= '9' {
-		i--
-	}
-	if i < 2 || (q[i-1] != '+' && q[i-1] != '-') {
-		return "", 0, "", false
-	}
-	return q[:i-1], q[i-1], q[i:], true
-}
-
-// classifyChargeSuffix handles a query ending in a charge suffix such as
-// C7H5O2-, Ca+2 or O4P-3, reporting false when the query has no suffix or the
-// part before it is not formula shaped. A plus never appears outside brackets
-// in SMILES and a bare trailing minus is a dangling bond, so both settle the
-// query as a formula. A minus followed by digits can also be a bond into ring
-// closures, as in C1CCCCC-1, so the query is reread without the minus and
-// stays ambiguous when that reading still allows SMILES
-func classifyChargeSuffix(q string) (string, bool) {
-	body, sign, digits, ok := splitChargeSuffix(q)
-	if !ok || strings.ContainsAny(body, "+-") {
-		return "", false
-	}
-	if bodyType := classifyElementString(body); bodyType != "formula" && bodyType != "smiles_or_formula" {
-		return "", false
-	}
-	if sign == '+' || digits == "" {
-		return "formula", true
-	}
-	if reread := classifyElementString(body + digits); reread == "smiles" || reread == "smiles_or_formula" {
-		return "smiles_or_formula", true
-	}
-	return "formula", true
-}
-
-func parseQueryType(q string) string {
-	// Order of cases matters here
-	switch {
-	case inchikeyPattern.MatchString(q):
-		return "inchikey"
-
-	case badInchikeyPattern.MatchString(q):
-		return "bad_inchikey"
-
-	case strings.HasPrefix(q, "InChI="):
-		return "inchi"
-
-	case len(q) >= 6 && strings.EqualFold(q[:6], "inchi="):
-		return "bad_inchi"
-
-	case isAllDigits(q) && isValidPubChemID(q):
-		return "pubchem_id"
-
-	case isAllDigits(q):
-		return "bad_pubchem_id"
-
-	case strings.ContainsAny(q, smilesPunctuation):
-		return "smiles"
-
-	default:
-		if queryType, ok := classifyChargeSuffix(q); ok {
-			return queryType
-		}
-		// Everything left is letters and digits, which both grammars can use
-		return classifyElementString(q)
-	}
-}
-
-// writeResultsAsCSV converts the results to CSV format and writes to the response writer
-func writeResultsAsCSV(w http.ResponseWriter, results []*model.SingleResult, classyfireEnabled bool) error {
-	writer := csv.NewWriter(w)
-	defer writer.Flush()
-
-	// Write CSV header
-	header := CSVHeader
-	if classyfireEnabled {
-		// Clip forces append to copy rather than mutate the shared CSVHeader
-		header = append(slices.Clip(header),
-			"classyfire_kingdom", "classyfire_superclass", "classyfire_class",
-			"classyfire_subclass", "classyfire_direct_parent", "classyfire_description",
-			"classyfire_error",
-		)
-	}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header: %w", err)
-	}
-
-	cfFields := func(cf *model.ClassyFireInfo) []string {
-		if cf == nil {
-			return []string{"", "", "", "", "", "", ""}
-		}
-		return []string{cf.Kingdom, cf.Superclass, cf.Class, cf.Subclass, cf.DirectParent, cf.Description, cf.Error}
-	}
-
-	// Write data rows
-	for _, result := range results {
-		if !result.MatchFound {
-			// Write a single row for failed matches
-			row := []string{
-				result.Query,
-				result.QueryType,
-				result.ConvertedQuery,
-				strconv.FormatBool(result.MatchFound),
-				result.MatchLevel,
-				result.ErrMsg,
-				"", "", "", "", "", "", "", "", "", "", // Empty compound fields
-			}
-			if classyfireEnabled {
-				row = append(row, cfFields(nil)...)
-			}
-			if err := writer.Write(row); err != nil {
-				return fmt.Errorf("failed to write CSV row: %w", err)
-			}
-		} else {
-			// Write one row per match
-			for _, match := range result.Matches {
-				row := []string{
-					result.Query,
-					result.QueryType,
-					result.ConvertedQuery,
-					strconv.FormatBool(result.MatchFound),
-					result.MatchLevel,
-					result.ErrMsg,
-					match.Identifier,
-					match.InChIKey,
-					match.InChI,
-					match.Smiles,
-					match.CompoundName,
-					match.MolecularFormula,
-					strconv.FormatFloat(match.ExactMass, 'f', -1, 64),
-					strconv.FormatFloat(float64(match.LiteratureCount), 'f', -1, 32),
-					strconv.FormatFloat(float64(match.PatentCount), 'f', -1, 32),
-					strconv.FormatFloat(float64(match.AnnotationTypeCount), 'f', -1, 32),
-				}
-				if classyfireEnabled {
-					row = append(row, cfFields(match.ClassyFire)...)
-				}
-				if err := writer.Write(row); err != nil {
-					return fmt.Errorf("failed to write CSV row: %w", err)
-				}
-			}
-		}
-	}
-
-	return nil
+	return q
 }
 
 // Match is the main entry point for the API
 // Detects the type of query and delegates it to the corresponding matching function
 func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var rawQuery string
+	var input queryInput
 
-	// Parse query according to GET or POST request (GET was the old method before moving to POST)
+	// Parse query according to GET or POST request (GET was the old method before adding POST)
 	switch r.Method {
 
 	case http.MethodGet:
@@ -369,22 +236,30 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var request struct {
-			Queries string `json:"queries"`
+			Queries queryInput `json:"queries"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		// Cap the body so one request cannot make the server read and parse without bound
+		body := http.MaxBytesReader(w, r.Body, maxRequestBytes)
+		if err := json.NewDecoder(body).Decode(&request); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, fmt.Sprintf("Request body over %d MB", maxRequestBytes>>20), http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
 
-		rawQuery = strings.TrimSpace(request.Queries)
+		input = request.Queries
+		rawQuery = strings.TrimSpace(input.raw)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if rawQuery == "" {
+	if rawQuery == "" && len(input.list) == 0 {
 		http.Error(w, "Query was empty", http.StatusBadRequest)
 		return
 	}
@@ -395,18 +270,53 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	var classyfireEnabled bool = r.URL.Query().Get("classyfire") == "true"
 	var stream bool = r.URL.Query().Get("stream") == "true"
 
-	// Split query by space or newline (can't use comma because InChI or SMILES can contain commas)
-	queries := strings.Fields(rawQuery)
-
-	if len(queries) > 100000 {
-		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 100,000)", len(queries)), http.StatusBadRequest)
+	// Forces every query to one type, empty or "auto" detects each query's type
+	forced := r.URL.Query().Get("query_type")
+	if forced == "auto" {
+		forced = ""
+	}
+	if _, ok := forcedQueryTypes[forced]; forced != "" && !ok {
+		http.Error(w, "Invalid query_type, expected auto, pubchem_id, inchikey, inchi, smiles, formula, cas, hmdb or name", http.StatusBadRequest)
 		return
 	}
 
-	// Enforce ClassyFire query limit
-	if classyfireEnabled && len(queries) > 1000 {
-		http.Error(w, fmt.Sprintf("Query contains %d identifiers (limit 1,000 when ClassyFire is enabled)", len(queries)), http.StatusBadRequest)
-		return
+	// ClassyFire is rate limited, so it has a lower query limit
+	limit, limitNote := maxQueries, "limit 100,000"
+	if classyfireEnabled {
+		limit, limitNote = maxClassyFireQueries, "limit 1,000 when ClassyFire is enabled"
+	}
+	tooMany := func() {
+		http.Error(w, fmt.Sprintf("Query contains more than %d identifiers (%s)", limit, limitNote), http.StatusBadRequest)
+	}
+
+	var queries []string
+	var multiEntry map[int]bool
+	if input.isList {
+		// Array input is never split
+		if len(input.list) > limit {
+			tooMany()
+			return
+		}
+		for i, q := range input.list {
+			if cleanQuery(q) == "" { // empty query throws 400
+				http.Error(w, fmt.Sprintf("queries[%d] is empty", i), http.StatusBadRequest)
+				return
+			}
+		}
+		queries = input.list
+	} else {
+		// Every line makes at least one query, so too many lines fails before any name lookup
+		if countQueryLines(rawQuery) > limit {
+			tooMany()
+			return
+		}
+
+		// Split query by newline, and by space on lines of identifiers
+		queries, multiEntry = splitQueries(index, rawQuery, limit, forced)
+		if len(queries) > limit {
+			tooMany()
+			return
+		}
 	}
 
 	results := make([]*model.SingleResult, 0, len(queries))
@@ -418,22 +328,25 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 	_, localSpan := telemetry.StartSpan(r.Context(), "local_match")
 	localMatches := 0
 
-	for _, q := range queries {
-		q = strings.TrimSpace(q)
-
-		// Remove surrounding double quotes if both present
-		if strings.HasPrefix(q, "\"") && strings.HasSuffix(q, "\"") && len(q) > 1 {
-			q = q[1 : len(q)-1]
-		}
-
-		// Handle single double quote character, and empty queries
-		if q == "\"" || q == "" {
+	for i, q := range queries {
+		// Handle empty queries
+		if q = cleanQuery(q); q == "" {
 			continue
 		}
 
 		result := &model.SingleResult{
 			Query:     q,
 			QueryType: parseQueryType(q),
+		}
+
+		if forced != "" {
+			matchForced(index, q, result, forced, allowFirstBlockMatches, topHitOnly)
+			addForcedNote(result, forced)
+			if result.MatchFound {
+				localMatches++
+			}
+			results = append(results, result)
+			continue
 		}
 
 		switch result.QueryType {
@@ -455,17 +368,20 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		case "smiles_or_formula":
 			matchSmilesOrFormula(index, q, result, allowFirstBlockMatches, topHitOnly)
 
-		case "bad_inchi":
-			result.MatchFound = false
-			result.ErrMsg = "Malformed InChI, see documentation"
+		case "cas":
+			matchCAS(index, q, result, topHitOnly)
 
-		case "bad_inchikey":
-			result.MatchFound = false
-			result.ErrMsg = "Malformed InChIKey, see documentation"
+		case "hmdb":
+			matchHMDB(index, q, result, topHitOnly)
 
-		case "bad_pubchem_id":
+		case "bad_pubchem_id", "bad_inchi", "bad_inchikey", "bad_cas", "bad_hmdb":
 			result.MatchFound = false
-			result.ErrMsg = "Invalid PubChem CID, see documentation"
+			result.ErrMsg = malformedQueryErrors[result.QueryType]
+
+		// The name lookup itself runs later, if it doesn't find anything it keeps these properties
+		case "name":
+			result.MatchFound = false
+			result.ErrMsg = "No compound found"
 
 		case "unidentified":
 			result.MatchFound = false
@@ -478,11 +394,24 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// A name is only tried once the structure lookup found nothing
+		if !result.MatchFound && result.ErrMsg != "Internal server error" && nameFallbackTypes[result.QueryType] && result.DerivedInChIKey == "" {
+			matchName(index, q, result, topHitOnly)
+		}
+
+		// A line kept whole as a name that also held identifiers was likely several entries, warn user
+		if !result.MatchFound && multiEntry[i] && result.ErrMsg != "Internal server error" {
+			result.ErrMsg = multiEntryNote
+		}
+
 		if result.MatchFound {
 			localMatches++
 		}
 		results = append(results, result)
 	}
+
+	// One batched lookup for every local match, PubChem hits get theirs as they settle
+	attachExternalIDs(index, results)
 
 	localSpan.SetAttributes(
 		attribute.Int("local_match.queries", len(results)),
@@ -496,10 +425,19 @@ func Match(index *model.PubChemIndex, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Attempt a live PubChem lookup for anything that missed locally (except unidentified queries of course)
+	// Attempt a live PubChem lookup for anything that missed locally (except names and unidentified)
 	// onSettled hears about each result as soon as its lookup is over, nil when not streaming
 	fallback := func(onSettled func(index int)) {
-		pcb := resolvePubChemFallbackStream(r.Context(), results, topHitOnly, onSettled)
+		// A PubChem hit gets its CAS and HMDB IDs before anything sees the result
+		settled := func(i int) {
+			attachExternalIDs(index, results[i:i+1])
+			// The fallback rewrites the error, so the forced note goes back on
+			addForcedNote(results[i], forced)
+			if onSettled != nil {
+				onSettled(i)
+			}
+		}
+		pcb := resolvePubChemFallbackStream(r.Context(), results, topHitOnly, settled)
 		if pcb.attempted+pcb.unparseable+pcb.skipped > 0 {
 			log.Printf("PubChem fallback: %d attempted, %d found, %d not found, %d failed, %d unparseable (not sent), %d skipped (due to limit reached)",
 				pcb.attempted, pcb.found, pcb.notFound, pcb.failed, pcb.unparseable, pcb.skipped)

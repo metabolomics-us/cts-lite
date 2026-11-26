@@ -37,12 +37,68 @@ type PugResponse struct {
 	} `json:"PropertyTable"`
 }
 
+type SynonymResponse struct {
+	InformationList struct {
+		Information []struct {
+			CID     int      `json:"CID"`
+			Synonym []string `json:"Synonym"`
+		} `json:"Information"`
+	} `json:"InformationList"`
+}
+
+// errNotFound is PubChem's 404, which the synonyms endpoint answers when no CID in the batch has any
+var errNotFound = fmt.Errorf("not found")
+
 func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
+	const endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/property/InChIKey,InChI,SMILES,ExactMass,LiteratureCount,PatentCount,AnnotationTypeCount,Title,MolecularFormula/JSON"
+	var pr PugResponse
+	if err := postBatch(endpoint, cids, &pr); err != nil {
+		return nil, err
+	}
+	return &pr, nil
+}
+
+// synonymFieldCap matches the 10,000 characters SDQ downloads stop at
+const synonymFieldCap = 10000
+
+// fetchSynonymsBatch returns each CID's synonyms joined by |, the same format SDQ downloads use
+func fetchSynonymsBatch(cids []int) (map[int]string, error) {
+	const endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/synonyms/JSON"
+	var sr SynonymResponse
+	err := postBatch(endpoint, cids, &sr)
+	if err == errNotFound {
+		return map[int]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	synonyms := make(map[int]string, len(sr.InformationList.Information))
+	for _, info := range sr.InformationList.Information {
+		synonyms[info.CID] = joinSynonyms(info.Synonym)
+	}
+	return synonyms, nil
+}
+
+func joinSynonyms(list []string) string {
+	var b strings.Builder
+	for _, s := range list {
+		if b.Len()+len(s)+1 >= synonymFieldCap {
+			break
+		}
+		if b.Len() > 0 {
+			b.WriteByte('|')
+		}
+		b.WriteString(s)
+	}
+	return b.String()
+}
+
+// postBatch posts the CIDs to a PUG REST endpoint and decodes the JSON answer into out
+func postBatch(endpoint string, cids []int, out any) error {
 	cidStrs := make([]string, len(cids))
 	for i, c := range cids {
 		cidStrs[i] = fmt.Sprintf("%d", c)
 	}
-	const endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/property/InChIKey,InChI,SMILES,ExactMass,LiteratureCount,PatentCount,AnnotationTypeCount,Title,MolecularFormula/JSON"
 	body := url.Values{"cid": {strings.Join(cidStrs, ",")}}.Encode()
 
 	// Simple retry
@@ -57,9 +113,13 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		defer resp.Body.Close()
+		if resp.StatusCode == 404 {
+			resp.Body.Close()
+			return errNotFound
+		}
 		if resp.StatusCode != 200 {
 			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
 			lastErr = fmt.Errorf("status %d: %s", resp.StatusCode, string(bodyBytes))
 			if resp.StatusCode == 403 {
 				log.Printf("Request denied, waiting 10s for rate limit reset")
@@ -69,15 +129,16 @@ func fetchPropertiesBatch(cids []int) (*PugResponse, error) {
 			}
 			continue
 		}
-		var pr PugResponse
-		if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		err = json.NewDecoder(resp.Body).Decode(out)
+		resp.Body.Close()
+		if err != nil {
 			lastErr = err
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		return &pr, nil
+		return nil
 	}
-	return nil, lastErr
+	return lastErr
 }
 
 func readCIDsFromFile(path string) ([]int, error) {
@@ -129,7 +190,7 @@ func main() {
 	defer w.Flush()
 
 	// Header:
-	w.Write([]string{"Compound_CID", "Linked_PubChem_Literature_Count", "Linked_PubChem_Patent_Count", "Annotation_Type_Count", "Molecular_Formula", "SMILES", "InChI", "InChIKey", "Exact_Mass", "Name"})
+	w.Write([]string{"Compound_CID", "Linked_PubChem_Literature_Count", "Linked_PubChem_Patent_Count", "Annotation_Type_Count", "Molecular_Formula", "SMILES", "InChI", "InChIKey", "Exact_Mass", "Name", "Synonyms"})
 
 	batchSize := 1000
 
@@ -149,6 +210,16 @@ func main() {
 			continue
 		}
 
+		// Pause to avoid rate limiting
+		time.Sleep(250 * time.Millisecond)
+
+		synonyms, err := fetchSynonymsBatch(batch)
+		if err != nil {
+			log.Printf("fetch synonyms [%d:%d] failed: %v", i, end, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
 		for _, p := range pr.PropertyTable.Properties {
 			row := []string{
 				fmt.Sprintf("%d", p.CID),
@@ -161,6 +232,7 @@ func main() {
 				p.InChIKey,
 				p.ExactMass,
 				p.Title,
+				synonyms[p.CID],
 			}
 			if err := w.Write(row); err != nil {
 				log.Printf("csv write error: %v", err)

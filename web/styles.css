@@ -70,6 +70,39 @@ body {
   min-height: 100vh;
 }
 
+/* Version number pill in bottom right */
+.version-stamp {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid #d8d2c0;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.85);
+  color: #777777;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.version-stamp:hover,
+.version-stamp:focus {
+  color: #1a3e68;
+  border-color: #1a3e68;
+}
+
+/* Too narrow for the pill to clear the 650px cards, so it drops to the end of the page */
+@media (max-width: 880px) {
+  .version-stamp {
+    position: static;
+    display: flex;
+    width: fit-content;
+    margin: 14px auto;
+  }
+}
+
 .banner-container {
   background-color: rgb(245, 245, 245);
   max-width: 1200px;
@@ -157,34 +190,64 @@ button:disabled {
   font-weight: bold;
   margin-bottom: 0rem;
   margin-top: 0rem;
+  margin-right: 0.5rem;
 }
 
 .results-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 0.1rem;
 }
 
 #download-buttons {
   display: none;
+  position: relative;
+  flex-shrink: 0;
   gap: 0.5rem;
   min-height: 44px;
   margin-bottom: 5px;
 }
 
-/* Results label with the filter button */
+/* Filter and field buttons stay side by side next to the heading. When
+   space runs out the heading text wraps */
 .results-title {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.25rem;
+}
+
+/* Room between filter and field buttons */
+#result-fields {
+  margin-left: 0.35rem;
 }
 
 /* Dot on the filter icon of the applied filter color */
 #filter-toggle.filtered {
   position: relative;
-  background-color: #e6f3ff;
+}
+
+/* Filter and field menu buttons have an 'active' state when any settings from them are selected */
+.menu-icon {
+  color: #444444;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cog-btn.filtered .menu-icon {
+  color: #1a3e68;
+  stroke-width: 2.75;
+}
+
+/* Faint blue background when enabled */
+#filter-toggle.filtered,
+#fields-toggle.filtered {
+  background-color: rgba(26, 62, 104, 0.2);
 }
 
 #filter-toggle.filtered::after {
@@ -201,6 +264,7 @@ button:disabled {
 #filter-toggle[data-filter="exact-match"]::after { background-color: #d4edda; border-color: #5a9e69; }
 #filter-toggle[data-filter="first-block-match"]::after { background-color: #fff3cd; border-color: #b8962a; }
 #filter-toggle[data-filter="pubchem-live-match"]::after { background-color: #d1ecf1; border-color: #4a98a6; }
+#filter-toggle[data-filter="name-variant-match"]::after { background-color: #ebe4f6; border-color: #8a72b8; }
 #filter-toggle[data-filter="no-match"]::after { background-color: #f8d7da; border-color: #c4646e; }
 
 /* Same as settings panel */
@@ -237,6 +301,18 @@ button:disabled {
   color: #ffffff;
 }
 
+.filter-option:disabled,
+.filter-option:disabled:hover {
+  background-color: transparent;
+  color: #7d8691;
+  cursor: default;
+  opacity: 1;
+}
+
+.filter-option:disabled .filter-swatch {
+  opacity: 0.5;
+}
+
 .filter-name {
   display: inline-flex;
   align-items: center;
@@ -260,32 +336,49 @@ button:disabled {
 .filter-swatch.exact-match { background-color: #d4edda; border-color: #8fc79c; }
 .filter-swatch.first-block-match { background-color: #fff3cd; border-color: #e0c565; }
 .filter-swatch.pubchem-live-match { background-color: #d1ecf1; border-color: #7fbcc7; }
+.filter-swatch.name-variant-match { background-color: #ebe4f6; border-color: #b9a6dc; }
 .filter-swatch.no-match { background-color: #f8d7da; border-color: #e09aa1; }
 
-.filter-empty {
-  padding: 1rem 0;
-  color: #4B535D;
-  font-style: italic;
+/* Field menu as two columns, filled row by row */
+#fields-panel.open {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  column-gap: 0.5rem;
 }
 
-/* Link styled button that resets the filter to All, in the same type as the message */
-.filter-empty-clear,
-.filter-empty-clear:hover,
-.filter-empty-clear:focus {
+#fields-panel .filter-panel-heading {
+  grid-column: 1 / -1;
+}
+
+/* Select all / Deselect all */
+.field-bulk-btn {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: auto;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+/* Field menu rows */
+.field-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.field-option:hover {
+  background-color: #e9eef5;
+}
+
+.field-option input {
   margin: 0;
-  padding: 0;
-  background-color: transparent;
-  color: #1a3e68;
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: normal;
-  font-style: inherit;
-  text-decoration: underline;
-  outline-offset: 4px;
-}
-
-.filter-empty-clear:hover {
-  color: #235288;
+  accent-color: #1a3e68;
+  cursor: pointer;
 }
 
 /* ClassyFire streaming progress bar (top of the results) */
@@ -424,6 +517,70 @@ button:disabled {
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
   white-space: nowrap;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
+  /* Undo the global button styles */
+  margin: 0;
+  font-family: inherit;
+  line-height: normal;
+  cursor: pointer;
+}
+
+/* Clicking a tag forces its query type */
+.format-tag:hover,
+.format-tag:focus {
+  background-color: #d6e1ee;
+  outline: none;
+}
+
+.format-tag:focus-visible {
+  outline: 2px solid #36679e;
+  outline-offset: 1px;
+}
+
+/* Formats left out by a forced query type */
+.format-tag.muted {
+  background-color: #f0f0f0;
+  color: #8a8f95;
+  border-color: #c4c8cc;
+  opacity: 0.7;
+}
+
+.format-tag.muted:hover {
+  opacity: 1;
+}
+
+/* Reset tag, red since it undoes the forced type instead of being one.
+   Collapsed to nothing until a type is forced. The negative margin cancels the row gap */
+.format-tag-reset {
+  background-color: #fbeaea;
+  color: #9b1c1c;
+  border-color: #9b1c1c;
+  opacity: 0;
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-width: 0;
+  margin-left: -0.4rem;
+  overflow: hidden;
+  transition: opacity 0.2s, max-width 0.2s, padding 0.2s, border-width 0.2s, margin-left 0.2s, background-color 0.2s;
+}
+
+.format-tag-reset.shown {
+  opacity: 1;
+  max-width: 6rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  border-width: 1px;
+  margin-left: 0;
+}
+
+.format-tag-reset:hover,
+.format-tag-reset:focus {
+  background-color: #f5d3d3;
+}
+
+.format-tag-reset:focus-visible {
+  outline-color: #9b1c1c;
 }
 
 #output-text {
@@ -557,6 +714,18 @@ button:disabled {
   font-size: 1.1rem;
 }
 
+.query-label {
+  font-weight: normal;
+  font-size: 0.85rem;
+  color: #555;
+  margin-right: 0.25rem;
+}
+
+.query-text {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
 .query-details {
   display: flex;
   flex-wrap: wrap;
@@ -601,6 +770,12 @@ button:disabled {
   background-color: #d1ecf1;
   color: #0d4a54;
   border: 1px solid #a0d1d9;
+}
+
+.match-status.name-variant-match {
+  background-color: #ebe4f6;
+  color: #3a2763;
+  border: 1px solid #d5c9ec;
 }
 
 /* While waiting on the PubChem fallback */
@@ -680,29 +855,13 @@ button:disabled {
   color: #333;
 }
 
-.match-level.exact {
-  background-color: #d4edda;
-  padding: 0.3rem 0.6rem;
-  border-radius: 15px;
-  border: 1px solid #c3e6cb;
-  color: #155724;
-}
-
-.match-level.first-block {
-  background-color: #fff3cd;
-  padding: 0.3rem 0.6rem;
-  border-radius: 15px;
-  border: 1px solid #ffeaa7;
-  color: #745903;
-}
-
 .error-message {
-  background-color: #f8d7da;
-  color: #721c24;
+  background-color: #f8f9fa;
+  color: #495057;
   padding: 0.5rem;
   border-radius: 5px;
   margin-top: 0.5rem;
-  border: 1px solid #f5c6cb;
+  border: 1px solid #e9ecef;
 }
 
 .matches-section h4 {
@@ -722,6 +881,22 @@ button:disabled {
   font-size: 1rem;
   margin-bottom: 0.5rem;
   color: #495057;
+}
+
+.match-title-link {
+  color: #1a3e68;
+  text-decoration: underline;
+}
+
+.match-title-link:hover,
+.match-title-link:focus-visible {
+  color: #36679e;
+}
+
+.match-title-link:focus-visible {
+  outline: 2px solid #7aabde;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .match-details {
@@ -761,6 +936,54 @@ button:disabled {
 
 .small-text {
   font-size: 0.75rem;
+}
+
+/* CAS and HMDB lists stack one ID per line */
+.match-field .id-list {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.id-item {
+  white-space: nowrap;
+}
+
+/* Empty HMDB or CAS ID field */
+.monospace.id-none {
+  color: #4E565D;
+  background-color: transparent;
+}
+
+.id-more-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 0.15rem;
+  color: #1a3e68;
+  text-decoration: underline;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.id-more-btn:hover,
+.id-more-btn:focus {
+  background: none;
+  outline: none;
+}
+
+.id-more-btn:hover,
+.id-more-btn:focus-visible {
+  color: #36679e;
+}
+
+.id-more-btn:focus-visible {
+  outline: 2px solid #7aabde;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .classyfire-heading {
@@ -804,10 +1027,29 @@ button:disabled {
   cursor: pointer;
   font-size: 1.0rem;
   margin: 0px 15px 0px 0px;
+  white-space: nowrap;
 }
 
 .download-btn:hover {
   background-color: #235288;
+}
+
+.download-panel {
+  left: auto;
+  right: 0;
+  width: max-content;
+}
+
+/* File sizes in muted grey. Equal width digits keep the sizes in a tidy right aligned column */
+.download-panel .filter-count {
+  color: #777777;
+  opacity: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The download icon darkened */
+.download-option-icon {
+  filter: brightness(0) opacity(0.6);
 }
 
 *:focus {
@@ -831,8 +1073,40 @@ button:disabled {
   position: relative;
 }
 
+/* Holds the textarea so the example button can sit in the corner */
+.query-input-wrapper {
+  position: relative;
+}
+
+/* Add spacing below so 'Try an example' button doesn't overlap with placeholder text on narrow screens */
+.query-input-wrapper textarea {
+  vertical-align: top;
+  padding-bottom: 2.5rem;
+  resize: vertical; /* Only able to adjust height of box, not width */
+}
+
+.example-btn {
+  position: absolute;
+  right: 1.4rem;
+  bottom: 0.5rem;
+  margin-top: 0;
+  background-color: #f0f0f0;
+  color: #495056;
+  border: 1px solid #acacac;
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.example-btn:hover,
+.example-btn:focus {
+  background-color: #e2e2e2;
+  color: #2f3438;
+}
+
+/* Light grey fill so the icon buttons read as clickable before hover */
 .cog-btn {
-  background: transparent;
+  background: #E6E6E6;
   border: none;
   box-shadow: none;
   padding: 0.5rem;
@@ -850,7 +1124,8 @@ button:disabled {
 
 .cog-btn:hover,
 .cog-btn:focus {
-  background-color: #e0e0e0;
+  background-color: #D6D6D6;
+  border-color: #b5b5b5;
   outline-color: #a0b8d3;
 }
 
@@ -879,6 +1154,13 @@ button:disabled {
   gap: 1.5rem;
   font-size: 0.95rem;
   white-space: nowrap;
+}
+
+/* Question-mark link to the docs beside a setting's name */
+.settings-help-link {
+  display: inline-flex;
+  vertical-align: middle;
+  color: inherit;
 }
 
 /* Toggle switch */
@@ -1111,6 +1393,39 @@ button:disabled {
     left: auto;
     right: 0;
   }
+
+  /* Ensure field selection menu does not overflow past screen on smaller devices */
+  .results-title {
+    position: relative;
+  }
+
+  #result-fields {
+    position: static;
+  }
+
+  #fields-panel {
+    left: 0;
+    right: auto;
+    max-width: calc(100vw - 60px);
+  }
+
+  #fields-panel.open {
+    grid-template-columns: repeat(2, minmax(0, max-content));
+  }
+
+  .field-option {
+    white-space: normal;
+  }
+
+  /* Anchor the settings panel to the form's left edge instead of the cog, so it never
+     runs past the screen and widens the page, which shifts the fixed navbar */
+  .form-actions {
+    position: relative;
+  }
+
+  .form-actions .cog-wrapper {
+    position: static;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1157,14 +1472,9 @@ button:disabled {
     gap: 0.5rem;
   }
 
+  /* Center below title header on mobile */
   #download-buttons {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .download-btn {
-    flex: 1;
-    min-width: 120px;
+    align-self: center;
   }
 
   #applied-settings-label {

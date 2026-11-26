@@ -17,6 +17,35 @@ test('quotes-only submit shows empty query error', async ({ page }) => {
   await expect(page.locator('#output-text')).toHaveText('Please enter a query');
 });
 
+// A line over 10 words splits per word, so one long line counts toward the limit
+test('more than 100,000 identifiers on one line is blocked client-side', async ({ page }) => {
+  let requested = false;
+  await page.route('**/match*', (route) => { requested = true; route.fulfill({ status: 200, body: '' }); });
+
+  await page.fill('#query-input', Array.from({ length: 100001 }, () => 'O').join(' '));
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#output-label')).toHaveText('Error');
+  await expect(page.locator('#output-text')).toHaveText(
+    'Query contains 100,001 identifiers - please limit to 100,000 per submission'
+  );
+  expect(requested).toBe(false);
+});
+
+// Short lines count once client-side, but lines of HMDB IDs split on the server
+test('lines splitting over 100,000 identifiers show the server error', async ({ page }) => {
+  await page.locator('#query-input').evaluate(
+    (el, v) => { el.value = v; },
+    Array.from({ length: 50001 }, () => 'HMDB1 HMDB2').join('\n')
+  );
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#output-label')).toHaveText('Error');
+  await expect(page.locator('#output-text')).toContainText(
+    'Server returned 400 - Query contains more than 100000 identifiers (limit 100,000)'
+  );
+});
+
 test('InChIKey query returns exact match for Water', async ({ page }) => {
   await page.fill('#query-input', 'MYFAKEINCHIKEY-ISRIGHTHER-E');
   await page.click('button[type="submit"]');
@@ -56,6 +85,26 @@ test('PubChem ID query returns match for Water', async ({ page }) => {
   await expect(page.locator('.match-item')).toContainText('WATER');
 });
 
+// Padding keeps the match exact, the dropdown shows the ID that was looked up
+test('short HMDB ID matches exactly and shows the padded ID', async ({ page }) => {
+  await page.fill('#query-input', 'hmdb:02714');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.match-item')).toContainText('METHANE');
+  await expect(page.locator('.match-status')).toHaveText('✓ Match Found: Exact');
+  await page.click('.query-type-expandable-btn');
+  await expect(page.locator('.query-type-conversion')).toContainText('HMDB0002714');
+});
+
+test('HMDB ID typed in full shows no read-as dropdown', async ({ page }) => {
+  await page.fill('#query-input', 'HMDB0002111');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.match-item')).toContainText('WATER');
+  await expect(page.locator('.query-type')).toHaveText('Type: HMDB ID');
+  await expect(page.locator('.query-type-expandable-btn')).toHaveCount(0);
+});
+
 test('unknown InChIKey returns no match', async ({ page }) => {
   await page.fill('#query-input', 'ZZZZZZZZZZZZZZ-ZZZZZZZZZZ-Z');
   await page.click('button[type="submit"]');
@@ -93,7 +142,7 @@ test('malformed InChIKey shows error message', async ({ page }) => {
 });
 
 test('unidentified query type shows error message', async ({ page }) => {
-  await page.fill('#query-input', 'junk');
+  await page.fill('#query-input', '???');
   await page.click('button[type="submit"]');
 
   await expect(page.locator('.error-message')).toContainText('could not identify');
@@ -105,4 +154,38 @@ test('mixed query renders both match and no-match results', async ({ page }) => 
 
   await expect(page.locator('.match-status.exact-match')).toHaveCount(1);
   await expect(page.locator('.match-status.no-match')).toHaveCount(1);
+});
+
+// The examples mix types, so a forced type goes back to Auto before they are sent
+test('try an example fills the box and submits in auto mode', async ({ page }) => {
+  let matchUrl = null;
+  await page.route('**/match*', (route) => { matchUrl = route.request().url(); route.fulfill({ status: 200, body: '' }); });
+
+  await page.click('.format-tag[data-type="smiles"]');
+  await page.click('#try-example');
+
+  await expect(page.locator('#query-input')).toHaveValue(/^Caffeine\n/);
+  await expect(page.locator('#query-type-select')).toHaveValue('auto');
+  await expect(page.locator('#try-example')).toBeHidden();
+  await expect.poll(() => matchUrl).not.toBeNull();
+  expect(matchUrl).not.toContain('query_type');
+
+  // Clearing the box offers it again
+  await page.fill('#query-input', '');
+  await expect(page.locator('#try-example')).toBeVisible();
+});
+
+test('clear button empties the box and undo restores it', async ({ page }) => {
+  await expect(page.locator('#clear-input')).toBeHidden();
+  await page.fill('#query-input', 'Caffeine\nWater');
+  await page.click('#clear-input');
+
+  await expect(page.locator('#query-input')).toHaveValue('');
+  await expect(page.locator('#query-input')).toBeFocused();
+  await expect(page.locator('#clear-input')).toBeHidden();
+  await expect(page.locator('#try-example')).toBeVisible();
+
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('#query-input')).toHaveValue('Caffeine\nWater');
+  await expect(page.locator('#clear-input')).toBeVisible();
 });

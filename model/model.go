@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"strings"
+
+	"ctslite/synonyms"
 
 	_ "modernc.org/sqlite" // SQLite driver
 )
@@ -30,7 +33,9 @@ type Compound struct {
 	LiteratureCount     float32         `json:"literature_count"`
 	PatentCount         float32         `json:"patent_count"`
 	AnnotationTypeCount float32         `json:"annotation_type_count"`
-	ClassyFire          *ClassyFireInfo `json:"classyfire,omitempty"`
+	CASIDs     []string        `json:"cas_ids,omitempty"`
+	HMDBIDs    []string        `json:"hmdb_ids,omitempty"`
+	ClassyFire *ClassyFireInfo `json:"classyfire,omitempty"`
 }
 
 type SingleResult struct {
@@ -43,6 +48,7 @@ type SingleResult struct {
 	ErrMsg          string      `json:"error_message"`
 	Pending         bool        `json:"pending,omitempty"` // true while the fallback request is in flight
 	DerivedInChIKey string      `json:"-"`
+	Rejected        bool        `json:"-"` // a forced query type ruled the query out, so the fallback skips it
 }
 
 // PubChemIndex wraps an SQLite database and prepared statements for each lookup type
@@ -60,11 +66,27 @@ type PubChemIndex struct {
 	bySmiles1     *sql.Stmt
 	byFormula     *sql.Stmt
 	byFormula1    *sql.Stmt
+	byName        *sql.Stmt
+	byName1       *sql.Stmt
+	byCAS         *sql.Stmt
+	byCAS1        *sql.Stmt
+	byHMDB        *sql.Stmt
+	byHMDB1       *sql.Stmt
 }
 
-const selectCols = `SELECT identifier, inchikey, inchi, smiles, compound_name,
-	molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count FROM compounds`
-const orderByScore = ` ORDER BY (0.7 * literature_count + 0.3 * patent_count) DESC`
+const compoundCols = `identifier, inchikey, inchi, smiles, compound_name,
+	molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count`
+const selectCols = `SELECT ` + compoundCols + ` FROM compounds`
+const score = `(0.7 * literature_count + 0.3 * patent_count)`
+const orderByScore = ` ORDER BY ` + score + ` DESC`
+
+// USING lets the shared column list name identifier without saying which table it comes from
+const selectByName = `SELECT ` + compoundCols + ` FROM names JOIN compounds USING (identifier) WHERE name_norm = ?`
+const selectByCAS = `SELECT ` + compoundCols + ` FROM cas JOIN compounds USING (identifier) WHERE cas = ?`
+const selectByHMDB = `SELECT ` + compoundCols + ` FROM hmdb JOIN compounds USING (identifier) WHERE hmdb_id = ?`
+
+// A name ranks by how prominent it is for each compound (0 is the title), then by score
+const orderByNameRank = ` ORDER BY rank, ` + score + ` DESC`
 
 // OpenSQLiteIndex opens a pre-built SQLite database for production use
 func OpenSQLiteIndex(dbPath string) (*PubChemIndex, error) {
@@ -115,6 +137,12 @@ func newIndex(db *sql.DB) (*PubChemIndex, error) {
 		{&idx.bySmiles1, selectCols + ` WHERE smiles = ?` + orderByScore + ` LIMIT 1`},
 		{&idx.byFormula, selectCols + ` WHERE molecular_formula = ?` + orderByScore},
 		{&idx.byFormula1, selectCols + ` WHERE molecular_formula = ?` + orderByScore + ` LIMIT 1`},
+		{&idx.byName, selectByName + orderByNameRank},
+		{&idx.byName1, selectByName + orderByNameRank + ` LIMIT 1`},
+		{&idx.byCAS, selectByCAS + orderByScore},
+		{&idx.byCAS1, selectByCAS + orderByScore + ` LIMIT 1`},
+		{&idx.byHMDB, selectByHMDB + orderByScore},
+		{&idx.byHMDB1, selectByHMDB + orderByScore + ` LIMIT 1`},
 	}
 
 	for _, s := range stmts {
@@ -142,7 +170,24 @@ const CreateTableSQL = `CREATE TABLE IF NOT EXISTS compounds (
 	literature_count  REAL NOT NULL,
 	patent_count      REAL NOT NULL,
 	annotation_type_count REAL NOT NULL
-)`
+);
+CREATE TABLE IF NOT EXISTS names (
+	name_norm  TEXT NOT NULL,
+	identifier TEXT NOT NULL,
+	rank       INTEGER NOT NULL,
+	PRIMARY KEY (name_norm, identifier)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS cas (
+	cas        TEXT NOT NULL,
+	identifier TEXT NOT NULL,
+	rank       INTEGER NOT NULL,
+	PRIMARY KEY (cas, identifier)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS hmdb (
+	hmdb_id    TEXT NOT NULL,
+	identifier TEXT NOT NULL,
+	PRIMARY KEY (hmdb_id, identifier)
+) WITHOUT ROWID`
 
 const CreateIndexSQL = `
 CREATE INDEX IF NOT EXISTS idx_pubchem_id  ON compounds(identifier);
@@ -150,11 +195,21 @@ CREATE INDEX IF NOT EXISTS idx_inchikey    ON compounds(inchikey);
 CREATE INDEX IF NOT EXISTS idx_first_block ON compounds(first_block);
 CREATE INDEX IF NOT EXISTS idx_inchi       ON compounds(inchi);
 CREATE INDEX IF NOT EXISTS idx_smiles      ON compounds(smiles);
-CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula)`
+CREATE INDEX IF NOT EXISTS idx_formula     ON compounds(molecular_formula);
+CREATE INDEX IF NOT EXISTS idx_cas_identifier  ON cas(identifier, rank);
+CREATE INDEX IF NOT EXISTS idx_hmdb_identifier ON hmdb(identifier)`
 
 const InsertSQL = `INSERT INTO compounds
 	(identifier, inchikey, first_block, inchi, smiles, compound_name, molecular_formula, exact_mass, literature_count, patent_count, annotation_type_count)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+// The names, cas, and hmdb tables are keyed on their lookup value
+const InsertNameSQL = `INSERT OR IGNORE INTO names (name_norm, identifier, rank) VALUES (?, ?, ?)`
+
+// A CAS ID's rank is its position among the compound's CAS IDs in PubChem's synonym order
+const InsertCASSQL = `INSERT OR IGNORE INTO cas (cas, identifier, rank) VALUES (?, ?, ?)`
+
+const InsertHMDBSQL = `INSERT OR IGNORE INTO hmdb (hmdb_id, identifier) VALUES (?, ?)`
 
 // query executes a prepared statement and scans all result rows into Compound pointers
 func (idx *PubChemIndex) query(stmt *sql.Stmt, arg string) ([]*Compound, error) {
@@ -227,6 +282,107 @@ func (idx *PubChemIndex) QueryByFormula(formula string, topHitOnly bool) ([]*Com
 		return idx.query(idx.byFormula1, formula)
 	}
 	return idx.query(idx.byFormula, formula)
+}
+
+// QueryByName normalizes the name the same way build-db stored it, so callers pass it as typed
+func (idx *PubChemIndex) QueryByName(name string, topHitOnly bool) ([]*Compound, error) {
+	compounds, _, err := idx.QueryByNameKey(name, topHitOnly)
+	return compounds, err
+}
+
+// QueryByNameKey is QueryByName that also returns the key that matched, which differs
+// from the normalized name when one of its variants did
+func (idx *PubChemIndex) QueryByNameKey(name string, topHitOnly bool) ([]*Compound, string, error) {
+	key := synonyms.Normalize(name)
+	stmt := idx.byName
+	if topHitOnly {
+		stmt = idx.byName1
+	}
+	// Rewrites of lab spellings are tried only once the name itself misses
+	var compounds []*Compound
+	for _, k := range append([]string{key}, synonyms.Variants(key)...) {
+		var err error
+		compounds, err = idx.query(stmt, k)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(compounds) > 0 {
+			return compounds, k, nil
+		}
+	}
+	return compounds, "", nil
+}
+
+func (idx *PubChemIndex) QueryByCAS(cas string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byCAS1, cas)
+	}
+	return idx.query(idx.byCAS, cas)
+}
+
+// QueryByHMDB takes the 7-digit form stored in the hmdb table, see synonyms.NormalizeHMDB
+func (idx *PubChemIndex) QueryByHMDB(id string, topHitOnly bool) ([]*Compound, error) {
+	if topHitOnly {
+		return idx.query(idx.byHMDB1, id)
+	}
+	return idx.query(idx.byHMDB, id)
+}
+
+// externalIDChunk keeps each IN list well under SQLite's bound parameter limit
+const externalIDChunk = 500
+
+// AttachExternalIDs sets CASIDs and HMDBIDs on each compound
+func (idx *PubChemIndex) AttachExternalIDs(compounds []*Compound) error {
+	if len(compounds) == 0 {
+		return nil
+	}
+	byCID := map[string][]*Compound{}
+	var cids []string
+	for _, c := range compounds {
+		c.CASIDs, c.HMDBIDs = nil, nil
+		if _, seen := byCID[c.Identifier]; !seen {
+			cids = append(cids, c.Identifier)
+		}
+		byCID[c.Identifier] = append(byCID[c.Identifier], c)
+	}
+
+	for start := 0; start < len(cids); start += externalIDChunk {
+		chunk := cids[start:min(start+externalIDChunk, len(cids))]
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			args[i] = id
+		}
+		in := `(` + strings.Repeat(`?,`, len(chunk)-1) + `?)`
+		// Both orders come straight off the reverse indexes, no sort needed
+		if err := idx.collectIDs(`SELECT identifier, cas FROM cas WHERE identifier IN `+in+` ORDER BY identifier, rank`,
+			args, byCID, func(c *Compound, id string) { c.CASIDs = append(c.CASIDs, id) }); err != nil {
+			return err
+		}
+		if err := idx.collectIDs(`SELECT identifier, hmdb_id FROM hmdb WHERE identifier IN `+in+` ORDER BY identifier, hmdb_id`,
+			args, byCID, func(c *Compound, id string) { c.HMDBIDs = append(c.HMDBIDs, id) }); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// collectIDs runs one (CID, id) query and hands each row to add() for every compound with that CID
+func (idx *PubChemIndex) collectIDs(query string, args []any, byCID map[string][]*Compound, add func(*Compound, string)) error {
+	rows, err := idx.db.Query(query, args...)
+	if err != nil {
+		return fmt.Errorf("external ID query failed: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, id string
+		if err := rows.Scan(&cid, &id); err != nil {
+			return fmt.Errorf("external ID scan failed: %w", err)
+		}
+		for _, c := range byCID[cid] {
+			add(c, id)
+		}
+	}
+	return rows.Err()
 }
 
 // Close releases the database connection and all prepared statements.

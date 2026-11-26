@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google-site-verification" content="7x8U49PGGWOtDvOAekV2dNrRD7R1VX0_hnkstdzap5o" />
-    <meta name="description" content="Easily translate chemical identifiers via the web or REST API. From InChIKey to SMILES to Molecular Formula to InChI to PubChem ID | UC Davis Fiehn Lab">
+    <meta name="description" content="Easily translate chemical identifiers via the web or REST API. From Compound Name to InChIKey to SMILES to Molecular Formula to InChI to PubChem ID to HMDB to CAS | UC Davis Fiehn Lab">
     <link rel="canonical" href="https://cts-lite.metabolomics.us">
     <meta name="theme-color" content="#1a3e68">
     <meta property="og:title" content="CTS-Lite | Chemical Translation Service">
@@ -20,7 +20,7 @@
     <div class="banner-container">
         <nav class="navbar">
             <!-- Skip link for accessibility, only appears on focus -->
-            <a href="#main-content" class="skip-link navbar-item">Skip to content</a>
+            <a href="#query-input" class="skip-link navbar-item">Skip to content</a>
 
             <a class="navbar-item" href="/docs">Documentation</a>
 
@@ -38,19 +38,33 @@
             <form id="query-form">
                 <label for="query-input" id="input-label">
                     <div id="input-label-row">
-                        <img src="assets/info-icon.svg" alt="" width="16" height="16">
-                        <span><strong>Accepts:</strong></span>
-                        <span class="format-tag">InChI</span>
-                        <span class="format-tag">InChIKey</span>
-                        <span class="format-tag">SMILES</span>
-                        <span class="format-tag">Molecular Formula</span>
-                        <span class="format-tag">PubChem CID</span>
+                        <span title="Click on a label to exclusively query by that identifier type" style="display: contents">
+                            <strong>Accepts:</strong>
+                        </span>
+                        <button type="button" class="format-tag" data-type="name" aria-pressed="false">Compound Name</button>
+                        <button type="button" class="format-tag" data-type="inchi" aria-pressed="false">InChI</button>
+                        <button type="button" class="format-tag" data-type="inchikey" aria-pressed="false">InChIKey</button>
+                        <button type="button" class="format-tag" data-type="smiles" aria-pressed="false">SMILES</button>
+                        <button type="button" class="format-tag" data-type="formula" aria-pressed="false">Molecular Formula</button>
+                        <button type="button" class="format-tag" data-type="pubchem_id" aria-pressed="false">PubChem CID</button>
+                        <button type="button" class="format-tag" data-type="hmdb" aria-pressed="false">HMDB ID</button>
+                        <button type="button" class="format-tag" data-type="cas" aria-pressed="false">CAS ID</button>
+                        <button type="button" class="format-tag format-tag-reset" id="format-tag-reset" title="Query all types again" inert>&times; Reset</button>
                     </div>
-                    <p id="input-label-sub">Space, Tab, or Newline separated entries</p>
+                    <p id="input-label-sub">
+                        <!-- &#10; is a newline -->
+                        <span title="• Spaces can also separate non-name entries: CCO H2O 2244&#10;• A name entry on a line stays whole: lactic acid&#10;• Use quotes for multiple names on one line: &quot;lactic acid&quot; &quot;malic acid&quot;&#10;• Up to 100,000 entries (1,000 with ClassyFire)" style="display: contents">
+                            <img src="assets/info-icon.svg" alt="" width="14" height="14" style="vertical-align: -2px">
+                            One entry per line
+                        </span>
+                    </p>
                 </label>
-                <textarea id="query-input" rows="5" cols="40"
-                placeholder="InChI=1S/CH4/h1H4 &#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N &#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C &#10;H2O &#10;962"></textarea>
-                <br>
+                <div class="query-input-wrapper">
+                    <textarea id="query-input" rows="5" cols="40"
+                    placeholder="Water&#10;InChI=1S/CH4/h1H4&#10;VYZAHLCBVHPDDF-UHFFFAOYSA-N&#10;O=C(O)CC(N)C(=O)NC(C(=O)O)CC(C)C&#10;H2O"></textarea>
+                    <button type="button" class="example-btn" id="try-example">Try an example</button>
+                    <button type="button" class="example-btn" id="clear-input" title="Clear the input box (Ctrl+Z to undo)" tabindex="-1" hidden>&times; Clear</button>
+                </div>
                 <div class="form-actions">
                     <button type="submit" style="min-height: 44px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);">Match</button>
                     <div class="cog-wrapper">
@@ -59,25 +73,39 @@
                         </button>
                         <div class="settings-panel" id="settings-panel">
                             <div class="settings-row">
-                                <span>Top Hit Only <a href="/docs#top-hit-only" target="_blank" aria-label="Top Hit Only documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>Top Hit Only <a href="/docs#top-hit-only" target="_blank" aria-label="Top Hit Only documentation" class="settings-help-link"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="Top hit only">
                                     <input type="checkbox" checked id="top-hit-only">
                                     <span class="toggle-track"></span>
                                 </label>
                             </div>
                             <div class="settings-row" style="margin-top: 0.75rem;">
-                                <span>First Block Matches <a href="/docs#match-levels" target="_blank" aria-label="Match levels documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>First Block Matches <a href="/docs#match-levels" target="_blank" aria-label="Match levels documentation" class="settings-help-link"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="First block matches">
                                     <input type="checkbox" checked id="first-block-matches">
                                     <span class="toggle-track"></span>
                                 </label>
                             </div>
                             <div class="settings-row" style="margin-top: 0.75rem;" id="classyfire-row">
-                                <span>ClassyFire <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" style="display:inline-flex;vertical-align:middle;color:inherit;"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <span>ClassyFire <a href="/docs#classyfire" target="_blank" aria-label="ClassyFire documentation" class="settings-help-link"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
                                 <label class="toggle-label" aria-label="ClassyFire chemical classes">
                                     <input type="checkbox" id="classyfire-enabled">
                                     <span class="toggle-track"></span>
                                 </label>
+                            </div>
+                            <div class="settings-row" style="margin-top: 0.75rem;">
+                                <span>Query Type <a href="/docs#query-types" target="_blank" aria-label="Query type documentation" class="settings-help-link"><img src="assets/question-icon.svg" alt="" width="17" height="17" title="open docs"></a></span>
+                                <select id="query-type-select" aria-label="Query type">
+                                    <option value="auto" selected>Auto</option>
+                                    <option value="name">Name</option>
+                                    <option value="smiles">SMILES</option>
+                                    <option value="inchikey">InChIKey</option>
+                                    <option value="inchi">InChI</option>
+                                    <option value="formula">Formula</option>
+                                    <option value="pubchem_id">PubChem CID</option>
+                                    <option value="cas">CAS ID</option>
+                                    <option value="hmdb">HMDB ID</option>
+                                </select>
                             </div>
                             <div class="settings-row" style="margin-top: 0.75rem;">
                                 <span>Results per Page</span>
@@ -113,24 +141,51 @@
                         <!-- Filter results menu -->
                         <div class="cog-wrapper" id="result-filters" hidden>
                             <button type="button" class="cog-btn" id="filter-toggle" aria-label="Filter results" aria-expanded="false" aria-haspopup="true" title="Filter results">
-                                <img src="assets/filter-icon.svg" alt="" width="20" height="20">
+                                <svg class="menu-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/filter-icon.svg#icon"/></svg>
                             </button>
                             <div class="settings-panel filter-panel" id="filter-panel" role="group" aria-label="Filter results">
                                 <div class="filter-panel-heading">Show results</div>
                                 <button type="button" class="filter-option active" data-filter="all" aria-pressed="true"><span class="filter-name"><span class="filter-swatch"></span>All</span><span class="filter-count"></span></button>
                                 <button type="button" class="filter-option" data-filter="exact-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch exact-match"></span>Exact</span><span class="filter-count"></span></button>
                                 <button type="button" class="filter-option" data-filter="first-block-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch first-block-match"></span>First Block</span><span class="filter-count"></span></button>
+                                <button type="button" class="filter-option" data-filter="name-variant-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch name-variant-match"></span>Name Variant</span><span class="filter-count"></span></button>
                                 <button type="button" class="filter-option" data-filter="pubchem-live-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch pubchem-live-match"></span>PubChem Live</span><span class="filter-count"></span></button>
                                 <button type="button" class="filter-option" data-filter="no-match" aria-pressed="false"><span class="filter-name"><span class="filter-swatch no-match"></span>No Match</span><span class="filter-count"></span></button>
                             </div>
-                        </div>                    </div>
+                        </div>
+                        <!-- Choose fields menu, applies to downloads as well -->
+                        <div class="cog-wrapper" id="result-fields" hidden>
+                            <button type="button" class="cog-btn" id="fields-toggle" aria-label="Choose fields" aria-expanded="false" aria-haspopup="true" title="Choose fields to show">
+                                <svg class="menu-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/list-icon.svg#icon"/></svg>
+                            </button>
+                            <div class="settings-panel filter-panel" id="fields-panel" role="group" aria-label="Choose fields">
+                                <div class="filter-panel-heading">Show fields</div>
+                                <label class="field-option"><input type="checkbox" data-field="identifier" checked>PubChem CID</label>
+                                <label class="field-option"><input type="checkbox" data-field="inchikey" checked>InChIKey</label>
+                                <label class="field-option"><input type="checkbox" data-field="inchi" checked>InChI</label>
+                                <label class="field-option"><input type="checkbox" data-field="smiles" checked>SMILES</label>
+                                <label class="field-option"><input type="checkbox" data-field="cas_ids" checked>CAS IDs</label>
+                                <label class="field-option"><input type="checkbox" data-field="hmdb_ids" checked>HMDB IDs</label>
+                                <label class="field-option"><input type="checkbox" data-field="compound_name" checked>Compound Name</label>
+                                <label class="field-option"><input type="checkbox" data-field="molecular_formula" checked>Mol. Formula</label>
+                                <label class="field-option"><input type="checkbox" data-field="exact_mass" checked>Exact Mass</label>
+                                <label class="field-option"><input type="checkbox" data-field="literature_count" checked>Literature Count</label>
+                                <label class="field-option"><input type="checkbox" data-field="patent_count" checked>Patent Count</label>
+                                <label class="field-option"><input type="checkbox" data-field="annotation_type_count" checked>Anno. Type Count</label>
+                                <button type="button" class="filter-option field-bulk-btn" id="fields-select-toggle">Deselect all</button>
+                            </div>
+                        </div>
+                    </div>
                     <div id="download-buttons">
-                        <button class="download-btn" id="download-csv" type="button">
-                            CSV <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
+                        <!-- Download button, dropdown for csv and json options -->
+                        <button class="download-btn" id="download-toggle" type="button" aria-haspopup="true" aria-expanded="false">
+                            Download <img src="assets/download-icon.svg" alt="" width="17" height="17">
                         </button>
-                        <button class="download-btn" id="download-json" type="button">
-                            JSON <img src="assets/download-icon.svg" alt="Download" width="17" height="17">
-                        </button>
+                        <div class="settings-panel filter-panel download-panel" id="download-panel" role="group" aria-label="Download format">
+                            <div class="filter-panel-heading" style="color: #777777">Download Results</div>
+                            <button type="button" class="filter-option" id="download-csv"><span class="filter-name"><img class="download-option-icon" src="assets/download-icon.svg" alt="" width="15" height="15">CSV</span><span class="filter-count" id="download-csv-size"></span></button>
+                            <button type="button" class="filter-option" id="download-json"><span class="filter-name"><img class="download-option-icon" src="assets/download-icon.svg" alt="" width="15" height="15">JSON</span><span class="filter-count" id="download-json-size"></span></button>
+                        </div>
                         <!-- Spinner next to download buttons if ClassyFire is still running -->
                         <span class="download-spinner" aria-hidden="true"></span>
                     </div>
@@ -146,6 +201,14 @@
             </div>
         </main>
     </div>
+
+    <!-- Version stamp links to GitHub release notes -->
+    <footer>
+        <a class="version-stamp" href="https://github.com/metabolomics-us/cts-lite/releases/tag/v2026.11.25" target="_blank" title="Release notes">
+            <img src="assets/github-icon.svg" alt="" width="16" height="16">
+            v6.0.0
+        </a>
+    </footer>
 
     <!-- Popup shown when the ClassyFire toggle is clicked while the service is down -->
     <div id="cf-down-modal" class="cf-modal" hidden>

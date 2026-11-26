@@ -4,6 +4,81 @@ let pageSize = 10;
 let activeController = null;
 let classyfireRequested = false; // did this request use ClassyFire? classyfireEnabled tracks current checkbox state
 let activeFilter = "all"; // match-status class from getMatchStatus, defaults to "all"
+let hiddenFields = new Set(); // JSON keys of compound fields hidden by user
+
+// Result columns that are always present, regardless of hidden fields
+const RESULT_COLUMNS = ["query", "query_type", "converted_query", "found_match", "match_level", "error_message"];
+
+// Compound fields in the server's CSV column order. key is the JSON key, column the CSV header
+const COMPOUND_FIELDS = [
+  { key: "identifier", column: "pubchem_cid" },
+  { key: "inchikey", column: "inchikey" },
+  { key: "inchi", column: "inchi" },
+  { key: "smiles", column: "smiles" },
+  { key: "compound_name", column: "compound_name" },
+  { key: "molecular_formula", column: "molecular_formula" },
+  { key: "exact_mass", column: "exact_mass" },
+  { key: "literature_count", column: "literature_count" },
+  { key: "patent_count", column: "patent_count" },
+  { key: "annotation_type_count", column: "annotation_type_count" },
+  { key: "cas_ids", column: "cas_ids" },
+  { key: "hmdb_ids", column: "hmdb_ids" },
+];
+
+// ClassyFire keys, written as classyfire_<key> CSV columns
+const CLASSYFIRE_KEYS = ["kingdom", "superclass", "class", "subclass", "direct_parent", "description", "error"];
+
+// Queries used by the 'try an example' button
+const EXAMPLE_QUERIES = [
+  "Caffeine",
+  "CC(=O)Oc1ccccc1C(=O)O",
+  "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
+  "RYYVLZVUVIJVGH-AAAAAAAAAA-N",
+  "C6H12O6",
+  "gly pro",
+  "50-78-2",
+  "HMDB0000001",
+  "170000000",
+  "AAAAAAAAAAAAAA-UHFFFAOYSA-N",
+];
+
+// Splits a line on whitespace, keeping each quoted span as one token. Mirrors tokenizeLine in api/handler.go:
+// a quote opens only at the start of a word and closes only at the end of one, an unmatched quote is dropped
+function tokenizeLine(line) {
+  const words = line.split(/\s+/).filter(Boolean);
+  const isBare = (t) => t.replace(/"/g, "") === "";
+  const tokens = [];
+  let quoted = false;
+  for (let i = 0; i < words.length; i++) {
+    let w = words[i];
+    if (w.startsWith('"')) {
+      // The closer is the first word ending in a quote, this word only if the quote is not its opener
+      let end = -1;
+      for (let j = i; j < words.length; j++) {
+        if (words[j].endsWith('"') && (j > i || w.length > 1)) {
+          end = j;
+          break;
+        }
+      }
+      if (end >= 0) {
+        const span = words.slice(i, end + 1);
+        span[0] = span[0].slice(1);
+        span[span.length - 1] = span[span.length - 1].replace(/"$/, "");
+        const kept = span.filter((t) => !isBare(t));
+        if (kept.length) {
+          tokens.push(kept.join(" "));
+          quoted = true;
+        }
+        i = end;
+        continue;
+      }
+      w = w.slice(1); // unmatched opener
+    }
+    w = w.replace(/"$/, ""); // a closer with nothing open is dropped
+    if (!isBare(w)) tokens.push(w);
+  }
+  return { tokens, quoted };
+}
 
 // Disable download buttons while ClassyFire is running
 function setDownloadsLoading(loading) {
@@ -176,6 +251,38 @@ document.addEventListener("DOMContentLoaded", () => {
     if (allData.length > 0) renderPage();
   });
 
+  // A forced query type grays out every other format tag in the input label
+  const queryTypeSelect = document.getElementById("query-type-select");
+  const formatTags = document.querySelectorAll(".format-tag[data-type]");
+  const resetTag = document.getElementById("format-tag-reset");
+  const updateFormatTags = () => {
+    const forced = queryTypeSelect.value;
+    // The Reset tag shows while any type is forced, however it was chosen
+    resetTag.classList.toggle("shown", forced !== "auto");
+    resetTag.inert = forced === "auto";
+    formatTags.forEach((tag) => {
+      const isForced = tag.dataset.type === forced;
+      tag.classList.toggle("muted", forced !== "auto" && !isForced);
+      tag.setAttribute("aria-pressed", String(isForced));
+      tag.title = isForced ? `Only querying for ${tag.textContent}` : `Only query for ${tag.textContent}`;
+    });
+  };
+  queryTypeSelect.addEventListener("change", updateFormatTags);
+  // The browser may restore a previous choice on reload
+  updateFormatTags();
+
+  // Clicking a format tag forces its type, the Reset tag goes back to Auto
+  formatTags.forEach((tag) => {
+    tag.addEventListener("click", () => {
+      queryTypeSelect.value = tag.dataset.type;
+      updateFormatTags();
+    });
+  });
+  resetTag.addEventListener("click", () => {
+    queryTypeSelect.value = "auto";
+    updateFormatTags();
+  });
+
   // Result filter menu, opened like the settings panel
   const filterToggle = document.getElementById("filter-toggle");
   const filterPanel = document.getElementById("filter-panel");
@@ -195,60 +302,58 @@ document.addEventListener("DOMContentLoaded", () => {
       closeFilterPanel();
     });
   });
-  // Download buttons (set up once, always reference current allData)
-  document.getElementById("download-csv").addEventListener("click", () => {
-    const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
-    let csv = "query,query_type,converted_query,found_match,match_level,error_message,pubchem_cid,inchikey,inchi,smiles,compound_name,molecular_formula,exact_mass,literature_count,patent_count,annotation_type_count";
-    if (hasClassyfire) {
-      csv += ",classyfire_kingdom,classyfire_superclass,classyfire_class,classyfire_subclass,classyfire_direct_parent,classyfire_description,classyfire_error";
-    }
-    csv += "\n";
-    allData.forEach(result => {
-      if (result.matches && result.matches.length > 0) {
-        result.matches.forEach(match => {
-          const cf = match.classyfire || {};
-          const row = [
-            csvField(result.query),
-            csvField(result.query_type),
-            csvField(result.converted_query),
-            csvField(result.found_match),
-            csvField(result.match_level),
-            csvField(result.error_message),
-            csvField(match.identifier),
-            csvField(match.inchikey),
-            csvField(match.inchi),
-            csvField(match.smiles),
-            csvField(match.compound_name),
-            csvField(match.molecular_formula),
-            csvField(match.exact_mass),
-            csvField(match.literature_count),
-            csvField(match.patent_count),
-            csvField(match.annotation_type_count)
-          ];
-          if (hasClassyfire) {
-            row.push(csvField(cf.kingdom), csvField(cf.superclass), csvField(cf.class),
-                     csvField(cf.subclass), csvField(cf.direct_parent), csvField(cf.description), csvField(cf.error));
-          }
-          csv += row.join(",") + "\n";
-        });
-      } else {
-        const row = [
-          csvField(result.query), csvField(result.query_type), csvField(result.converted_query), csvField(result.found_match),
-          csvField(""), csvField(result.error_message),
-          csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField("")
-        ];
-        if (hasClassyfire) {
-          row.push(csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""), csvField(""));
-        }
-        csv += row.join(",") + "\n";
-      }
+  // Field selection menu, a checkbox change re-renders results
+  const fieldsToggle = document.getElementById("fields-toggle");
+  const fieldsPanel = document.getElementById("fields-panel");
+  fieldsToggle.addEventListener("click", () => {
+    const isOpen = fieldsPanel.classList.toggle("open");
+    fieldsToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+  document.addEventListener("click", (e) => {
+    if (!fieldsToggle.contains(e.target) && !fieldsPanel.contains(e.target)) closeFieldsPanel();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeFieldsPanel();
+  });
+  loadHiddenFields();
+  fieldsPanel.querySelectorAll("input[data-field]").forEach(box => {
+    box.addEventListener("change", () => {
+      if (box.checked) hiddenFields.delete(box.dataset.field);
+      else hiddenFields.add(box.dataset.field);
+      setHiddenFields(hiddenFields);
     });
-    triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(csv), `ctsl_${timestamp()}.csv`);
+  });
+  // Selects every field while any is hidden, otherwise deselects them all
+  document.getElementById("fields-select-toggle").addEventListener("click", () => {
+    setHiddenFields(hiddenFields.size > 0 ? new Set() : new Set(COMPOUND_FIELDS.map(f => f.key)));
+  });
+
+  // Download menu
+  const downloadToggle = document.getElementById("download-toggle");
+  const downloadPanel = document.getElementById("download-panel");
+  downloadToggle.addEventListener("click", () => {
+    const isOpen = downloadPanel.classList.toggle("open");
+    downloadToggle.setAttribute("aria-expanded", String(isOpen));
+    if (isOpen) {
+      document.getElementById("download-csv-size").textContent = formatBytes(new Blob([buildCsv()]).size);
+      document.getElementById("download-json-size").textContent = formatBytes(new Blob([buildJson()]).size);
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!downloadToggle.contains(e.target) && !downloadPanel.contains(e.target)) closeDownloadPanel();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDownloadPanel();
+  });
+
+  // Download buttons (set up once, always reference current allData). Both follow the field menu
+  document.getElementById("download-csv").addEventListener("click", () => {
+    triggerDownload("data:text/csv;charset=utf-8," + encodeURIComponent(buildCsv()), `ctsl_${timestamp()}.csv`);
   });
 
   document.getElementById("download-json").addEventListener("click", () => {
     triggerDownload(
-      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allData, null, 2)),
+      "data:text/json;charset=utf-8," + encodeURIComponent(buildJson()),
       `ctsl_${timestamp()}.json`
     );
   });
@@ -263,6 +368,40 @@ document.addEventListener("DOMContentLoaded", () => {
   const paginationControls = document.getElementById("pagination-controls");
   const submitButton = form.querySelector("button[type='submit']");
 
+  // Try an example only shows while the box is empty, Clear takes its corner once there is any input
+  const exampleButton = document.getElementById("try-example");
+  const clearButton = document.getElementById("clear-input");
+  const updateExampleButton = () => {
+    const empty = input.value.trim() === "";
+    exampleButton.hidden = !empty;
+    clearButton.hidden = empty;
+  };
+  clearButton.addEventListener("click", () => {
+    input.focus();
+    input.select();
+    if (!document.execCommand("delete")) input.value = ""; // retains history, allows Ctrl+Z for undo
+    updateExampleButton();
+  });
+  input.addEventListener("input", updateExampleButton);
+  updateExampleButton();
+  // Ctrl+Enter (Cmd+Enter on Mac) submits the form
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  exampleButton.addEventListener("click", () => {
+    queryTypeSelect.value = "auto";
+    updateFormatTags();
+    const examples = EXAMPLE_QUERIES.join("\n");
+    input.focus();
+    input.select();
+    if (!document.execCommand("insertText", false, examples)) input.value = examples; // retains history like 'clear'
+    updateExampleButton();
+    form.requestSubmit();
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
@@ -274,11 +413,12 @@ document.addEventListener("DOMContentLoaded", () => {
     showPcbProgress(0, 0);
     paginationControls.style.display = "none";
     document.getElementById("result-filters").hidden = true;
+    document.getElementById("result-fields").hidden = true;
     setFilterChip("all");
 
     // Bare quotes are dropped by the API, so a query of only those counts as blank
-    const isBareQuote = (t) => t === '"' || t === '""' || t === '"""';
-    const hasQuery = query.split(/\s+/).some((t) => t && !isBareQuote(t));
+    const lines = query.split("\n").map(tokenizeLine);
+    const hasQuery = lines.some((l) => l.tokens.length > 0);
 
     if (!hasQuery) {
       outputLabel.textContent = "Error";
@@ -288,7 +428,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const maxQueryLength = 100000;
-    const queryCount = query.trim().split(/\s+/).filter(Boolean).length;
+    const queryType = document.getElementById("query-type-select").value;
+    const queryCount = lines.reduce((n, { tokens, quoted }) => {
+      if (quoted || tokens.length <= 1) return n + tokens.length; // each quoted span and unquoted word is one query
+      if (queryType === "name") return n + 1; // one name per line if forced name
+      if (queryType !== "auto") return n + tokens.length; // all words on line counted if not auto or name
+      return n + (tokens.length > 10 ? tokens.length : 1); // known names are checked on the server, so up to 10 words counts once
+    }, 0);
     if (queryCount > maxQueryLength) {
       outputLabel.textContent = "Error";
       appliedSettingsLabel.style.display = "none";
@@ -322,6 +468,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (classyfireEnabled) {
       url += "&classyfire=true";
     }
+    if (queryType !== "auto") {
+      url += "&query_type=" + queryType;
+    }
 
     url += "&stream=true"; // Always stream frontend results for pubchem fallback
 
@@ -350,8 +499,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const topHitText = topHitOnly ? "Top Hit Only" : "All Hits";
       const firstBlockText = firstBlockMatches ? "First Block Matches" : "Exact Matches Only";
       const classyfireText = classyfireEnabled ? ", ClassyFire" : "";
-      appliedSettingsLabel.title = "applied settings";
-      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}`;
+      const queryTypeSelect = document.getElementById("query-type-select");
+      const queryTypeText = queryType !== "auto" ? `, Forced ${queryTypeSelect.querySelector(`option[value="${queryType}"]`).textContent}` : "";
+      appliedSettingsLabel.title = "Applied settings";
+      appliedSettingsLabel.innerHTML = `<img src="assets/settings-icon.svg" alt="" width="14" height="14" style="vertical-align:middle;margin-right:4px;">${topHitText}, ${firstBlockText}${classyfireText}${queryTypeText}`;
       appliedSettingsLabel.style.display = "block";
     };
 
@@ -483,6 +634,52 @@ function goToPage(n) {
   window.scrollBy(0, after - before);
 }
 
+// The CSV download of the current results (does not download hidden fields)
+function buildCsv() {
+  const hasClassyfire = allData.some(r => r.matches && r.matches.some(m => m.classyfire));
+  const fields = COMPOUND_FIELDS.filter(f => !hiddenFields.has(f.key));
+  const header = [...RESULT_COLUMNS, ...fields.map(f => f.column)];
+  if (hasClassyfire) {
+    header.push(...CLASSYFIRE_KEYS.map(k => "classyfire_" + k));
+  }
+  let csv = header.join(",") + "\n";
+  allData.forEach(result => {
+    const resultCells = RESULT_COLUMNS.map(c => csvField(result[c]));
+    // A result without matches still writes one row, with empty compound fields
+    const matches = result.matches && result.matches.length > 0 ? result.matches : [{}];
+    matches.forEach(match => {
+      const row = [...resultCells, ...fields.map(f => csvField(csvValue(match[f.key])))];
+      if (hasClassyfire) {
+        const cf = match.classyfire || {};
+        row.push(...CLASSYFIRE_KEYS.map(k => csvField(cf[k])));
+      }
+      csv += row.join(",") + "\n";
+    });
+  });
+  return csv;
+}
+
+// The JSON download of the current results (does not download hidden fields)
+function buildJson() {
+  const data = hiddenFields.size === 0 ? allData : allData.map(r => !r.matches ? r : {
+    ...r,
+    matches: r.matches.map(m => Object.fromEntries(Object.entries(m).filter(([k]) => !hiddenFields.has(k)))),
+  });
+  return JSON.stringify(data, null, 2);
+}
+
+// B, KB or MB
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function closeDownloadPanel() {
+  document.getElementById("download-panel").classList.remove("open");
+  document.getElementById("download-toggle").setAttribute("aria-expanded", "false");
+}
+
 function closeFilterPanel() {
   document.getElementById("filter-panel").classList.remove("open");
   document.getElementById("filter-toggle").setAttribute("aria-expanded", "false");
@@ -512,6 +709,35 @@ function setFilter(filter) {
   renderPage();
 }
 
+function closeFieldsPanel() {
+  document.getElementById("fields-panel").classList.remove("open");
+  document.getElementById("fields-toggle").setAttribute("aria-expanded", "false");
+}
+
+// Read the hidden fields from the checkboxes
+function loadHiddenFields() {
+  const hidden = new Set();
+  document.querySelectorAll("#fields-panel input[data-field]").forEach(box => {
+    if (!box.checked) hidden.add(box.dataset.field);
+  });
+  setHiddenFields(hidden);
+}
+
+// Apply a set of hidden fields to the checkboxes, the toggle and the shown page
+function setHiddenFields(hidden) {
+  hiddenFields = hidden;
+  document.querySelectorAll("#fields-panel input[data-field]").forEach(box => {
+    box.checked = !hidden.has(box.dataset.field);
+  });
+  const toggle = document.getElementById("fields-toggle");
+  const label = hidden.size === 0 ? "Choose fields to show" : `Choose fields to show (${hidden.size} hidden)`;
+  toggle.classList.toggle("filtered", hidden.size > 0);
+  toggle.title = label;
+  toggle.setAttribute("aria-label", label);
+  document.getElementById("fields-select-toggle").textContent = hidden.size > 0 ? "Select all" : "Deselect all";
+  if (allData.length > 0) renderPage();
+}
+
 // Results under the active filter, each paired with its index in allData so query numbers stay stable.
 function filteredResults() {
   const entries = allData.map((result, i) => ({ result, i }));
@@ -528,8 +754,11 @@ function updateFilterCounts() {
   });
   const wrap = document.getElementById("result-filters");
   wrap.hidden = allData.length === 0;
+  document.getElementById("result-fields").hidden = allData.length === 0;
   wrap.querySelectorAll(".filter-option").forEach(btn => {
-    btn.querySelector(".filter-count").textContent = counts[btn.dataset.filter] || 0;
+    const count = counts[btn.dataset.filter] || 0;
+    btn.querySelector(".filter-count").textContent = count;
+    btn.disabled = count === 0; // disable if no results
   });
 }
 
@@ -538,12 +767,7 @@ function renderPage() {
   output.textContent = "";
   const rows = filteredResults();
   const start = (currentPage - 1) * pageSize;
-  if (rows.length === 0 && allData.length > 0) {
-    output.innerHTML = "<div class='filter-empty'>No results for this filter &mdash; <button type='button' class='filter-empty-clear'>Clear filter</button></div>";
-    output.querySelector(".filter-empty-clear").addEventListener("click", () => setFilter("all"));
-  } else {
-    displayResults(rows.slice(start, start + pageSize), output);
-  }
+  displayResults(rows.slice(start, start + pageSize), output);
   updateFilterCounts();
   updatePagination(rows.length);
 }
@@ -594,6 +818,10 @@ function getPaginationRange(current, total) {
 
 // data holds { result, i } entries from filteredResults, i being the index in allData
 function displayResults(data, outputElement) {
+  // The card title keeps the compound name and PubChem link whatever the field menu hides
+  const shown = (key) => !hiddenFields.has(key);
+  // Hide horizontal line if no fields are selected and classyfire is off
+  const hasDetails = hiddenFields.size < COMPOUND_FIELDS.length || classyfireRequested;
   data.forEach(({ result, i: queryIndex }, index) => {
     // A pending row still carries the local miss message, which the PubChem answer will replace
     const errorHtml = result.error_message && !result.pending
@@ -606,20 +834,22 @@ function displayResults(data, outputElement) {
           <div class="match-item">
             <div class="match-header">
               MATCH${result.matches.length > 1 ? ` ${i + 1}` : ""} &mdash;
-              <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}" target="_blank" style="text-decoration:underline;color:#1a3e68">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
+              <strong><a href="https://pubchem.ncbi.nlm.nih.gov/compound/${match.identifier}" target="_blank" class="match-title-link">${escapeHtml(match.compound_name || "Unnamed Compound").toUpperCase()}</a></strong>
             </div>
-            <hr>
+            ${hasDetails ? "<hr>" : ""}
             <div class="match-details">
-              <div class="match-field"><label>PubChem CID:</label><span class="monospace">${escapeHtml(match.identifier)}</span></div>
-              <div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>
-              <div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>
-              <div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>
-              <div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>
-              <div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>
-              <div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>
-              <div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>
-              <div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>
-              <div class="match-field"><label>Anno. Type Count:</label><span class="monospace">${match.annotation_type_count}</span></div>
+              ${shown("identifier") ? `<div class="match-field"><label>PubChem CID:</label><span class="monospace">${escapeHtml(match.identifier)}</span></div>` : ""}
+              ${shown("inchikey") ? `<div class="match-field"><label>InChIKey:</label><span class="monospace">${escapeHtml(match.inchikey)}</span></div>` : ""}
+              ${shown("inchi") ? `<div class="match-field"><label>InChI:</label><span class="monospace small-text">${escapeHtml(match.inchi)}</span></div>` : ""}
+              ${shown("smiles") ? `<div class="match-field"><label>SMILES:</label><span class="monospace small-text">${escapeHtml(match.smiles)}</span></div>` : ""}
+              ${shown("cas_ids") ? `<div class="match-field"><label>CAS IDs:</label>${match.cas_ids?.length ? `<div class="monospace id-list">${idListHtml(match.cas_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>` : ""}
+              ${shown("hmdb_ids") ? `<div class="match-field"><label>HMDB IDs:</label>${match.hmdb_ids?.length ? `<div class="monospace id-list">${idListHtml(match.hmdb_ids)}</div>` : `<span class="monospace id-none">None found</span>`}</div>` : ""}
+              ${shown("compound_name") ? `<div class="match-field"><label>Compound Name:</label><span class="monospace small-text">${escapeHtml(match.compound_name)}</span></div>` : ""}
+              ${shown("molecular_formula") ? `<div class="match-field"><label>Mol. Formula:</label><span class="monospace">${escapeHtml(match.molecular_formula)}</span></div>` : ""}
+              ${shown("exact_mass") ? `<div class="match-field"><label>Exact Mass:</label><span class="monospace">${match.exact_mass}</span></div>` : ""}
+              ${shown("literature_count") ? `<div class="match-field"><label>Literature Count:</label><span class="monospace">${match.literature_count}</span></div>` : ""}
+              ${shown("patent_count") ? `<div class="match-field"><label>Patent Count:</label><span class="monospace">${match.patent_count}</span></div>` : ""}
+              ${shown("annotation_type_count") ? `<div class="match-field"><label>Anno. Type Count:</label><span class="monospace">${match.annotation_type_count}</span></div>` : ""}
               ${classyfireRequested ? `
               <div class="match-field classyfire-heading"><label>Chemical Classification</label></div>
               ${!match.classyfire ? `<div class="match-field cf-queued"><span>Queued</span><span class="inline-spinner" aria-hidden="true"></span></div>`
@@ -639,11 +869,20 @@ function displayResults(data, outputElement) {
       : "";
 
     const isConverted = (result.query_type === "converted_smiles" || result.query_type === "converted_inchi") && result.converted_query;
+    // A name variant carries the rewrite it matched as, shown the same way as a conversion
+    const isNameVariant = result.query_type === "name" && result.converted_query;
+    // An HMDB ID is padded to 7 digits and uppercased, still an exact match, so only the bubble shows it
+    const isHMDBRewrite = result.query_type === "hmdb" && result.converted_query;
     const transId = `trans-${queryIndex}`;
+    const expandable = (title, label) => `<div class="query-type-expandable-wrapper" title="${title}"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}" tabindex="-1">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>${label}<br>${escapeHtml(result.converted_query)}</div></div>`;
 
     const queryTypeBubble = isConverted
-      ? `<div class="query-type-expandable-wrapper" title="Converted with RDKit"><button type="button" class="query-type-expandable-btn" aria-expanded="false" aria-controls="${transId}">Type: ${formatQueryType(escapeHtml(result.query_type))}<span class="query-type-chevron" aria-hidden="true"><img src="assets/chevron-icon.svg" alt=""></span></button><div id="${transId}" class="query-type-conversion" hidden>to InChIKey:<br>${escapeHtml(result.converted_query)}</div></div>`
-      : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
+      ? expandable("Converted with RDKit", "to InChIKey:")
+      : isNameVariant
+        ? expandable("Matched a rewritten spelling", "read as:")
+        : isHMDBRewrite
+          ? expandable("Normalized to 7 digits", "read as:")
+          : `<span class="query-type">Type: ${formatQueryType(escapeHtml(result.query_type))}</span>`;
 
     const matchStatus = getMatchStatus(result);
 
@@ -652,7 +891,7 @@ function displayResults(data, outputElement) {
     resultDiv.innerHTML = `
       <div class="query-section">
         <div class="query-header">
-          <h3>Query ${queryIndex + 1}: ${escapeHtml(result.query)}</h3>
+          <h3><span class="query-label">Query ${queryIndex + 1}:</span> <span class="query-text">${escapeHtml(result.query)}</span></h3>
           <button type="button" class="collapse-btn" aria-label="Toggle result"><img src="assets/chevron-icon.svg" alt=""></button>
         </div>
         <div class="query-details">
@@ -668,6 +907,16 @@ function displayResults(data, outputElement) {
 
     resultDiv.querySelector(".collapse-btn").addEventListener("click", () => {
       resultDiv.classList.toggle("collapsed");
+    });
+
+    // Toggles the list of CAS or HMDB IDs between "+N more" and "Show less"
+    resultDiv.querySelectorAll(".id-more-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const expanded = btn.getAttribute("aria-expanded") === "true";
+        btn.previousElementSibling.hidden = expanded;
+        btn.setAttribute("aria-expanded", String(!expanded));
+        btn.textContent = expanded ? btn.dataset.more : "Show less";
+      });
     });
 
     const expandBtn = resultDiv.querySelector(".query-type-expandable-btn");
@@ -687,6 +936,18 @@ function displayResults(data, outputElement) {
   });
 }
 
+// How many CAS or HMDB IDs a match card shows before "+N more"
+const ID_PREVIEW_COUNT = 3;
+
+// One ID per line, "+N more" toggle after ID_PREVIEW_COUNT
+function idListHtml(ids) {
+  const items = list => list.map(id => `<div class="id-item">${escapeHtml(id)}</div>`).join("");
+  if (ids.length <= ID_PREVIEW_COUNT) return items(ids);
+  const extra = ids.length - ID_PREVIEW_COUNT;
+  return `${items(ids.slice(0, ID_PREVIEW_COUNT))}<div class="id-more" hidden>${items(ids.slice(ID_PREVIEW_COUNT))}</div>`
+    + `<button type="button" class="id-more-btn" aria-expanded="false" data-more="+${extra} more">+${extra} more</button>`;
+}
+
 function escapeHtml(text) {
   if (!text) return "";
   const div = document.createElement("div");
@@ -702,6 +963,7 @@ function getMatchStatus(result) {
   if (level.startsWith("pubchem live:")) {
     return { text: "✓ Match Found: PubChem Live", className: "pubchem-live-match" };
   }
+  if (level === "name variant") return { text: "✓ Match Found: Name Variant", className: "name-variant-match" };
   if (level.includes("exact")) return { text: "✓ Match Found: Exact", className: "exact-match" };
   if (level.includes("first block")) return { text: "✓ Match Found: First Block", className: "first-block-match" };
   if (result.match_level) return { text: `✓ Match Found: ${result.match_level}`, className: "found" };
@@ -720,7 +982,12 @@ function formatQueryType(queryType) {
     case "smiles_or_formula": return "SMILES/Mol. Formula";
     case "bad_inchi":         return "Malformed InChI";
     case "bad_inchikey":      return "Malformed InChIKey";
-    case "bad_pubchem_id":    return "Invalid PubChem CID";
+    case "bad_pubchem_id":    return "Malformed PubChem CID";
+    case "name":              return "Compound Name";
+    case "cas":               return "CAS ID";
+    case "bad_cas":           return "Malformed CAS ID";
+    case "hmdb":              return "HMDB ID";
+    case "bad_hmdb":          return "Malformed HMDB ID";
     case "unidentified":      return "Unidentified";
     default:                  return queryType;
   }
@@ -736,6 +1003,11 @@ function csvField(value) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
   return s;
+}
+
+// One CSV cell from a compound field, ID lists use the same separator as the server's CSV
+function csvValue(value) {
+  return Array.isArray(value) ? value.join(";") : value;
 }
 
 function timestamp() {

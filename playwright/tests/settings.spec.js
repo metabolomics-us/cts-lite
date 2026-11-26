@@ -124,7 +124,7 @@ test('applied settings label reflects all toggles disabled at once', async ({ pa
   );
 });
 
-// Every label segment renders its non-default text when all toggles are flipped.
+// Every label segment renders its non-default text when all toggles are flipped
 // The query matches nothing, so the server never calls the live ClassyFire service
 test('applied settings label shows full permutation with ClassyFire enabled', async ({ page }) => {
   await page.locator('#settings-toggle').click();
@@ -151,6 +151,97 @@ test('applied settings label reflects settings at submit time, not later togglin
 
   await page.click('button[type="submit"]');
   await expect(page.locator('#applied-settings-label')).toContainText('All Hits');
+});
+
+test('forced query type grays out every other format tag', async ({ page }) => {
+  const muted = page.locator('.format-tag.muted');
+  await expect(muted).toHaveCount(0);
+
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('smiles');
+  await expect(muted).toHaveCount(7);
+  await expect(page.locator('.format-tag[data-type="smiles"]')).not.toHaveClass(/muted/);
+
+  await page.locator('#query-type-select').selectOption('auto');
+  await expect(muted).toHaveCount(0);
+});
+
+test('clicking a format tag forces its type', async ({ page }) => {
+  const smiles = page.locator('.format-tag[data-type="smiles"]');
+  const select = page.locator('#query-type-select');
+
+  await smiles.click();
+  await expect(select).toHaveValue('smiles');
+  await expect(smiles).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.format-tag.muted')).toHaveCount(7);
+  // The textarea's label must not take focus from the tag
+  await expect(page.locator('#query-input')).not.toBeFocused();
+
+  // Another tag switches the forced type
+  await page.locator('.format-tag[data-type="cas"]').click();
+  await expect(select).toHaveValue('cas');
+  await expect(smiles).toHaveClass(/muted/);
+
+  // Clicking the forced tag again keeps it forced, only Reset goes back to auto
+  await page.locator('.format-tag[data-type="cas"]').click();
+  await expect(select).toHaveValue('cas');
+  await page.locator('#format-tag-reset').click();
+  await expect(select).toHaveValue('auto');
+  await expect(page.locator('.format-tag.muted')).toHaveCount(0);
+});
+
+test('reset tag shows while a type is forced and goes back to auto', async ({ page }) => {
+  const reset = page.locator('#format-tag-reset');
+  await expect(reset).not.toHaveClass(/shown/);
+
+  // Shows however the type was forced, here from the settings menu
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('inchi');
+  await expect(reset).toHaveClass(/shown/);
+
+  await reset.click();
+  await expect(page.locator('#query-type-select')).toHaveValue('auto');
+  await expect(page.locator('.format-tag.muted')).toHaveCount(0);
+  await expect(reset).not.toHaveClass(/shown/);
+});
+
+test('query_type sent only when a type is forced', async ({ page }) => {
+  const submit = async () => {
+    const [request] = await Promise.all([
+      page.waitForRequest(req => req.url().includes('/match')),
+      page.click('button[type="submit"]'),
+    ]);
+    return request.url();
+  };
+  await page.fill('#query-input', 'O');
+  expect(await submit()).not.toContain('query_type=');
+
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('pubchem_id');
+  expect(await submit()).toContain('query_type=pubchem_id');
+});
+
+test('applied settings label shows the forced query type', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('pubchem_id');
+  await page.fill('#query-input', '1');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('#applied-settings-label')).toContainText('Forced PubChem CID');
+});
+
+// Each line is one name, and a CID can never be one
+test('forced name matches a name and rejects a CID', async ({ page }) => {
+  await page.locator('#settings-toggle').click();
+  await page.locator('#query-type-select').selectOption('name');
+  await page.fill('#query-input', 'water\n1');
+  await page.click('button[type="submit"]');
+
+  await expect(page.locator('.result-item')).toHaveCount(2);
+  await expect(page.locator('.result-item').nth(0).locator('.match-item')).toContainText('WATER');
+  await expect(page.locator('.result-item').nth(1).locator('.error-message')).toContainText(
+    'Not a valid name, see documentation (forced query type: name)'
+  );
 });
 
 test('page size persists across queries', async ({ page }) => {
